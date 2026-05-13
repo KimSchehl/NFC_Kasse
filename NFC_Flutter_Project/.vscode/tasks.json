@@ -1,0 +1,35 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      // Optional: run the backend from inside VSCode via Terminal > Run Task.
+      // Prefer start_backend.bat / start_backend.sh for normal use —
+      // those give you a dedicated window you can leave open independently.
+      "label": "Start Backend",
+      "type": "shell",
+      "windows": {
+        "command": "${workspaceFolder}/start_backend.bat"
+      },
+      "linux": {
+        "command": "bash ${workspaceFolder}/start_backend.sh"
+      },
+      "osx": {
+        "command": "bash ${workspaceFolder}/start_backend.sh"
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "pattern": { "regexp": "^$" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "Started reloader process",
+          "endsPattern": "Application startup complete"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "new",
+        "focus": false
+      }
+    }
+  ]
+}

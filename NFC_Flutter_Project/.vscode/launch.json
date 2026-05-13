@@ -1,0 +1,14 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // Start the backend first with start_backend.bat / start_backend.sh,
+      // then press F5 here to launch the Flutter app with full debug support.
+      "name": "NFC Kasse App",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "cwd": "${workspaceFolder}/nfc_kasse_app"
+    }
+  ]
+}

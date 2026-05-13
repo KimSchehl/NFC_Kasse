@@ -1,0 +1,8 @@
+{
+  "recommendations": [
+    // Flutter/Dart — required for F5 launch, hot reload, and the debug toolbar
+    "dart-code.flutter",
+    // Python — syntax highlighting and IntelliSense for the FastAPI backend
+    "ms-python.python"
+  ]
+}

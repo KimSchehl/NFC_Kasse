@@ -1,0 +1,14 @@
+# Local configuration — contains SECRET_KEY, never commit this
+config.env
+
+# Backend
+backend/kasse.db
+backend/__pycache__/
+backend/**/__pycache__/
+backend/*.pyc
+backend/.pytest_cache/
+
+# Python virtual environments
+.venv/
+venv/
+env/

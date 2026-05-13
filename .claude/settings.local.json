@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\ks\\\\Documents\\\\KS\\\\GitHub_Repos\\\\NFC_Kasse\\\\Old_Project\\\\nfc-kasse-main\" -Recurse -File)",
+      "Bash(Select-Object FullName)",
+      "Bash(Format-Table -AutoSize)",
+      "Bash(pip install *)",
+      "Bash(flutter create *)",
+      "Bash(flutter pub *)",
+      "Bash(flutter analyze *)",
+      "Bash(python -m uvicorn main:app --reload)",
+      "Bash(python -m uvicorn --version)",
+      "Bash(python -c \"from schemas import CategoryCreate; import inspect; print\\(inspect.getsource\\(CategoryCreate\\)\\)\")",
+      "Bash(python -c \"import sqlite3; db=sqlite3.connect\\('kasse.db'\\); db.row_factory=sqlite3.Row; rows=db.execute\\('SELECT * FROM category'\\).fetchall\\(\\); [print\\(dict\\(r\\)\\) for r in rows]\")",
+      "Bash(curl -s *)",
+      "Bash(python -c \"import sqlite3; db=sqlite3.connect\\('kasse.db'\\); db.row_factory=sqlite3.Row; rows=db.execute\\('SELECT * FROM category'\\).fetchall\\(\\); print\\([dict\\(r\\) for r in rows]\\)\")",
+      "Bash(Get-Content \"C:\\\\Users\\\\ks\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-ks-Documents-KS-GitHub-Repos-NFC-Kasse\\\\0493c80c-dddf-4a7d-a50d-c75031f30f4b\\\\tasks\\\\b1xgj039g.output\" -Tail 30)"
+    ]
+  }
+}
