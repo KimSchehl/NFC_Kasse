@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/providers.dart';
 import '../widgets/app_sidebar.dart';
+import '../widgets/dialogs/update_dialog.dart';
 import 'account_screen.dart';
 import 'pos_screen.dart';
 import 'settings_screen.dart';
@@ -14,11 +15,37 @@ import 'users_screen.dart';
 /// On screens ≥ 600 px wide (tablets) the [AppSidebar] is always visible as a
 /// persistent rail. On narrower screens it collapses into a [Drawer] opened via
 /// the AppBar hamburger button.
-class MainShell extends ConsumerWidget {
+class MainShell extends ConsumerStatefulWidget {
   const MainShell({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MainShell> createState() => _MainShellState();
+}
+
+class _MainShellState extends ConsumerState<MainShell> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkForUpdate());
+  }
+
+  Future<void> _checkForUpdate() async {
+    if (!mounted) return;
+    final info = await ref.read(updateServiceProvider).checkForUpdate();
+    if (info != null && mounted) {
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => UpdateDialog(
+          info: info,
+          service: ref.read(updateServiceProvider),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final currentScreen = ref.watch(currentScreenProvider);
     final user = ref.watch(authProvider).valueOrNull;
 
@@ -43,7 +70,6 @@ class MainShell extends ConsumerWidget {
         final isWide = constraints.maxWidth >= 600;
 
         if (isWide) {
-          // Persistent side rail on tablets
           return Scaffold(
             body: Row(
               children: [
@@ -54,7 +80,6 @@ class MainShell extends ConsumerWidget {
             ),
           );
         } else {
-          // Drawer on phones
           return Scaffold(
             appBar: AppBar(
               title: Text(screenTitle),

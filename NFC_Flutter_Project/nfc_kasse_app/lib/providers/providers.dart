@@ -12,7 +12,9 @@ import '../services/auth_service.dart';
 import '../services/product_service.dart';
 import '../services/sales_service.dart';
 import '../services/stats_service.dart';
+import '../services/update_service.dart';
 import '../services/users_service.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 // ---------------------------------------------------------------------------
 // Infrastructure
@@ -55,6 +57,14 @@ final statsServiceProvider = Provider(
 );
 final usersServiceProvider = Provider(
   (ref) => UsersService(ref.watch(apiClientProvider)),
+);
+final updateServiceProvider = Provider(
+  (ref) => UpdateService(ref.watch(apiClientProvider).dio),
+);
+
+/// Current app version string (e.g. "1.0.0"), read from the device at runtime.
+final appVersionProvider = FutureProvider<String>(
+  (_) async => (await PackageInfo.fromPlatform()).version,
 );
 
 // ---------------------------------------------------------------------------

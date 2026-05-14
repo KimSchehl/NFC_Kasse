@@ -12,7 +12,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import auth, products, sales, stats, topup, users
+from routers import auth, products, sales, stats, topup, update, users
 
 app = FastAPI(
     title="NFC-Kasse API",
@@ -45,6 +45,7 @@ app.include_router(sales.router)
 app.include_router(topup.router)
 app.include_router(users.router)
 app.include_router(stats.router)
+app.include_router(update.router)
 
 
 # ---------------------------------------------------------------------------

@@ -2,8 +2,9 @@
     <uses-permission android:name="android.permission.NFC" />
     <uses-feature android:name="android.hardware.nfc" android:required="false" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <application
-        android:label="nfc_kasse_app"
+        android:label="NFC Kasse"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

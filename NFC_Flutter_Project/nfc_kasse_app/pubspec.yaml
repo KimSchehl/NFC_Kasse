@@ -1,6 +1,8 @@
 name: nfc_kasse_app
 description: NFC-based cashless POS system for events.
+publisher: "Kim Schehl"
 publish_to: 'none'
+# Major, Minor, Patch
 version: 1.0.0+1
 
 environment:
@@ -14,11 +16,23 @@ dependencies:
   flutter_secure_storage: ^9.2.2
   nfc_manager: ^3.3.0
   intl: ^0.19.0
+  package_info_plus: ^8.0.0
+  path_provider: ^2.1.0
+  open_file: ^3.3.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.3
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "lib/images/05-single-logo-yellow.png"
+  min_sdk_android: 21
+  adaptive_icon_background: "#000000"
+  adaptive_icon_foreground: "lib/images/05-single-logo-yellow.png"
 
 flutter:
   uses-material-design: true
