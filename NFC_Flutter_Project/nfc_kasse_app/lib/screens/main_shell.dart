@@ -75,7 +75,16 @@ class _MainShellState extends ConsumerState<MainShell> {
               children: [
                 const AppSidebar(),
                 const VerticalDivider(width: 1),
-                Expanded(child: body),
+                Expanded(
+                  child: Scaffold(
+                    appBar: AppBar(
+                      title: Text(screenTitle),
+                      centerTitle: false,
+                      automaticallyImplyLeading: false,
+                    ),
+                    body: body,
+                  ),
+                ),
               ],
             ),
           );
