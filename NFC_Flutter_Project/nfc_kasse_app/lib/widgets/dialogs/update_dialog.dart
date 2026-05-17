@@ -34,11 +34,18 @@ class _UpdateDialogState extends State<UpdateDialog> {
         },
       );
       if (mounted) Navigator.of(context).pop();
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
+        final msg = e.toString().toLowerCase();
+        final isPermission = msg.contains('permission') || msg.contains('denied');
         setState(() {
           _downloading = false;
-          _error = 'Download fehlgeschlagen. Bitte erneut versuchen.';
+          _error = isPermission
+              ? 'Installation blockiert.\n\n'
+                'Android-Einstellungen öffnen:\n'
+                'Apps → NFC Kasse → Unbekannte Apps installieren → Erlauben\n\n'
+                'Danach hier erneut tippen.'
+              : 'Fehler: $e';
         });
       }
     }

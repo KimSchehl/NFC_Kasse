@@ -98,6 +98,9 @@ def list_categories(
                 FROM category c
                 JOIN user_category_access uca ON uca.category_id = c.id
                 WHERE uca.user_id=? AND uca.event_id=? AND c.deleted=0
+                AND (uca.can_book=1 OR uca.can_storno_5min=1 OR uca.can_storno_unlimited=1
+                     OR uca.can_create_article=1 OR uca.can_edit_article=1
+                     OR uca.can_deactivate_article=1 OR uca.can_delete_article=1)
                 ORDER BY c.sort_order
                 """,
                 (user_id, event_id),

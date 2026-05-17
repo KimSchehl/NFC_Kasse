@@ -35,6 +35,7 @@ class UpdateService {
   }
 
   /// Downloads the APK and opens the system installer.
+  /// Throws an [Exception] if the download or the installer handoff fails.
   Future<void> downloadAndInstall(
     String downloadPath, {
     void Function(int received, int total)? onProgress,
@@ -42,13 +43,21 @@ class UpdateService {
     final dir = await getTemporaryDirectory();
     final savePath = '${dir.path}/nfc_kasse_update.apk';
 
+    // Override receiveTimeout: the default (15 s) is far too short for a
+    // ~50 MB APK. 10 minutes is a safe upper bound on a local WiFi network.
     await _dio.download(
       downloadPath,
       savePath,
       onReceiveProgress: onProgress,
+      options: Options(receiveTimeout: const Duration(minutes: 10)),
     );
 
-    await OpenFile.open(savePath);
+    // open_file never throws — it always returns an OpenResult.
+    // We must check the result ourselves and surface failures as exceptions.
+    final result = await OpenFile.open(savePath);
+    if (result.type != ResultType.done) {
+      throw Exception(result.message);
+    }
   }
 
   bool _isNewer(String server, String current) {
