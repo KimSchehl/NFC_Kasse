@@ -40,7 +40,11 @@ class UpdateService {
     String downloadPath, {
     void Function(int received, int total)? onProgress,
   }) async {
-    final dir = await getTemporaryDirectory();
+    // Prefer app-specific external storage: more accessible to the system
+    // package installer than the internal cache on many Android ROMs.
+    // Fall back to internal temp directory when external storage is unavailable.
+    final extDir = await getExternalStorageDirectory();
+    final dir = extDir ?? await getTemporaryDirectory();
     final savePath = '${dir.path}/nfc_kasse_update.apk';
 
     // Override receiveTimeout: the default (15 s) is far too short for a
@@ -52,9 +56,13 @@ class UpdateService {
       options: Options(receiveTimeout: const Duration(minutes: 10)),
     );
 
-    // open_file never throws — it always returns an OpenResult.
-    // We must check the result ourselves and surface failures as exceptions.
-    final result = await OpenFile.open(savePath);
+    // Explicit MIME type is required on many hardware devices: without it,
+    // open_file may fail to resolve the package-installer Activity and return
+    // ResultType.done silently without ever showing the install prompt.
+    final result = await OpenFile.open(
+      savePath,
+      type: 'application/vnd.android.package-archive',
+    );
     if (result.type != ResultType.done) {
       throw Exception(result.message);
     }
