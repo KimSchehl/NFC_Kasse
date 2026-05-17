@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from config import CHIP_DEPOSIT
 from database import get_db
 from dependencies import RequestContext, get_active_event, get_current_user
 from schemas import BalanceResponse, BookingRequest, BookingResponse, CancelResponse
@@ -30,18 +31,31 @@ def _is_manager(db, user_id: int, event_id: int) -> bool:
 def _get_or_create_customer(db, tenant_id: int, nfc_uid: str) -> tuple[int, bool]:
     """
     Returns (customer_id, is_new_customer).
-    Creates a new customer row if the NFC UID is unknown for this tenant.
+
+    is_new_customer=True when:
+    - the NFC UID has never been seen (brand new chip), OR
+    - is_available=1, meaning the chip was previously returned via payout
+      and is now being re-issued to a new guest.
+
+    In both cases the chip deposit should be applied to the first booking.
+    Sets is_available=0 immediately so concurrent scans of the same chip
+    cannot both be treated as new customers.
+
     Must be called within an EXCLUSIVE transaction.
     """
     row = db.execute(
-        "SELECT id FROM customer WHERE tenant_id=? AND nfc_uid=?",
+        "SELECT id, is_available FROM customer WHERE tenant_id=? AND nfc_uid=?",
         (tenant_id, nfc_uid),
     ).fetchone()
     if row:
-        return row["id"], False
+        is_new = bool(row["is_available"])  # 1 = chip returned, treat as new
+        if is_new:
+            db.execute("UPDATE customer SET is_available=0 WHERE id=?", (row["id"],))
+        return row["id"], is_new
 
+    # Brand new chip: create row and immediately mark as in use (is_available=0).
     cursor = db.execute(
-        "INSERT INTO customer (tenant_id, nfc_uid, balance) VALUES (?, ?, 0.0)",
+        "INSERT INTO customer (tenant_id, nfc_uid, balance, is_available) VALUES (?, ?, 0.0, 0)",
         (tenant_id, nfc_uid),
     )
     return cursor.lastrowid, True
@@ -60,13 +74,23 @@ def get_balance(
     tenant_id = current_user["tenant_id"]
     with get_db() as db:
         row = db.execute(
-            "SELECT balance FROM customer WHERE tenant_id=? AND nfc_uid=?",
+            "SELECT balance, is_available FROM customer WHERE tenant_id=? AND nfc_uid=?",
             (tenant_id, nfc_uid),
         ).fetchone()
 
     if row:
-        return BalanceResponse(nfc_uid=nfc_uid, balance=row["balance"], is_new_customer=False)
-    return BalanceResponse(nfc_uid=nfc_uid, balance=0.0, is_new_customer=True)
+        return BalanceResponse(
+            nfc_uid=nfc_uid,
+            balance=row["balance"],
+            is_new_customer=bool(row["is_available"]),
+            chip_deposit=CHIP_DEPOSIT,
+        )
+    return BalanceResponse(
+        nfc_uid=nfc_uid,
+        balance=0.0,
+        is_new_customer=True,
+        chip_deposit=CHIP_DEPOSIT,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -95,7 +119,7 @@ def create_booking(
         placeholders = ",".join("?" * len(unique_ids))
         products = db.execute(
             f"""
-            SELECT p.id, p.price, p.active, p.category_id, c.event_id
+            SELECT p.id, p.price, p.active, p.category_id, p.is_payout, c.event_id
             FROM product p
             JOIN category c ON p.category_id = c.id
             WHERE p.id IN ({placeholders}) AND p.deleted=0
@@ -112,9 +136,16 @@ def create_booking(
             if not p["active"]:
                 raise HTTPException(status_code=400, detail=f"Product {p['id']} is not available")
 
+        is_payout_booking = any(p["is_payout"] for p in products)
+        if is_payout_booking and len(body.product_ids) > 1:
+            raise HTTPException(
+                status_code=400,
+                detail="A payout booking must contain exactly one product",
+            )
+
         # Per-category booking permission check.
-        # Managers (any categories.* permission) bypass this check.
-        if not _is_manager(db, user_id, event_id):
+        # Managers (any categories.* permission) and payout bookings bypass this.
+        if not is_payout_booking and not _is_manager(db, user_id, event_id):
             unique_cat_ids = list(set(p["category_id"] for p in products))
             cat_placeholders = ",".join("?" * len(unique_cat_ids))
             authorized = db.execute(
@@ -131,20 +162,48 @@ def create_booking(
                     detail="No booking permission for one or more product categories",
                 )
 
-        # Build a price lookup keyed by ID, then sum over the full list (with
-        # repeats) so quantity is accounted for correctly.
-        product_map = {p["id"]: p["price"] for p in products}
-        total_price = sum(product_map[pid] for pid in body.product_ids)
-
         balance_row = db.execute(
             "SELECT balance FROM customer WHERE id=?", (customer_id,)
         ).fetchone()
         current_balance = balance_row["balance"]
 
+        # ---- Payout flow ------------------------------------------------
+        # Give back the full balance plus the chip deposit. Record the payout
+        # as a single sale row at the actual cash-out amount and mark the chip
+        # as available for re-issuance (is_available=1).
+        if is_payout_booking:
+            payout_amount = current_balance + CHIP_DEPOSIT
+            db.execute(
+                "UPDATE customer SET balance=0.0, is_available=1 WHERE id=?",
+                (customer_id,),
+            )
+            cursor = db.execute(
+                """
+                INSERT INTO sale (event_id, customer_id, product_id, price_at_sale, booked_by)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (event_id, customer_id, body.product_ids[0], payout_amount, user_id),
+            )
+            return BookingResponse(
+                success=True,
+                new_balance=0.0,
+                sale_ids=[cursor.lastrowid],
+                chip_deposit_refunded=CHIP_DEPOSIT,
+            )
+
+        # ---- Normal booking flow -----------------------------------------
+        # Build a price lookup keyed by ID, then sum over the full list (with
+        # repeats) so quantity is accounted for correctly.
+        product_map = {p["id"]: p["price"] for p in products}
+        total_price = sum(product_map[pid] for pid in body.product_ids)
+
+        # Deduct chip deposit on first issuance (new chip or returned chip).
+        chip_deposit_applied = CHIP_DEPOSIT if is_new else 0.0
+        new_balance = current_balance - total_price - chip_deposit_applied
+
         # Negative balances are allowed — the client guards against them with the
         # "Rest Guthaben" check, but we do not enforce it here so a manager can
         # override (e.g. vendor accepting cash debt at the stand).
-        new_balance = current_balance - total_price
         db.execute(
             "UPDATE customer SET balance=? WHERE id=?",
             (new_balance, customer_id),
@@ -161,7 +220,12 @@ def create_booking(
             )
             sale_ids.append(cursor.lastrowid)
 
-    return BookingResponse(success=True, new_balance=new_balance, sale_ids=sale_ids)
+        return BookingResponse(
+            success=True,
+            new_balance=new_balance,
+            sale_ids=sale_ids,
+            chip_deposit_applied=chip_deposit_applied,
+        )
 
 
 # ---------------------------------------------------------------------------

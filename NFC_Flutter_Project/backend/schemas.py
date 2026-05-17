@@ -144,12 +144,15 @@ class BookingResponse(BaseModel):
     success: bool
     new_balance: float
     sale_ids: list[int]
+    chip_deposit_applied: float = 0.0   # Pfand deducted on new-customer issuance
+    chip_deposit_refunded: float = 0.0  # Pfand returned on payout
 
 
 class BalanceResponse(BaseModel):
     nfc_uid: str
     balance: float
     is_new_customer: bool
+    chip_deposit: float = 0.0  # configured deposit amount (always present)
 
 
 class CancelResponse(BaseModel):

@@ -21,7 +21,7 @@ echo.
 :: ---- 1. Ensure config.env exists ----------------------------
 if not exist "config.env" (
     echo  [SETUP] config.env not found -- creating with defaults ...
-    powershell -NoProfile -Command "$k=[System.Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32)); Set-Content config.env -Encoding UTF8 -Value @('# NFC-Kasse Configuration','# Edit this file before starting the backend.','# Changes take effect on the next server start.','','# Network interface to bind to (0.0.0.0 = all interfaces).','HOST=0.0.0.0','','# Port the backend listens on.','PORT=8000','','# Secret used to sign login tokens (JWT).','# IMPORTANT: Change this before using with real data!',\"SECRET_KEY=`$k\")"
+    powershell -NoProfile -Command "$k=[System.Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32)); Set-Content config.env -Encoding UTF8 -Value @('# NFC-Kasse Configuration','# Edit this file before starting the backend.','# Changes take effect on the next server start.','','# Network interface to bind to (0.0.0.0 = all interfaces).','HOST=0.0.0.0','','# Port the backend listens on.','PORT=8000','','# Secret used to sign login tokens (JWT).','# IMPORTANT: Change this before using with real data!',\"SECRET_KEY=`$k\",'','# Chip deposit in EUR (e.g. 3.00 for 3 Euro).','# Deducted automatically on first chip issuance; refunded on payout.','# Set to 0 to disable deposit logic.','CHIP_DEPOSIT=3.00')"
     if errorlevel 1 (
         echo  [ERROR] Could not create config.env.
         pause

@@ -10,7 +10,10 @@ import 'dialogs/cancel_booking_dialog.dart';
 ///
 /// Responsibilities:
 /// - Displays cart items with remove buttons
+/// - Shows locked "Chip Pfand" deduction line when customer.isNew is true
+/// - Shows locked "Chip Pfand Rückgabe" line when a payout product is in cart
 /// - Shows "Gesamt" total and "Rest Guthaben" (balance after purchase, red if < 0)
+/// - For payout: shows "Auszahlungsbetrag" (balance + deposit) instead
 /// - Disables the Buchen button when the result would be a negative balance
 /// - Shows the "Letzte Buchung stornieren" button after a successful booking
 class CartPanel extends ConsumerWidget {
@@ -21,25 +24,32 @@ class CartPanel extends ConsumerWidget {
     final customer = ref.read(customerProvider);
     if (customer == null || cart.productIds.isEmpty) return;
 
+    final isPayout = ref.read(cartProvider).any((i) => i.product.isPayout);
+
     try {
       final svc = ref.read(salesServiceProvider);
       final result = await svc.book(customer.nfcUid, cart.productIds);
 
-      // Store for potential storno
-      final items = ref.read(cartProvider)
-          .map((i) => {'name': i.product.name, 'price': i.subtotal})
-          .toList();
-      ref.read(lastBookingProvider.notifier).state = {
-        'sale_ids': result['sale_ids'],
-        'items': items,
-        'total': cart.total,
-        'nfc_uid': customer.nfcUid,
-        'booked_at': DateTime.now().toIso8601String(),
-      };
-
-      // Update displayed balance
-      ref.read(customerProvider.notifier).state =
-          customer.withBalance((result['new_balance'] as num).toDouble());
+      if (isPayout) {
+        // Chip returned — clear customer and suppress storno button.
+        ref.read(customerProvider.notifier).state = null;
+        ref.read(lastBookingProvider.notifier).state = null;
+      } else {
+        // Store for potential storno
+        final items = ref.read(cartProvider)
+            .map((i) => {'name': i.product.name, 'price': i.subtotal})
+            .toList();
+        ref.read(lastBookingProvider.notifier).state = {
+          'sale_ids': result['sale_ids'],
+          'items': items,
+          'total': cart.total,
+          'nfc_uid': customer.nfcUid,
+          'booked_at': DateTime.now().toIso8601String(),
+        };
+        // Update displayed balance
+        ref.read(customerProvider.notifier).state =
+            customer.withBalance((result['new_balance'] as num).toDouble());
+      }
 
       cart.clear();
     } on Exception catch (e) {
@@ -68,13 +78,31 @@ class CartPanel extends ConsumerWidget {
     final lastBooking = ref.watch(lastBookingProvider);
     final theme = Theme.of(context);
 
-    final total = cart.total;
-    final restBalance = customer != null ? customer.balance - total : 0.0;
-    // Client-side balance guard: the server allows negative balances, but we
-    // disable Buchen when the result would go below 0 so staff can't
-    // accidentally overdraw a wristband. The button is re-enabled only after
-    // the guest tops up or the vendor removes items.
-    final canBook = items.isNotEmpty && customer != null && restBalance >= 0;
+    final chipDeposit = customer?.chipDeposit ?? 0.0;
+    final hasPayout = items.any((i) => i.product.isPayout);
+
+    // Show Pfand deduction only on new customer without payout product.
+    final showPfandDeduction = (customer?.isNew ?? false) && !hasPayout && chipDeposit > 0;
+    // Show Pfand refund whenever a payout product is in the cart.
+    final showPfandRefund = hasPayout && chipDeposit > 0;
+
+    // Effective total: for payout the customer receives balance + deposit;
+    // for normal bookings the Pfand deduction increases the cost.
+    final realTotal = cart.total;
+    final payoutTotal = customer != null ? customer.balance + chipDeposit : 0.0;
+    final adjustedTotal = hasPayout
+        ? payoutTotal
+        : realTotal + (showPfandDeduction ? chipDeposit : 0.0);
+
+    final restBalance = customer != null && !hasPayout
+        ? customer.balance - adjustedTotal
+        : 0.0;
+
+    // Client-side guard: disabled when balance would go negative.
+    // Payout is always allowed as long as a customer is loaded.
+    final canBook = items.isNotEmpty &&
+        customer != null &&
+        (hasPayout || restBalance >= 0);
 
     return Column(
       children: [
@@ -100,7 +128,7 @@ class CartPanel extends ConsumerWidget {
 
         // Items
         Expanded(
-          child: items.isEmpty
+          child: (items.isEmpty && !showPfandDeduction)
               ? Center(
                   child: Text(
                     'Bitte Artikel auswählen',
@@ -109,53 +137,69 @@ class CartPanel extends ConsumerWidget {
                     ),
                   ),
                 )
-              : ListView.builder(
-                  itemCount: items.length,
+              : ListView(
                   padding: const EdgeInsets.symmetric(vertical: 0),
-                  itemBuilder: (_, i) {
-                    final item = items[i];
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(item.product.name, style: theme.textTheme.titleMedium?.copyWith(fontSize: 20)),
-                                if (item.quantity > 1)
-                                  Text(
-                                    '${item.quantity}×  ${formatPrice(item.product.price)}',
-                                    style: theme.textTheme.bodyMedium,
-                                  ),
-                              ],
-                            ),
+                  children: [
+                    // Regular cart items
+                    ...items.map((item) => Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(item.product.name,
+                                        style: theme.textTheme.titleMedium?.copyWith(fontSize: 20)),
+                                    if (item.quantity > 1)
+                                      Text(
+                                        '${item.quantity}×  ${formatPrice(item.product.price)}',
+                                        style: theme.textTheme.bodyMedium,
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              Text(
+                                formatPrice(item.subtotal),
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w600,
+                                  color: item.product.isRefund ? Colors.green : null,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              InkWell(
+                                onTap: () =>
+                                    ref.read(cartProvider.notifier).removeItem(item.product.id),
+                                child: const Icon(Icons.close, size: 22),
+                              ),
+                            ],
                           ),
-                          Text(
-                            formatPrice(item.subtotal),
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w600,
-                              color: item.product.isRefund ? Colors.green : null,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          InkWell(
-                            onTap: () => ref
-                                .read(cartProvider.notifier)
-                                .removeItem(item.product.id),
-                            child: const Icon(Icons.close, size: 22),
-                          ),
-                        ],
+                        )),
+
+                    // Locked Pfand deduction (new customer)
+                    if (showPfandDeduction)
+                      _VirtualCartLine(
+                        label: 'Chip Pfand',
+                        amount: chipDeposit,
+                        color: theme.colorScheme.error,
                       ),
-                    );
-                  },
+
+                    // Locked Pfand refund (payout)
+                    if (showPfandRefund)
+                      _VirtualCartLine(
+                        label: 'Chip Pfand Rückgabe',
+                        amount: chipDeposit,
+                        color: Colors.green,
+                        isRefund: true,
+                      ),
+                  ],
                 ),
         ),
 
         // Totals
-        if (items.isNotEmpty) ...[
+        if (items.isNotEmpty || showPfandDeduction) ...[
           const Divider(height: 1),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -164,17 +208,24 @@ class CartPanel extends ConsumerWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Gesamt:', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
-                    Text(formatPrice(total), style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
+                    Text(
+                      hasPayout ? 'Auszahlungsbetrag:' : 'Gesamt:',
+                      style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                    Text(
+                      formatPrice(adjustedTotal.abs()),
+                      style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+                    ),
                   ],
                 ),
-                if (customer != null) ...[
+                if (customer != null && !hasPayout) ...[
                   const SizedBox(height: 4),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text('Rest Guthaben:',
-                          style: theme.textTheme.bodyLarge?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant)),
                       Text(
                         formatPrice(restBalance),
                         style: theme.textTheme.bodyLarge?.copyWith(
@@ -197,8 +248,8 @@ class CartPanel extends ConsumerWidget {
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
           child: FilledButton.icon(
             onPressed: canBook ? () => _book(context, ref) : null,
-            icon: const Icon(Icons.check, size: 22),
-            label: const Text('Buchen'),
+            icon: Icon(hasPayout ? Icons.payments_outlined : Icons.check, size: 22),
+            label: Text(hasPayout ? 'Auszahlen' : 'Buchen'),
             style: FilledButton.styleFrom(
               minimumSize: const Size(double.infinity, 56),
               textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
@@ -225,6 +276,56 @@ class CartPanel extends ConsumerWidget {
           ),
         const SizedBox(height: 4),
       ],
+    );
+  }
+}
+
+/// A locked, non-removable virtual line item shown for automatic Pfand
+/// deductions and refunds.
+class _VirtualCartLine extends StatelessWidget {
+  final String label;
+  final double amount;
+  final Color color;
+  final bool isRefund;
+
+  const _VirtualCartLine({
+    required this.label,
+    required this.amount,
+    required this.color,
+    this.isRefund = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Row(
+        children: [
+          Icon(Icons.lock_outline, size: 16, color: theme.colorScheme.onSurfaceVariant),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              label,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontSize: 16,
+                color: theme.colorScheme.onSurfaceVariant,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ),
+          Text(
+            '${isRefund ? '+' : ''}${formatPrice(isRefund ? amount : -amount)}',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+          // Spacer to align with the close-button column of regular items
+          const SizedBox(width: 30),
+        ],
+      ),
     );
   }
 }
