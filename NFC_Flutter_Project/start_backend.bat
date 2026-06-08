@@ -53,7 +53,7 @@ for /f "delims=" %%P in ('where python 2^>nul') do (
 ::   c) Not found -- install via winget
 echo  [SETUP] Python not found -- installing via winget ...
 echo  [SETUP] This may take a few minutes. Please wait.
-winget install -e --id Python.Python.3.13 --scope user --silent ^
+winget install -e --id Python.Python.3.13 --scope user ^
     --accept-package-agreements --accept-source-agreements
 if errorlevel 1 (
     echo.
@@ -93,8 +93,8 @@ echo  [OK] Python: !PYTHON!
 
 :: ---- 3. Install / update Python dependencies ----------------
 echo  [SETUP] Checking Python dependencies ...
-"!PYTHON!" -m pip install --quiet --upgrade pip 2>nul
-"!PYTHON!" -m pip install --quiet -r backend\requirements.txt
+"!PYTHON!" -m pip install --upgrade pip 2>nul
+"!PYTHON!" -m pip install -r backend\requirements.txt
 if errorlevel 1 (
     echo  [ERROR] Dependency installation failed.
     echo  Try running manually: !PYTHON! -m pip install -r backend\requirements.txt

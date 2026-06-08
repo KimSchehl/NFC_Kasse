@@ -17,10 +17,11 @@ class CustomerInfoPanel extends ConsumerWidget {
 
     if (customer == null) {
       return Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         child: Text(
-          'Bitte NFC-Chip scannen',
-          style: theme.textTheme.bodyMedium?.copyWith(
+          '-,-- €',
+          style: theme.textTheme.headlineMedium?.copyWith(
+            fontWeight: FontWeight.bold,
             color: theme.colorScheme.onSurfaceVariant,
           ),
         ),

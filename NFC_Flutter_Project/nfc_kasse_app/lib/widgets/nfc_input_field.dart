@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/providers.dart';
 import '../services/nfc_service.dart';
+import '../utils/formatters.dart';
 
 /// Text field that accepts NFC UIDs from two input paths:
 ///
@@ -25,11 +26,13 @@ class NfcInputField extends ConsumerStatefulWidget {
 
 class _NfcInputFieldState extends ConsumerState<NfcInputField> {
   final _controller = TextEditingController();
+  final _focusNode = FocusNode();
   bool _nfcAvailable = false;
 
   @override
   void initState() {
     super.initState();
+    _controller.addListener(() => setState(() {}));
     _initNfc();
   }
 
@@ -45,11 +48,15 @@ class _NfcInputFieldState extends ConsumerState<NfcInputField> {
     }
   }
 
+  void _clearField() {
+    _controller.clear();
+    ref.read(customerProvider.notifier).state = null;
+  }
+
   void _submit(String raw) {
-    final uid = raw.trim().toUpperCase();
-    if (uid.isEmpty) return;
-    // Keep the UID visible in the field until the next scan overwrites it.
-    // Strip any trailing whitespace/newlines from HID readers.
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return;
+    final uid = normalizeUid(trimmed) ?? trimmed.toUpperCase();
     _controller.text = uid;
     _controller.selection = TextSelection.collapsed(offset: uid.length);
     widget.onSubmit(uid);
@@ -66,6 +73,7 @@ class _NfcInputFieldState extends ConsumerState<NfcInputField> {
   void dispose() {
     if (_nfcAvailable) NfcService.stopSession();
     _controller.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
@@ -73,11 +81,16 @@ class _NfcInputFieldState extends ConsumerState<NfcInputField> {
   Widget build(BuildContext context) {
     // Clear the UID field whenever a booking completes.
     ref.listen(lastBookingProvider, (prev, next) {
-      if (next != null) _controller.clear();
+      if (next != null) {
+        _controller.clear();
+        _focusNode.requestFocus();
+      }
     });
 
     return TextField(
       controller: _controller,
+      focusNode: _focusNode,
+      autofocus: true,
       keyboardType: TextInputType.visiblePassword,
       textInputAction: TextInputAction.done,
       textCapitalization: TextCapitalization.characters,
@@ -89,10 +102,21 @@ class _NfcInputFieldState extends ConsumerState<NfcInputField> {
           _nfcAvailable ? Icons.nfc : Icons.usb,
           color: _nfcAvailable ? Theme.of(context).colorScheme.primary : null,
         ),
-        suffixIcon: IconButton(
-          icon: const Icon(Icons.send),
-          onPressed: () => _submit(_controller.text),
-          tooltip: 'Kunde laden',
+        suffixIcon: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_controller.text.isNotEmpty)
+              IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: _clearField,
+                tooltip: 'Feld leeren',
+              ),
+            IconButton(
+              icon: const Icon(Icons.send),
+              onPressed: () => _submit(_controller.text),
+              tooltip: 'Kunde laden',
+            ),
+          ],
         ),
       ),
       inputFormatters: [

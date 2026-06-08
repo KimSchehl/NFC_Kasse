@@ -46,9 +46,7 @@ class CartPanel extends ConsumerWidget {
           'nfc_uid': customer.nfcUid,
           'booked_at': DateTime.now().toIso8601String(),
         };
-        // Update displayed balance
-        ref.read(customerProvider.notifier).state =
-            customer.withBalance((result['new_balance'] as num).toDouble());
+        ref.read(customerProvider.notifier).state = null;
       }
 
       cart.clear();
@@ -243,38 +241,47 @@ class CartPanel extends ConsumerWidget {
           ),
         ],
 
-        // Book button
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: FilledButton.icon(
-            onPressed: canBook ? () => _book(context, ref) : null,
-            icon: Icon(hasPayout ? Icons.payments_outlined : Icons.check, size: 22),
-            label: Text(hasPayout ? 'Auszahlen' : 'Buchen'),
-            style: FilledButton.styleFrom(
-              minimumSize: const Size(double.infinity, 56),
-              textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-            ),
-          ),
-        ),
-
-        // Storno button
-        if (lastBooking != null)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            child: SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () => _storno(context),
-                icon: const Icon(Icons.undo, size: 18),
-                label: const Text('Letzte Buchung stornieren'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: theme.colorScheme.error,
-                  side: BorderSide(color: theme.colorScheme.error.withValues(alpha: 0.5)),
+        // Book + Storno buttons — wrapped in SafeArea so they stay above the
+        // system navigation bar on both phones and tablets.
+        SafeArea(
+          top: false,
+          left: false,
+          right: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: FilledButton.icon(
+                  onPressed: canBook ? () => _book(context, ref) : null,
+                  icon: Icon(hasPayout ? Icons.payments_outlined : Icons.check, size: 22),
+                  label: Text(hasPayout ? 'Auszahlen' : 'Buchen'),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 56),
+                    textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                  ),
                 ),
               ),
-            ),
+              if (lastBooking != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () => _storno(context),
+                      icon: const Icon(Icons.undo, size: 18),
+                      label: const Text('Letzte Buchung stornieren'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: theme.colorScheme.error,
+                        side: BorderSide(color: theme.colorScheme.error.withValues(alpha: 0.5)),
+                      ),
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 4),
+            ],
           ),
-        const SizedBox(height: 4),
+        ),
       ],
     );
   }

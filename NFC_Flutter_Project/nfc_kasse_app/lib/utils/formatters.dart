@@ -1,5 +1,52 @@
 import 'package:intl/intl.dart';
 
+/// Normalises any NFC UID format to uppercase colon-separated hex bytes.
+///
+/// Accepts three scanner output formats for the same physical tag:
+///   - Decimal (little-endian int):  "1040208355"
+///   - Hex without separators:       "00E351003E"  (leading 00 prefix stripped)
+///   - Formatted hex:                "E3:51:00:3E" (already canonical)
+///
+/// Returns null if the input cannot be parsed as a valid UID.
+String? normalizeUid(String input) {
+  final stripped = input.trim().replaceAll(RegExp(r'[:.\s\-]'), '');
+  if (stripped.isEmpty) return null;
+
+  String hexStr;
+
+  if (RegExp(r'^\d+$').hasMatch(stripped)) {
+    // Decimal input — bytes were encoded as a little-endian integer by the reader.
+    final decimal = int.tryParse(stripped);
+    if (decimal == null) return null;
+    final byteCount = decimal <= 0xFFFFFFFF ? 4 : decimal <= 0xFFFFFFFFFFFFFF ? 7 : null;
+    if (byteCount == null) return null;
+    final hex = decimal.toRadixString(16).padLeft(byteCount * 2, '0');
+    // Reverse bytes to recover big-endian UID order.
+    final bytes = <String>[];
+    for (int i = hex.length - 2; i >= 0; i -= 2) {
+      bytes.add(hex.substring(i, i + 2));
+    }
+    hexStr = bytes.join();
+  } else {
+    if (!RegExp(r'^[0-9a-fA-F]+$').hasMatch(stripped)) return null;
+    hexStr = stripped.toLowerCase();
+    if (hexStr.length.isOdd) hexStr = '0$hexStr';
+    // Some readers prepend a 00 byte — strip leading 00 pairs until a standard
+    // NFC UID length is reached (4, 7 or 10 bytes = 8, 14 or 20 hex chars).
+    const standard = [8, 14, 20];
+    while (!standard.contains(hexStr.length) && hexStr.length > 8 && hexStr.startsWith('00')) {
+      hexStr = hexStr.substring(2);
+    }
+  }
+
+  if (hexStr.length % 2 != 0) return null;
+  final result = <String>[];
+  for (int i = 0; i < hexStr.length; i += 2) {
+    result.add(hexStr.substring(i, i + 2).toUpperCase());
+  }
+  return result.join(':');
+}
+
 // NumberFormat.currency with a locale name needs bundled locale data
 // (intl package includes de_DE by default).
 final _currencyFmt = NumberFormat.currency(locale: 'de_DE', symbol: '€');
