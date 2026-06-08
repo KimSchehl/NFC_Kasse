@@ -17,7 +17,9 @@ import 'dialogs/cancel_booking_dialog.dart';
 /// - Disables the Buchen button when the result would be a negative balance
 /// - Shows the "Letzte Buchung stornieren" button after a successful booking
 class CartPanel extends ConsumerWidget {
-  const CartPanel({super.key});
+  final bool showHeader;
+
+  const CartPanel({super.key, this.showHeader = true});
 
   Future<void> _book(BuildContext context, WidgetRef ref) async {
     final cart = ref.read(cartProvider.notifier);
@@ -102,27 +104,47 @@ class CartPanel extends ConsumerWidget {
         customer != null &&
         (hasPayout || restBalance >= 0);
 
-    return Column(
+    final cartTextScale = ref.watch(cartTextScaleProvider);
+
+    return MediaQuery(
+      data: MediaQuery.of(context).copyWith(
+        textScaler: TextScaler.linear(cartTextScale),
+      ),
+      child: Column(
       children: [
-        // Header
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
-          color: theme.colorScheme.surfaceContainerHigh,
-          child: Row(
-            children: [
-              Text('Warenkorb', style: theme.textTheme.headlineSmall),
-              const Spacer(),
-              if (items.isNotEmpty)
-                TextButton(
-                  onPressed: () => ref.read(cartProvider.notifier).clear(),
-                  style: TextButton.styleFrom(
-                    textStyle: theme.textTheme.titleMedium,
+        // Header (hidden in narrow layout where the drag handle shows the title)
+        if (showHeader)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+            color: theme.colorScheme.surfaceContainerHigh,
+            child: Row(
+              children: [
+                Text('Warenkorb', style: theme.textTheme.headlineSmall),
+                const Spacer(),
+                if (items.isNotEmpty)
+                  TextButton(
+                    onPressed: () => ref.read(cartProvider.notifier).clear(),
+                    style: TextButton.styleFrom(
+                      textStyle: theme.textTheme.titleMedium,
+                    ),
+                    child: const Text('Leeren'),
                   ),
-                  child: const Text('Leeren'),
-                ),
-            ],
+              ],
+            ),
           ),
-        ),
+        // "Leeren" button when header is hidden (narrow layout)
+        if (!showHeader && items.isNotEmpty)
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: () => ref.read(cartProvider.notifier).clear(),
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                textStyle: theme.textTheme.titleMedium,
+              ),
+              child: const Text('Leeren'),
+            ),
+          ),
 
         // Items
         Expanded(
@@ -283,6 +305,7 @@ class CartPanel extends ConsumerWidget {
           ),
         ),
       ],
+      ),
     );
   }
 }

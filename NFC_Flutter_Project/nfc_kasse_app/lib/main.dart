@@ -11,16 +11,31 @@ import 'theme/app_theme.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Restore the server URL the user last entered, or fall back to the default.
   const storage = FlutterSecureStorage();
+
+  // Restore server URL.
   final savedUrl = await storage.read(key: 'server_url');
   final initialUrl = (savedUrl != null && savedUrl.isNotEmpty)
       ? savedUrl
       : ApiConfig.defaultBaseUrl;
 
+  // Restore display settings.
+  final textScaleStr = await storage.read(key: 'display_textScale');
+  final gridColumnsStr = await storage.read(key: 'display_gridColumns');
+  final cartTextScaleStr = await storage.read(key: 'display_cartTextScale');
+  final buttonMaxLinesStr = await storage.read(key: 'display_buttonMaxLines');
+  final initialTextScale = double.tryParse(textScaleStr ?? '') ?? 1.0;
+  final initialGridColumns = int.tryParse(gridColumnsStr ?? '') ?? 3;
+  final initialCartTextScale = double.tryParse(cartTextScaleStr ?? '') ?? 1.0;
+  final initialButtonMaxLines = int.tryParse(buttonMaxLinesStr ?? '') ?? 2;
+
   runApp(ProviderScope(
     overrides: [
       serverUrlProvider.overrideWith((ref) => initialUrl),
+      textScaleProvider.overrideWith((ref) => initialTextScale),
+      gridColumnsProvider.overrideWith((ref) => initialGridColumns),
+      cartTextScaleProvider.overrideWith((ref) => initialCartTextScale),
+      buttonMaxLinesProvider.overrideWith((ref) => initialButtonMaxLines),
     ],
     child: const NfcKasseApp(),
   ));
@@ -33,12 +48,19 @@ class NfcKasseApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final textScale = ref.watch(textScaleProvider);
     return MaterialApp(
       title: 'NFC Kasse',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
       themeMode: ThemeMode.system,
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(
+          textScaler: TextScaler.linear(textScale),
+        ),
+        child: child!,
+      ),
       home: const _AuthGate(),
     );
   }

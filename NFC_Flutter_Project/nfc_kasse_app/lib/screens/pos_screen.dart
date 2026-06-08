@@ -117,6 +117,11 @@ class _NarrowPosLayout extends ConsumerStatefulWidget {
 }
 
 class _NarrowPosLayoutState extends ConsumerState<_NarrowPosLayout> {
+  // Fraction of the available height given to the cart panel (0.15 – 0.80).
+  double _cartRatio = 0.45;
+
+  static const _handleHeight = 32.0;
+
   Future<void> _handleNfc(String uid) async {
     try {
       final svc = ref.read(salesServiceProvider);
@@ -130,40 +135,95 @@ class _NarrowPosLayoutState extends ConsumerState<_NarrowPosLayout> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        // Top half: NFC input + product grid
-        Expanded(
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-                child: Row(
-                  children: [
-                    Expanded(child: NfcInputField(onSubmit: _handleNfc)),
-                    const SizedBox(width: 8),
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 160),
-                      child: const CustomerInfoPanel(),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final available = constraints.maxHeight;
+        final cartH = ((available - _handleHeight) * _cartRatio)
+            .clamp(80.0, available - 120.0);
+        final topH = available - _handleHeight - cartH;
+
+        return Column(
+          children: [
+            // Top: NFC input + product grid
+            SizedBox(
+              height: topH,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                    child: Row(
+                      children: [
+                        Expanded(child: NfcInputField(onSubmit: _handleNfc)),
+                        const SizedBox(width: 8),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 160),
+                          child: const CustomerInfoPanel(),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
+                  if (widget.category != null)
+                    Expanded(child: ProductGrid(category: widget.category!))
+                  else
+                    const Expanded(
+                      child: Center(child: Text('Bitte eine Kategorie auswählen')),
+                    ),
+                ],
+              ),
+            ),
+
+            // Draggable divider — also shows the "Warenkorb" label
+            _DragHandle(
+              label: 'Warenkorb',
+              onDrag: (dy) => setState(() {
+                _cartRatio = (_cartRatio - dy / (available - _handleHeight))
+                    .clamp(0.15, 0.80);
+              }),
+            ),
+
+            // Bottom: cart (header hidden — label lives in the drag handle)
+            SizedBox(
+              height: cartH,
+              child: const CartPanel(showHeader: false),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _DragHandle extends StatelessWidget {
+  final void Function(double dy) onDrag;
+  final String? label;
+
+  const _DragHandle({required this.onDrag, this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onVerticalDragUpdate: (d) => onDrag(d.delta.dy),
+      child: Container(
+        height: _NarrowPosLayoutState._handleHeight,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        color: theme.colorScheme.surfaceContainerHigh,
+        child: Row(
+          children: [
+            if (label != null)
+              Text(
+                label!,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-              if (widget.category != null)
-                Expanded(child: ProductGrid(category: widget.category!))
-              else
-                const Expanded(
-                  child: Center(child: Text('Bitte eine Kategorie auswählen')),
-                ),
-            ],
-          ),
+            const Spacer(),
+            Icon(Icons.drag_handle, size: 20, color: theme.colorScheme.outline),
+          ],
         ),
-
-        const Divider(height: 1),
-
-        // Bottom half: cart always visible
-        const Expanded(child: CartPanel()),
-      ],
+      ),
     );
   }
 }

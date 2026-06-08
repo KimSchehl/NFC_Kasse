@@ -1,3 +1,26 @@
+class StatsPeriod {
+  final int id;
+  final String label;
+  final String startedAt;
+  final String? closedAt;
+
+  const StatsPeriod({
+    required this.id,
+    required this.label,
+    required this.startedAt,
+    this.closedAt,
+  });
+
+  bool get isOpen => closedAt == null;
+
+  factory StatsPeriod.fromJson(Map<String, dynamic> j) => StatsPeriod(
+        id: j['id'] as int,
+        label: j['label'] as String,
+        startedAt: j['started_at'] as String,
+        closedAt: j['closed_at'] as String?,
+      );
+}
+
 class CategoryRevenue {
   final String categoryName;
   final double revenue;

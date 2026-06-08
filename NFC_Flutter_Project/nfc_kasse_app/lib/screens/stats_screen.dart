@@ -5,15 +5,38 @@ import '../models/stats_models.dart';
 import '../providers/providers.dart';
 import '../utils/formatters.dart';
 
-// autoDispose — data is discarded when the screen is left, so it re-fetches
-// fresh data each time the user navigates back to the stats screen.
-final _statsProvider = FutureProvider.autoDispose<RevenueStats>((ref) async {
-  return ref.read(statsServiceProvider).getRevenue();
+// ---------------------------------------------------------------------------
+// File-level providers — autoDispose so data is fresh on each screen visit.
+// Each takes an optional period ID; null = no time filter (all time).
+// ---------------------------------------------------------------------------
+
+final _statsProvider = FutureProvider.autoDispose
+    .family<RevenueStats, int?>((ref, periodId) async {
+  return ref.read(statsServiceProvider).getRevenue(periodId: periodId);
 });
 
-final _txProvider = FutureProvider.autoDispose<List<TransactionItem>>((ref) async {
-  return ref.read(statsServiceProvider).getTransactions(limit: 50);
+final _txProvider = FutureProvider.autoDispose
+    .family<List<TransactionItem>, int?>((ref, periodId) async {
+  return ref.read(statsServiceProvider).getTransactions(limit: 200, periodId: periodId);
 });
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/// Formats a DB datetime string "YYYY-MM-DD HH:MM:SS" to "DD.MM. HH:MM".
+String _fmtDt(String dt) {
+  final parts = dt.split(' ');
+  if (parts.length != 2) return dt;
+  final d = parts[0].split('-');
+  final t = parts[1].split(':');
+  if (d.length != 3 || t.length < 2) return dt;
+  return '${d[2]}.${d[1]}. ${t[0]}:${t[1]}';
+}
+
+// ---------------------------------------------------------------------------
+// Screen
+// ---------------------------------------------------------------------------
 
 class StatsScreen extends ConsumerStatefulWidget {
   const StatsScreen({super.key});
@@ -26,10 +49,15 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tab;
 
+  List<StatsPeriod> _periods = [];
+  int? _selectedPeriodId; // null = "Alle Zeiten"
+  bool _loadingPeriods = true;
+
   @override
   void initState() {
     super.initState();
     _tab = TabController(length: 2, vsync: this);
+    _loadPeriods(autoSelect: true);
   }
 
   @override
@@ -38,29 +66,207 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
     super.dispose();
   }
 
+  Future<void> _loadPeriods({bool autoSelect = false}) async {
+    try {
+      final periods = await ref.read(statsServiceProvider).getPeriods();
+      if (!mounted) return;
+      setState(() {
+        _periods = periods;
+        _loadingPeriods = false;
+        if (autoSelect && periods.isNotEmpty) {
+          final current = periods.firstWhere(
+            (p) => p.isOpen,
+            orElse: () => periods.first,
+          );
+          _selectedPeriodId = current.id;
+        }
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingPeriods = false);
+    }
+  }
+
+  Future<void> _showCloseDialog() async {
+    final now = DateTime.now();
+    final defaultLabel =
+        '${now.day.toString().padLeft(2, '0')}.${now.month.toString().padLeft(2, '0')}. '
+        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')} Uhr';
+
+    final labelCtrl = TextEditingController(text: defaultLabel);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Tagesabschluss'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Aktuelle Periode beenden und eine neue starten?'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: labelCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Bezeichnung der neuen Periode',
+                border: OutlineInputBorder(),
+              ),
+              autofocus: true,
+              textCapitalization: TextCapitalization.sentences,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Abschließen'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    final label = labelCtrl.text.trim().isEmpty ? defaultLabel : labelCtrl.text.trim();
+    try {
+      final newPeriod = await ref.read(statsServiceProvider).closePeriod(label);
+      await _loadPeriods();
+      if (!mounted) return;
+      setState(() => _selectedPeriodId = newPeriod.id);
+      // Invalidate stats providers so they reload for the new period.
+      ref.invalidate(_statsProvider);
+      ref.invalidate(_txProvider);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Fehler: $e'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    }
+  }
+
+  String _periodLabel(StatsPeriod p) {
+    if (p.isOpen) return '${p.label} (aktiv seit ${_fmtDt(p.startedAt)})';
+    return '${p.label}  ${_fmtDt(p.startedAt)} – ${_fmtDt(p.closedAt!)}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final user = ref.watch(authProvider).valueOrNull;
+    final canClose = user?.hasPermission('statistics.revenue') ?? false;
 
     return Column(
       children: [
-        // Header
+        // ── Header: period selector + Tagesabschluss ──────────────────
         Container(
           color: theme.colorScheme.surfaceContainerHigh,
-          child: TabBar(
-            controller: _tab,
-            tabs: const [
-              Tab(icon: Icon(Icons.bar_chart), text: 'Übersicht'),
-              Tab(icon: Icon(Icons.receipt_long), text: 'Transaktionen'),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Row 1: period dropdown full width
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                child: _loadingPeriods
+                    ? const SizedBox(
+                        height: 36,
+                        child: Center(child: LinearProgressIndicator()),
+                      )
+                    : DropdownButton<int?>(
+                        value: _selectedPeriodId,
+                        isExpanded: true,
+                        isDense: true,
+                        underline: const SizedBox(),
+                        icon: const Icon(Icons.expand_more, size: 20),
+                        items: [
+                          const DropdownMenuItem<int?>(
+                            value: null,
+                            child: Text('Alle Zeiten'),
+                          ),
+                          ..._periods.map(
+                            (p) => DropdownMenuItem<int?>(
+                              value: p.id,
+                              child: Row(
+                                children: [
+                                  if (p.isOpen)
+                                    Container(
+                                      width: 8,
+                                      height: 8,
+                                      margin: const EdgeInsets.only(right: 8),
+                                      decoration: BoxDecoration(
+                                        color: theme.colorScheme.primary,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                  Expanded(
+                                    child: Text(
+                                      _periodLabel(p),
+                                      overflow: TextOverflow.ellipsis,
+                                      style: p.isOpen
+                                          ? TextStyle(
+                                              color: theme.colorScheme.primary,
+                                              fontWeight: FontWeight.w600,
+                                            )
+                                          : null,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                        onChanged: (v) {
+                          setState(() => _selectedPeriodId = v);
+                          ref.invalidate(_statsProvider(v));
+                          ref.invalidate(_txProvider(v));
+                        },
+                      ),
+              ),
+              // Row 2: Tagesabschluss button right-aligned
+              if (canClose)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 2, 12, 6),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton.icon(
+                      onPressed: _showCloseDialog,
+                      icon: const Icon(Icons.flag_outlined, size: 16),
+                      label: const Text('Tagesabschluss'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: theme.colorScheme.secondary,
+                        foregroundColor: theme.colorScheme.onSecondary,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
+                        textStyle: const TextStyle(fontSize: 13),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
+                  ),
+                ),
+              TabBar(
+                controller: _tab,
+                tabs: const [
+                  Tab(icon: Icon(Icons.bar_chart), text: 'Übersicht'),
+                  Tab(icon: Icon(Icons.receipt_long), text: 'Transaktionen'),
+                ],
+              ),
             ],
           ),
         ),
+
+        // ── Tab content ───────────────────────────────────────────────
         Expanded(
           child: TabBarView(
             controller: _tab,
-            children: const [
-              _RevenueTab(),
-              _TransactionsTab(),
+            children: [
+              _RevenueTab(periodId: _selectedPeriodId),
+              _TransactionsTab(periodId: _selectedPeriodId),
             ],
           ),
         ),
@@ -69,12 +275,17 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
   }
 }
 
+// ---------------------------------------------------------------------------
+// Tab: Übersicht
+// ---------------------------------------------------------------------------
+
 class _RevenueTab extends ConsumerWidget {
-  const _RevenueTab();
+  final int? periodId;
+  const _RevenueTab({this.periodId});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final statsAsync = ref.watch(_statsProvider);
+    final statsAsync = ref.watch(_statsProvider(periodId));
     final theme = Theme.of(context);
 
     return statsAsync.when(
@@ -85,7 +296,6 @@ class _RevenueTab extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Summary cards
             Row(
               children: [
                 Expanded(
@@ -110,7 +320,6 @@ class _RevenueTab extends ConsumerWidget {
             const SizedBox(height: 16),
             Text('Nach Kategorie', style: theme.textTheme.titleMedium),
             const SizedBox(height: 8),
-            // Category breakdown
             ...stats.byCategory.map((cat) => _CategoryRow(cat: cat)),
           ],
         ),
@@ -119,12 +328,17 @@ class _RevenueTab extends ConsumerWidget {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Tab: Transaktionen
+// ---------------------------------------------------------------------------
+
 class _TransactionsTab extends ConsumerWidget {
-  const _TransactionsTab();
+  final int? periodId;
+  const _TransactionsTab({this.periodId});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final txAsync = ref.watch(_txProvider);
+    final txAsync = ref.watch(_txProvider(periodId));
     final theme = Theme.of(context);
 
     return txAsync.when(
@@ -142,19 +356,38 @@ class _TransactionsTab extends ConsumerWidget {
                   dense: true,
                   leading: CircleAvatar(
                     radius: 16,
-                    backgroundColor: theme.colorScheme.secondaryContainer,
-                    child: Icon(Icons.receipt_outlined, size: 16,
-                        color: theme.colorScheme.onSecondaryContainer),
+                    backgroundColor: tx.cancelled
+                        ? theme.colorScheme.errorContainer
+                        : theme.colorScheme.secondaryContainer,
+                    child: Icon(
+                      tx.cancelled
+                          ? Icons.cancel_outlined
+                          : Icons.receipt_outlined,
+                      size: 16,
+                      color: tx.cancelled
+                          ? theme.colorScheme.onErrorContainer
+                          : theme.colorScheme.onSecondaryContainer,
+                    ),
                   ),
-                  title: Text(tx.productName),
+                  title: Text(
+                    tx.productName,
+                    style: tx.cancelled
+                        ? TextStyle(
+                            decoration: TextDecoration.lineThrough,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          )
+                        : null,
+                  ),
                   subtitle: Text('${tx.nfcUid}  ·  ${formatTime(tx.bookedAt)} Uhr'),
                   trailing: Text(
                     formatPrice(tx.priceAtSale),
                     style: TextStyle(
                       fontWeight: FontWeight.w600,
-                      color: tx.priceAtSale < 0
-                          ? theme.colorScheme.tertiary
-                          : theme.colorScheme.primary,
+                      color: tx.cancelled
+                          ? theme.colorScheme.onSurfaceVariant
+                          : tx.priceAtSale < 0
+                              ? theme.colorScheme.tertiary
+                              : theme.colorScheme.primary,
                     ),
                   ),
                 );
@@ -163,6 +396,10 @@ class _TransactionsTab extends ConsumerWidget {
     );
   }
 }
+
+// ---------------------------------------------------------------------------
+// Shared widgets
+// ---------------------------------------------------------------------------
 
 class _StatCard extends StatelessWidget {
   final String label;

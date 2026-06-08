@@ -13,6 +13,7 @@ class ProductModel {
   final bool active;
   final Color? color;
   final bool isPayout;
+  final bool excludeFromStats;
 
   const ProductModel({
     required this.id,
@@ -23,6 +24,7 @@ class ProductModel {
     required this.active,
     this.color,
     this.isPayout = false,
+    this.excludeFromStats = false,
   });
 
   factory ProductModel.fromJson(Map<String, dynamic> j) => ProductModel(
@@ -34,6 +36,7 @@ class ProductModel {
         active: j['active'] as bool? ?? true,
         color: _hexToColor(j['color'] as String?),
         isPayout: j['is_payout'] as bool? ?? false,
+        excludeFromStats: j['exclude_from_stats'] as bool? ?? false,
       );
 
   // Negative price = refund/topup (Pfand Rückgabe, Aufladen)
@@ -50,7 +53,7 @@ class ProductModel {
   /// [color] uses a sentinel default so callers can distinguish:
   ///   - omitting [color] → keep the existing color unchanged
   ///   - passing `color: null` → explicitly clear the color
-  ProductModel copyWith({String? name, double? price, bool? active, bool? isPayout, Object? color = _unset}) =>
+  ProductModel copyWith({String? name, double? price, bool? active, bool? isPayout, bool? excludeFromStats, Object? color = _unset}) =>
       ProductModel(
         id: id,
         name: name ?? this.name,
@@ -59,6 +62,7 @@ class ProductModel {
         sortOrder: sortOrder,
         active: active ?? this.active,
         isPayout: isPayout ?? this.isPayout,
+        excludeFromStats: excludeFromStats ?? this.excludeFromStats,
         color: color == _unset ? this.color : color as Color?,
       );
 

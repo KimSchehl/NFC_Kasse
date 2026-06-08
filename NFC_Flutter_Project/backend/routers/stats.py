@@ -1,5 +1,6 @@
 """
-Statistics router — revenue summaries, paginated transaction list, CSV export.
+Statistics router — revenue summaries, paginated transaction list, CSV export,
+and period management (Tagesabschluss).
 
 All endpoints require the corresponding `statistics.*` permission.
 Time filters use ISO-8601 strings compared directly against the SQLite
@@ -14,10 +15,22 @@ from fastapi.responses import StreamingResponse
 
 from database import get_db
 from dependencies import RequestContext, require_permission
-from schemas import CategoryRevenue, RevenueResponse, TransactionItem, TransactionListResponse
+from schemas import (
+    CategoryRevenue,
+    PeriodCloseRequest,
+    PeriodCloseResponse,
+    RevenueResponse,
+    StatsPeriodResponse,
+    TransactionItem,
+    TransactionListResponse,
+)
 
 router = APIRouter(prefix="/api/stats", tags=["statistics"])
 
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 def _build_time_filter(period_start: str | None, period_end: str | None) -> tuple[str, list]:
     """
@@ -38,21 +51,109 @@ def _build_time_filter(period_start: str | None, period_end: str | None) -> tupl
     return where, params
 
 
+def _resolve_time_filter(
+    db,
+    event_id: int,
+    period_id: int | None,
+    period_start: str | None,
+    period_end: str | None,
+) -> tuple[str, list]:
+    """
+    Returns a time-filter fragment + params.
+
+    Priority: period_id > manual period_start/period_end.
+    If period_id is given, its started_at/closed_at are used as bounds.
+    """
+    if period_id is not None:
+        row = db.execute(
+            "SELECT started_at, closed_at FROM stats_period WHERE id=? AND event_id=?",
+            (period_id, event_id),
+        ).fetchone()
+        if row:
+            clauses = ["s.booked_at >= ?"]
+            params = [row["started_at"]]
+            if row["closed_at"]:
+                clauses.append("s.booked_at <= ?")
+                params.append(row["closed_at"])
+            return " AND " + " AND ".join(clauses), params
+
+    return _build_time_filter(period_start, period_end)
+
+
+# ---------------------------------------------------------------------------
+# Period management
+# ---------------------------------------------------------------------------
+
+@router.get("/periods", response_model=list[StatsPeriodResponse])
+def list_periods(
+    ctx: RequestContext = Depends(require_permission("statistics.revenue")),
+):
+    event_id = ctx["event"]["id"]
+    with get_db() as db:
+        rows = db.execute(
+            """
+            SELECT id, label, started_at, closed_at
+            FROM stats_period
+            WHERE event_id=?
+            ORDER BY started_at DESC
+            """,
+            (event_id,),
+        ).fetchall()
+    return [StatsPeriodResponse(**dict(r)) for r in rows]
+
+
+@router.post("/periods/close", response_model=PeriodCloseResponse, status_code=201)
+def close_period(
+    body: PeriodCloseRequest,
+    ctx: RequestContext = Depends(require_permission("statistics.revenue")),
+):
+    """
+    Closes the current open period and immediately opens a new one.
+    The new period's label comes from the request body.
+    """
+    user_id = ctx["user"]["id"]
+    event_id = ctx["event"]["id"]
+
+    with get_db(exclusive=True) as db:
+        # Close any currently open period for this event.
+        db.execute(
+            "UPDATE stats_period SET closed_at = datetime('now') WHERE event_id=? AND closed_at IS NULL",
+            (event_id,),
+        )
+        # Open the new period.
+        cursor = db.execute(
+            "INSERT INTO stats_period (event_id, label, created_by) VALUES (?, ?, ?)",
+            (event_id, body.label, user_id),
+        )
+        new_id = cursor.lastrowid
+        new_row = db.execute(
+            "SELECT id, label, started_at, closed_at FROM stats_period WHERE id=?",
+            (new_id,),
+        ).fetchone()
+
+    return PeriodCloseResponse(new_period=StatsPeriodResponse(**dict(new_row)))
+
+
 # ---------------------------------------------------------------------------
 # Revenue summary
 # ---------------------------------------------------------------------------
 
 @router.get("/revenue", response_model=RevenueResponse)
 def get_revenue(
+    period_id: int | None = Query(None, description="Filter by saved period (overrides period_start/period_end)"),
     period_start: str | None = Query(None, description="ISO datetime, e.g. 2026-06-01T00:00:00"),
     period_end: str | None = Query(None, description="ISO datetime, e.g. 2026-06-01T23:59:59"),
     ctx: RequestContext = Depends(require_permission("statistics.revenue")),
 ):
     event_id = ctx["event"]["id"]
-    time_where, time_params = _build_time_filter(period_start, period_end)
 
     with get_db() as db:
-        # Revenue per category
+        time_where, time_params = _resolve_time_filter(
+            db, event_id, period_id, period_start, period_end
+        )
+
+        # Revenue per category — excludes payout articles and products marked
+        # exclude_from_stats (e.g. Pfand products, Aufladungs-Artikel).
         rows = db.execute(
             f"""
             SELECT c.name as category_name,
@@ -60,6 +161,7 @@ def get_revenue(
                    COUNT(s.id) as transaction_count
             FROM category c
             LEFT JOIN product p ON p.category_id = c.id
+                AND p.is_payout = 0 AND p.exclude_from_stats = 0
             LEFT JOIN sale s ON s.product_id = p.id
                 AND s.event_id=? AND s.cancelled=0 {time_where}
             WHERE c.event_id=? AND c.deleted=0
@@ -71,10 +173,13 @@ def get_revenue(
 
         total_row = db.execute(
             f"""
-            SELECT COALESCE(SUM(price_at_sale), 0) as total,
-                   COUNT(id) as count
+            SELECT COALESCE(SUM(s.price_at_sale), 0) as total,
+                   COUNT(s.id) as count
             FROM sale s
-            WHERE s.event_id=? AND s.cancelled=0 {time_where}
+            JOIN product p ON s.product_id = p.id
+            WHERE s.event_id=? AND s.cancelled=0
+                AND p.is_payout = 0 AND p.exclude_from_stats = 0
+                {time_where}
             """,
             [event_id, *time_params],
         ).fetchone()
@@ -94,6 +199,7 @@ def get_revenue(
 
 @router.get("/transactions", response_model=TransactionListResponse)
 def get_transactions(
+    period_id: int | None = Query(None),
     period_start: str | None = Query(None),
     period_end: str | None = Query(None),
     category_id: int | None = Query(None),
@@ -102,12 +208,15 @@ def get_transactions(
     ctx: RequestContext = Depends(require_permission("statistics.transactions")),
 ):
     event_id = ctx["event"]["id"]
-    time_where, time_params = _build_time_filter(period_start, period_end)
 
     category_where = "AND p.category_id = ?" if category_id else ""
     category_param = [category_id] if category_id else []
 
     with get_db() as db:
+        time_where, time_params = _resolve_time_filter(
+            db, event_id, period_id, period_start, period_end
+        )
+
         rows = db.execute(
             f"""
             SELECT s.id, s.booked_at, cu.nfc_uid, p.name as product_name,
@@ -156,14 +265,18 @@ def get_transactions(
 
 @router.get("/export")
 def export_transactions(
+    period_id: int | None = Query(None),
     period_start: str | None = Query(None),
     period_end: str | None = Query(None),
     ctx: RequestContext = Depends(require_permission("statistics.export")),
 ):
     event_id = ctx["event"]["id"]
-    time_where, time_params = _build_time_filter(period_start, period_end)
 
     with get_db() as db:
+        time_where, time_params = _resolve_time_filter(
+            db, event_id, period_id, period_start, period_end
+        )
+
         rows = db.execute(
             f"""
             SELECT s.id, s.booked_at, cu.nfc_uid, p.name as product_name,

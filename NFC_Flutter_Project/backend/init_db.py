@@ -144,7 +144,8 @@ def init_db():
         sort_order  INTEGER NOT NULL DEFAULT 0,
         active      INTEGER NOT NULL DEFAULT 1,  -- temporarily disable without deleting
         deleted     INTEGER NOT NULL DEFAULT 0,  -- soft-delete, keeps historical sales valid
-        is_payout   INTEGER NOT NULL DEFAULT 0,  -- marks article as full-balance payout
+        is_payout           INTEGER NOT NULL DEFAULT 0,  -- marks article as full-balance payout
+        exclude_from_stats  INTEGER NOT NULL DEFAULT 0,  -- exclude from revenue statistics
         created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
     )""")
 
@@ -271,6 +272,21 @@ def init_db():
         key         TEXT    NOT NULL,   -- e.g. 'grid_columns', 'theme'
         value       TEXT    NOT NULL,
         UNIQUE(user_id, event_id, key)
+    )""")
+
+    # ------------------------------------------------------------------
+    # STATS PERIOD — named time windows for the revenue statistics
+    # Each Tagesabschluss closes the current period and opens a new one.
+    # closed_at NULL = the period is still open / current.
+    # ------------------------------------------------------------------
+    c.execute("""
+    CREATE TABLE stats_period (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id    INTEGER NOT NULL REFERENCES event(id),
+        label       TEXT    NOT NULL,
+        started_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+        closed_at   TEXT,
+        created_by  INTEGER REFERENCES user(id)
     )""")
 
     # ------------------------------------------------------------------
@@ -412,6 +428,12 @@ def seed_default_data(conn):
         tmpl_id = c.lastrowid
         for p in perms:
             c.execute("INSERT INTO role_template_permission VALUES (?, ?)", (tmpl_id, p))
+
+    # Initial stats period — covers everything from DB creation onwards.
+    c.execute(
+        "INSERT INTO stats_period (event_id, label, created_by) VALUES (?, ?, ?)",
+        (event_id, "Start", admin_id)
+    )
 
     conn.commit()
     print(f"Tenant ID:  {tenant_id}")

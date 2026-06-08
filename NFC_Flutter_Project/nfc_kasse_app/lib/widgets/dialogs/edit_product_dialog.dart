@@ -49,6 +49,7 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
   late final TextEditingController _price;
   bool _active = true;
   bool _isPayout = false;
+  bool _excludeFromStats = false;
   Color? _color;
   bool _loading = false;
   String? _error;
@@ -64,6 +65,7 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
     );
     _active = widget.product?.active ?? true;
     _isPayout = widget.product?.isPayout ?? false;
+    _excludeFromStats = widget.product?.excludeFromStats ?? false;
     _color = widget.product?.color;
   }
 
@@ -103,6 +105,7 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
           categoryId: widget.categoryId,
           color: colorHex,
           isPayout: _isPayout,
+          excludeFromStats: _excludeFromStats,
         );
       } else {
         // Always send sendColor=true when editing so the user can explicitly
@@ -114,6 +117,7 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
           sendColor: true,
           color: colorHex,
           isPayout: _isPayout,
+          excludeFromStats: _excludeFromStats,
         );
         if (widget.product!.active != _active && widget.canDeactivate) {
           await svc.setActive(widget.product!.id, _active);
@@ -198,22 +202,30 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
               selected: _color,
               onChanged: (c) => setState(() => _color = c),
             ),
-            if (!isNew && widget.canDeactivate) ...[
-              const SizedBox(height: 4),
-              SwitchListTile(
+            const SizedBox(height: 4),
+            if (!isNew && widget.canDeactivate)
+              CheckboxListTile(
                 title: const Text('Aktiv (buchbar)'),
                 value: _active,
-                onChanged: (v) => setState(() => _active = v),
+                onChanged: (v) => setState(() => _active = v ?? _active),
                 contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
               ),
-            ],
-            const SizedBox(height: 4),
-            SwitchListTile(
+            CheckboxListTile(
               title: const Text('Auszahlungs-Artikel'),
               subtitle: const Text('Buchung zahlt Gesamtguthaben aus'),
               value: _isPayout,
-              onChanged: (v) => setState(() => _isPayout = v),
+              onChanged: (v) => setState(() => _isPayout = v ?? _isPayout),
               contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+            ),
+            CheckboxListTile(
+              title: const Text('Von Statistik ausschließen'),
+              subtitle: const Text('Nicht in Umsatzauswertung'),
+              value: _excludeFromStats,
+              onChanged: (v) => setState(() => _excludeFromStats = v ?? _excludeFromStats),
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
             ),
             if (_error != null) ...[
               const SizedBox(height: 8),

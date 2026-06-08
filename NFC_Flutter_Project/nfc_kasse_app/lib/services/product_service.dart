@@ -27,6 +27,7 @@ class ProductService {
     required int categoryId,
     String? color,
     bool isPayout = false,
+    bool excludeFromStats = false,
   }) async {
     final resp = await _client.dio.post('/api/products/', data: {
       'name': name,
@@ -34,6 +35,7 @@ class ProductService {
       'category_id': categoryId,
       'color': color,
       'is_payout': isPayout,
+      'exclude_from_stats': excludeFromStats,
     });
     return ProductModel.fromJson(resp.data as Map<String, dynamic>);
   }
@@ -52,6 +54,7 @@ class ProductService {
     bool sendColor = false,
     String? color,
     bool? isPayout,
+    bool? excludeFromStats,
   }) async {
     final data = <String, dynamic>{};
     if (name != null) data['name'] = name;
@@ -59,6 +62,7 @@ class ProductService {
     // sendColor=true means we explicitly set the color field (even if null = clear)
     if (sendColor) data['color'] = color;
     if (isPayout != null) data['is_payout'] = isPayout;
+    if (excludeFromStats != null) data['exclude_from_stats'] = excludeFromStats;
     final resp = await _client.dio.put('/api/products/$id', data: data);
     return ProductModel.fromJson(resp.data as Map<String, dynamic>);
   }

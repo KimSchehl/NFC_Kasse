@@ -59,11 +59,18 @@ class _Grid extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final tiles = [...products];
 
+    final gridColumns = ref.watch(gridColumnsProvider);
+    final textScale = ref.watch(textScaleProvider);
+    final buttonMaxLines = ref.watch(buttonMaxLinesProvider);
+
+    // Tile height grows with both text scale and number of allowed text lines.
+    final tileHeight = ((50 + 30 * buttonMaxLines) * textScale).clamp(70.0, 220.0);
+
     return GridView.builder(
       padding: const EdgeInsets.all(8),
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 160,
-        mainAxisExtent: 110,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: gridColumns,
+        mainAxisExtent: tileHeight,
         crossAxisSpacing: 6,
         mainAxisSpacing: 6,
       ),
@@ -78,6 +85,7 @@ class _Grid extends ConsumerWidget {
         return _ProductTile(
           product: product,
           editMode: editMode && category.canManageArticles,
+          maxLines: buttonMaxLines,
           onTap: () {
             if (editMode) {
               _openEditDialog(context, ref, product);
@@ -95,11 +103,13 @@ class _Grid extends ConsumerWidget {
 class _ProductTile extends StatelessWidget {
   final ProductModel product;
   final bool editMode;
+  final int maxLines;
   final VoidCallback onTap;
 
   const _ProductTile({
     required this.product,
     required this.editMode,
+    required this.maxLines,
     required this.onTap,
   });
 
@@ -147,6 +157,8 @@ class _ProductTile extends StatelessWidget {
                       child: Text(
                         product.name,
                         textAlign: TextAlign.center,
+                        maxLines: maxLines,
+                        overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.titleMedium?.copyWith(
                           fontSize: 20,
                           color: inactive

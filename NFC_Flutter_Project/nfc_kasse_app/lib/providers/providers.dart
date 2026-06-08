@@ -169,6 +169,12 @@ final selectedCategoryProvider = StateProvider<CategoryModel?>((ref) => null);
 
 final editModeProvider = StateProvider<bool>((ref) => false);
 
+// Display settings — persisted in secure storage, loaded in main().
+final textScaleProvider = StateProvider<double>((ref) => 1.0);
+final gridColumnsProvider = StateProvider<int>((ref) => 3);
+final cartTextScaleProvider = StateProvider<double>((ref) => 1.0);
+final buttonMaxLinesProvider = StateProvider<int>((ref) => 2);
+
 enum AppScreen { pos, stats, users, settings, account }
 
 final currentScreenProvider = StateProvider<AppScreen>((ref) => AppScreen.pos);

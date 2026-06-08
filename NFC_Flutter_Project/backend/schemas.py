@@ -101,6 +101,7 @@ class ProductResponse(BaseModel):
     active: bool
     color: str | None = None
     is_payout: bool = False
+    exclude_from_stats: bool = False
 
 
 class ProductCreate(BaseModel):
@@ -110,6 +111,7 @@ class ProductCreate(BaseModel):
     sort_order: int = 0
     color: str | None = None
     is_payout: bool = False
+    exclude_from_stats: bool = False
 
 
 class ProductUpdate(BaseModel):
@@ -118,6 +120,7 @@ class ProductUpdate(BaseModel):
     sort_order: int | None = None
     color: str | None = None  # explicitly sent None clears the color
     is_payout: bool | None = None
+    exclude_from_stats: bool | None = None
 
 
 class ProductActiveUpdate(BaseModel):
@@ -255,6 +258,25 @@ class RoleTemplateResponse(BaseModel):
     name: str
     description: str | None
     permission_ids: list[str]
+
+
+# ---------------------------------------------------------------------------
+# Statistics — Periods
+# ---------------------------------------------------------------------------
+
+class StatsPeriodResponse(BaseModel):
+    id: int
+    label: str
+    started_at: str
+    closed_at: str | None = None  # None = currently open period
+
+
+class PeriodCloseRequest(BaseModel):
+    label: str  # label for the NEW period being started
+
+
+class PeriodCloseResponse(BaseModel):
+    new_period: StatsPeriodResponse
 
 
 # ---------------------------------------------------------------------------

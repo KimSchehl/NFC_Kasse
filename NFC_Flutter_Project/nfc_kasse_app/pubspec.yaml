@@ -3,7 +3,7 @@ description: NFC-based cashless POS system for events.
 publisher: "Kim Schehl"
 publish_to: 'none'
 # Major, Minor, Patch
-version: 1.0.7+9
+version: 1.0.9+11
 
 environment:
   sdk: ^3.11.4
