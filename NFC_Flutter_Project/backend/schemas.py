@@ -311,3 +311,24 @@ class TransactionItem(BaseModel):
 class TransactionListResponse(BaseModel):
     items: list[TransactionItem]
     total: int
+
+
+# ---------------------------------------------------------------------------
+# Customers / Chips
+# ---------------------------------------------------------------------------
+
+class ChipResponse(BaseModel):
+    nfc_uid: str
+    balance: float
+    is_available: bool
+    last_booked_at: str | None = None
+    last_product_name: str | None = None
+
+
+class ChipSummaryResponse(BaseModel):
+    total_chips: int
+    active_chips: int       # is_available=0 — currently with a guest
+    total_balance: float    # sum of all balances
+    pending_pfand: float    # active_chips × CHIP_DEPOSIT
+    total_topup: float      # sum of positive topup rows for this event
+    total_payout: float     # sum of payout rows (abs) for this event

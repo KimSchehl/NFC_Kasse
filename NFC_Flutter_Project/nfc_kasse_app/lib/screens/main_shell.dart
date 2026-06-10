@@ -81,6 +81,7 @@ class _MainShellState extends ConsumerState<MainShell> {
                       title: Text(screenTitle),
                       centerTitle: false,
                       automaticallyImplyLeading: false,
+                      actions: [_ConnectionIndicator(), const SizedBox(width: 8)],
                     ),
                     body: body,
                   ),
@@ -93,12 +94,34 @@ class _MainShellState extends ConsumerState<MainShell> {
             appBar: AppBar(
               title: Text(screenTitle),
               centerTitle: false,
+              actions: [_ConnectionIndicator(), const SizedBox(width: 8)],
             ),
             drawer: const Drawer(child: AppSidebar()),
             body: body,
           );
         }
       },
+    );
+  }
+}
+
+class _ConnectionIndicator extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final status = ref.watch(connectionStatusProvider);
+    final theme = Theme.of(context);
+
+    final connected = status.valueOrNull ?? true;
+
+    return Tooltip(
+      message: connected ? 'Server erreichbar' : 'Keine Verbindung zum Server',
+      child: Icon(
+        connected ? Icons.wifi : Icons.wifi_off,
+        size: 20,
+        color: connected
+            ? theme.colorScheme.onSurface.withValues(alpha: 0.4)
+            : theme.colorScheme.error,
+      ),
     );
   }
 }

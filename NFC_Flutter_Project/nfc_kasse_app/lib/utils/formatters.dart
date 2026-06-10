@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:intl/intl.dart';
 
 /// Normalises any NFC UID format to uppercase colon-separated hex bytes.
@@ -105,4 +106,25 @@ String formatDateTime(String isoString) {
   } catch (_) {
     return isoString;
   }
+}
+
+/// Converts a Dio or generic exception into a user-friendly German message.
+String formatApiError(dynamic e) {
+  if (e is DioException) {
+    switch (e.type) {
+      case DioExceptionType.connectionTimeout:
+      case DioExceptionType.sendTimeout:
+      case DioExceptionType.receiveTimeout:
+        return 'Server antwortet nicht (Timeout)';
+      case DioExceptionType.connectionError:
+        return 'Keine Verbindung zum Server';
+      case DioExceptionType.badResponse:
+        final detail = e.response?.data?['detail'];
+        if (detail is String && detail.isNotEmpty) return detail;
+        return 'Serverfehler (${e.response?.statusCode})';
+      default:
+        return 'Verbindungsfehler';
+    }
+  }
+  return e.toString();
 }

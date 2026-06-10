@@ -1,5 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'dart:async';
+
+import 'package:dio/dio.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+
 import '../config/api_config.dart';
 import '../services/app_storage.dart';
 import '../models/cart_item.dart';
@@ -9,12 +14,12 @@ import '../models/product_model.dart';
 import '../models/user_model.dart';
 import '../services/api_client.dart';
 import '../services/auth_service.dart';
+import '../services/customer_service.dart';
 import '../services/product_service.dart';
 import '../services/sales_service.dart';
 import '../services/stats_service.dart';
 import '../services/update_service.dart';
 import '../services/users_service.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 
 // ---------------------------------------------------------------------------
 // Infrastructure
@@ -62,6 +67,40 @@ final usersServiceProvider = Provider(
 final updateServiceProvider = Provider(
   (ref) => UpdateService(ref.watch(apiClientProvider).dio),
 );
+final customerServiceProvider = Provider(
+  (ref) => CustomerService(ref.watch(apiClientProvider)),
+);
+
+/// Polls /health every 10 seconds and emits true/false.
+/// Restarts automatically when the server URL changes.
+final connectionStatusProvider = StreamProvider<bool>((ref) {
+  final client = ref.watch(apiClientProvider);
+  final controller = StreamController<bool>.broadcast();
+
+  Future<void> poll() async {
+    while (!controller.isClosed) {
+      bool ok;
+      try {
+        await client.dio.get(
+          '/health',
+          options: Options(
+            sendTimeout: const Duration(seconds: 3),
+            receiveTimeout: const Duration(seconds: 3),
+          ),
+        );
+        ok = true;
+      } catch (_) {
+        ok = false;
+      }
+      if (!controller.isClosed) controller.add(ok);
+      await Future.delayed(const Duration(seconds: 10));
+    }
+  }
+
+  poll();
+  ref.onDispose(controller.close);
+  return controller.stream;
+});
 
 /// Current app version string (e.g. "1.0.0"), read from the device at runtime.
 final appVersionProvider = FutureProvider<String>(

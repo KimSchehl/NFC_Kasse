@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/chip_models.dart';
 import '../models/stats_models.dart';
 import '../providers/providers.dart';
 import '../utils/formatters.dart';
@@ -18,6 +19,14 @@ final _statsProvider = FutureProvider.autoDispose
 final _txProvider = FutureProvider.autoDispose
     .family<List<TransactionItem>, int?>((ref, periodId) async {
   return ref.read(statsServiceProvider).getTransactions(limit: 200, periodId: periodId);
+});
+
+final _chipsProvider = FutureProvider.autoDispose<List<ChipModel>>((ref) async {
+  return ref.read(customerServiceProvider).getChips();
+});
+
+final _chipSummaryProvider = FutureProvider.autoDispose<ChipSummary>((ref) async {
+  return ref.read(customerServiceProvider).getSummary();
 });
 
 // ---------------------------------------------------------------------------
@@ -56,7 +65,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 2, vsync: this);
+    _tab = TabController(length: 3, vsync: this);
     _loadPeriods(autoSelect: true);
   }
 
@@ -81,8 +90,13 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
           _selectedPeriodId = current.id;
         }
       });
-    } catch (_) {
-      if (mounted) setState(() => _loadingPeriods = false);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loadingPeriods = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Perioden konnten nicht geladen werden: ${formatApiError(e)}'),
+        backgroundColor: Theme.of(context).colorScheme.error,
+      ));
     }
   }
 
@@ -359,6 +373,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
                 tabs: const [
                   Tab(icon: Icon(Icons.bar_chart), text: 'Übersicht'),
                   Tab(icon: Icon(Icons.receipt_long), text: 'Transaktionen'),
+                  Tab(icon: Icon(Icons.contactless), text: 'Chips'),
                 ],
               ),
             ],
@@ -372,6 +387,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
             children: [
               _RevenueTab(periodId: _selectedPeriodId),
               _TransactionsTab(periodId: _selectedPeriodId),
+              const _ChipsTab(),
             ],
           ),
         ),
@@ -395,7 +411,7 @@ class _RevenueTab extends ConsumerWidget {
 
     return statsAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('Fehler: $e')),
+      error: (e, _) => Center(child: Text('Fehler: ${formatApiError(e)}')),
       data: (stats) => SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -448,7 +464,7 @@ class _TransactionsTab extends ConsumerWidget {
 
     return txAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('Fehler: $e')),
+      error: (e, _) => Center(child: Text('Fehler: ${formatApiError(e)}')),
       data: (transactions) => transactions.isEmpty
           ? const Center(child: Text('Keine Transaktionen'))
           : ListView.separated(
@@ -570,6 +586,204 @@ class _CategoryRow extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tab: Chips
+// ---------------------------------------------------------------------------
+
+class _ChipsTab extends ConsumerStatefulWidget {
+  const _ChipsTab();
+
+  @override
+  ConsumerState<_ChipsTab> createState() => _ChipsTabState();
+}
+
+class _ChipsTabState extends ConsumerState<_ChipsTab> {
+  final _search = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final summaryAsync = ref.watch(_chipSummaryProvider);
+    final chipsAsync = ref.watch(_chipsProvider);
+    final theme = Theme.of(context);
+
+    return Column(
+      children: [
+        // ── Bilanz-Karten ──────────────────────────────────────────────
+        summaryAsync.when(
+          loading: () => const LinearProgressIndicator(),
+          error: (e, _) => Padding(
+            padding: const EdgeInsets.all(12),
+            child: Text('Fehler: ${formatApiError(e)}',
+                style: TextStyle(color: theme.colorScheme.error)),
+          ),
+          data: (s) => Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+            child: Column(
+              children: [
+                Row(children: [
+                  Expanded(
+                    child: _StatCard(
+                      label: 'Aktive Chips',
+                      value: '${s.activeChips} / ${s.totalChips}',
+                      icon: Icons.contactless,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _StatCard(
+                      label: 'Guthaben gesamt',
+                      value: formatPrice(s.totalBalance),
+                      icon: Icons.account_balance_wallet_outlined,
+                      color: theme.colorScheme.secondary,
+                    ),
+                  ),
+                ]),
+                const SizedBox(height: 10),
+                Row(children: [
+                  Expanded(
+                    child: _StatCard(
+                      label: 'Pfand ausstehend',
+                      value: formatPrice(s.pendingPfand),
+                      icon: Icons.lock_outline,
+                      color: theme.colorScheme.tertiary,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _StatCard(
+                      label: 'Aufgeladen',
+                      value: formatPrice(s.totalTopup),
+                      icon: Icons.add_card_outlined,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                ]),
+              ],
+            ),
+          ),
+        ),
+
+        // ── Suchfeld ──────────────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          child: TextField(
+            controller: _search,
+            decoration: InputDecoration(
+              hintText: 'Chip-UID suchen …',
+              prefixIcon: const Icon(Icons.search, size: 20),
+              isDense: true,
+              border: const OutlineInputBorder(),
+              suffixIcon: _query.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear, size: 18),
+                      onPressed: () => setState(() {
+                        _search.clear();
+                        _query = '';
+                      }),
+                    )
+                  : null,
+            ),
+            onChanged: (v) => setState(() => _query = v.trim().toUpperCase()),
+          ),
+        ),
+
+        // ── Chip-Liste ─────────────────────────────────────────────────
+        Expanded(
+          child: chipsAsync.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, _) => Center(
+                child: Text('Fehler: ${formatApiError(e)}',
+                    style: TextStyle(color: theme.colorScheme.error))),
+            data: (chips) {
+              final filtered = _query.isEmpty
+                  ? chips
+                  : chips
+                      .where((c) => c.nfcUid.contains(_query))
+                      .toList();
+
+              if (filtered.isEmpty) {
+                return const Center(child: Text('Keine Chips gefunden'));
+              }
+
+              return ListView.separated(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                itemCount: filtered.length,
+                separatorBuilder: (_, _) =>
+                    const Divider(height: 1, indent: 56),
+                itemBuilder: (_, i) {
+                  final chip = filtered[i];
+                  final isActive = chip.isActive;
+                  return ListTile(
+                    dense: true,
+                    leading: CircleAvatar(
+                      radius: 18,
+                      backgroundColor: isActive
+                          ? theme.colorScheme.primaryContainer
+                          : theme.colorScheme.surfaceContainerHigh,
+                      child: Icon(
+                        Icons.contactless,
+                        size: 18,
+                        color: isActive
+                            ? theme.colorScheme.onPrimaryContainer
+                            : theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    title: Text(
+                      chip.nfcUid,
+                      style: const TextStyle(
+                          fontFamily: 'monospace', fontSize: 13),
+                    ),
+                    subtitle: chip.lastProductName != null
+                        ? Text(
+                            '${chip.lastProductName}'
+                            '${chip.lastBookedAt != null ? '  ·  ${formatDateTime(chip.lastBookedAt!)}' : ''}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          )
+                        : const Text('Noch keine Buchung'),
+                    trailing: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          formatPrice(chip.balance),
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: chip.balance > 0
+                                ? theme.colorScheme.primary
+                                : theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        Text(
+                          isActive ? 'Aktiv' : 'Frei',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: isActive
+                                ? theme.colorScheme.primary
+                                : theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }

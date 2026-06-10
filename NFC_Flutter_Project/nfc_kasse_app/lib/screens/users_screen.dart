@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/user_model.dart';
 import '../providers/providers.dart';
+import '../utils/formatters.dart';
 import '../widgets/dialogs/edit_user_dialog.dart';
 
 final _usersListProvider = FutureProvider.autoDispose<List<UserListItem>>((ref) {
@@ -40,7 +41,7 @@ class UsersScreen extends ConsumerWidget {
         Expanded(
           child: usersAsync.when(
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => Center(child: Text('Fehler: $e')),
+            error: (e, _) => Center(child: Text('Fehler: ${formatApiError(e)}')),
             data: (users) => users.isEmpty
                 ? const Center(child: Text('Keine Benutzer'))
                 : ListView.separated(

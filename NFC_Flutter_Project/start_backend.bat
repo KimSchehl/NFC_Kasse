@@ -134,6 +134,13 @@ if not exist "kasse.db" (
     echo.
 ) else (
     echo  [OK] kasse.db found.
+    :: ---- Automatisches Backup ----------------------------------------
+    if not exist "backups" mkdir "backups"
+    for /f "usebackq" %%t in (`powershell -NoProfile -Command "Get-Date -Format 'yyyyMMdd-HHmm'"`) do set "TS=%%t"
+    copy /y "kasse.db" "backups\kasse_!TS!.db" >nul
+    echo  [BACKUP] backups\kasse_!TS!.db
+    :: Nur die 5 neuesten Backups behalten
+    for /f "usebackq skip=5 delims=" %%f in (`powershell -NoProfile -Command "Get-ChildItem 'backups\kasse_*.db' | Sort-Object LastWriteTime -Descending | Select-Object -ExpandProperty Name"`) do del "backups\%%f" >nul 2>&1
 )
 cd ..
 

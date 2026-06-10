@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/providers.dart';
+import '../utils/formatters.dart';
 
 /// Unauthenticated entry point. Submits credentials to [authProvider.login].
 /// Shows a loading spinner on the button while the request is in flight and
@@ -114,7 +115,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Text(
-                      auth.error.toString(),
+                      formatApiError(auth.error),
                       style: TextStyle(color: theme.colorScheme.error),
                       textAlign: TextAlign.center,
                     ),
