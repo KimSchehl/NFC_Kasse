@@ -25,6 +25,17 @@ class StatsService {
     );
   }
 
+  /// Tagesabschluss + alle Chip-Guthaben auf 0 zurücksetzen.
+  Future<StatsPeriod> eventReset(String label) async {
+    final resp = await _client.dio.post(
+      '/api/stats/event-reset',
+      data: {'label': label},
+    );
+    return StatsPeriod.fromJson(
+      resp.data['new_period'] as Map<String, dynamic>,
+    );
+  }
+
   Future<RevenueStats> getRevenue({int? periodId, String? from, String? to}) async {
     final params = <String, dynamic>{};
     if (periodId != null) params['period_id'] = periodId;

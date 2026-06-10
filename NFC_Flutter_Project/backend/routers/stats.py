@@ -134,6 +134,51 @@ def close_period(
     return PeriodCloseResponse(new_period=StatsPeriodResponse(**dict(new_row)))
 
 
+@router.post("/event-reset", response_model=PeriodCloseResponse, status_code=201)
+def event_reset(
+    body: PeriodCloseRequest,
+    ctx: RequestContext = Depends(require_permission("statistics.revenue")),
+):
+    """
+    Neues Event vorbereiten: Tagesabschluss + Kunden-Reset.
+
+    1. Schließt die aktuelle Periode und öffnet eine neue.
+    2. Setzt alle Chip-Guthaben auf 0 und markiert alle Chips als
+       'verfügbar für Neuausgabe' (is_available=1), sodass der nächste
+       Scan eines Chips als neuer Kunde behandelt wird (inkl. Pfand).
+
+    Artikel, Benutzer und der komplette Buchungsverlauf bleiben erhalten.
+    """
+    user_id = ctx["user"]["id"]
+    event_id = ctx["event"]["id"]
+    tenant_id = ctx["user"]["tenant_id"]
+
+    with get_db(exclusive=True) as db:
+        # Tagesabschluss
+        db.execute(
+            "UPDATE stats_period SET closed_at = datetime('now') WHERE event_id=? AND closed_at IS NULL",
+            (event_id,),
+        )
+        cursor = db.execute(
+            "INSERT INTO stats_period (event_id, label, created_by) VALUES (?, ?, ?)",
+            (event_id, body.label, user_id),
+        )
+        new_id = cursor.lastrowid
+        new_row = db.execute(
+            "SELECT id, label, started_at, closed_at FROM stats_period WHERE id=?",
+            (new_id,),
+        ).fetchone()
+
+        # Alle Kunden zurücksetzen: Guthaben = 0, als neu markieren.
+        # is_available=1 bewirkt beim nächsten Scan: neuer Kunde + Pfand wird erneut erhoben.
+        db.execute(
+            "UPDATE customer SET balance = 0.0, is_available = 1 WHERE tenant_id = ?",
+            (tenant_id,),
+        )
+
+    return PeriodCloseResponse(new_period=StatsPeriodResponse(**dict(new_row)))
+
+
 # ---------------------------------------------------------------------------
 # Revenue summary
 # ---------------------------------------------------------------------------

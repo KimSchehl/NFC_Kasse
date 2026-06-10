@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import '../providers/providers.dart';
 
@@ -65,6 +66,8 @@ class _UeberTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final serverUrl = ref.watch(serverUrlProvider);
+    final downloadUrl = '$serverUrl/download';
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -75,7 +78,7 @@ class _UeberTab extends ConsumerWidget {
               ListTile(
                 leading: const Icon(Icons.dns_outlined),
                 title: const Text('Server'),
-                subtitle: Text(ref.watch(serverUrlProvider)),
+                subtitle: Text(serverUrl),
               ),
               const Divider(height: 1),
               ListTile(
@@ -119,6 +122,48 @@ class _UeberTab extends ConsumerWidget {
             },
           ),
         ),
+        const SizedBox(height: 32),
+        Column(
+          children: [
+            Text(
+              'App auf neuem Gerät installieren',
+              style: theme.textTheme.titleSmall?.copyWith(
+                color: theme.colorScheme.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'QR-Code scannen → APK herunterladen',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.all(12),
+              child: QrImageView(
+                data: downloadUrl,
+                version: QrVersions.auto,
+                size: 180,
+                backgroundColor: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              downloadUrl,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
       ],
     );
   }

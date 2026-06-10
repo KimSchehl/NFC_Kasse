@@ -48,6 +48,7 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
   late final TextEditingController _name;
   late final TextEditingController _price;
   bool _active = true;
+  bool _isTopup = false;
   bool _isPayout = false;
   bool _excludeFromStats = false;
   Color? _color;
@@ -59,14 +60,17 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
   @override
   void initState() {
     super.initState();
-    _name = TextEditingController(text: widget.product?.name ?? '');
+    final p = widget.product;
+    // Detect topup: negative price + excludeFromStats + not a payout article
+    _isTopup = p != null && p.price < 0 && p.excludeFromStats && !p.isPayout;
+    _name = TextEditingController(text: p?.name ?? '');
     _price = TextEditingController(
-      text: widget.product != null ? widget.product!.price.toStringAsFixed(2) : '',
+      text: p != null ? (_isTopup ? p.price.abs() : p.price).toStringAsFixed(2) : '',
     );
-    _active = widget.product?.active ?? true;
-    _isPayout = widget.product?.isPayout ?? false;
-    _excludeFromStats = widget.product?.excludeFromStats ?? false;
-    _color = widget.product?.color;
+    _active = p?.active ?? true;
+    _isPayout = p?.isPayout ?? false;
+    _excludeFromStats = p?.excludeFromStats ?? false;
+    _color = p?.color;
   }
 
   @override
@@ -85,10 +89,17 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
       setState(() => _error = 'Name darf nicht leer sein');
       return;
     }
-    if (price == null) {
-      setState(() => _error = 'Ungültiger Preis (Beispiel: 3.50 oder -2.00)');
+    if (price == null || (_isTopup && price <= 0)) {
+      setState(() => _error = _isTopup
+          ? 'Ungültiger Betrag (Beispiel: 20.00)'
+          : 'Ungültiger Preis (Beispiel: 3.50 oder -2.00)');
       return;
     }
+
+    // Topup articles are stored with a negative price and excluded from stats.
+    final savedPrice = _isTopup ? -price.abs() : price;
+    final savedExcludeFromStats = _isTopup ? true : _excludeFromStats;
+    final savedIsPayout = _isTopup ? false : _isPayout;
 
     setState(() {
       _loading = true;
@@ -101,11 +112,11 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
       if (isNew) {
         await svc.createProduct(
           name: name,
-          price: price,
+          price: savedPrice,
           categoryId: widget.categoryId,
           color: colorHex,
-          isPayout: _isPayout,
-          excludeFromStats: _excludeFromStats,
+          isPayout: savedIsPayout,
+          excludeFromStats: savedExcludeFromStats,
         );
       } else {
         // Always send sendColor=true when editing so the user can explicitly
@@ -113,11 +124,11 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
         await svc.updateProduct(
           widget.product!.id,
           name: name,
-          price: price,
+          price: savedPrice,
           sendColor: true,
           color: colorHex,
-          isPayout: _isPayout,
-          excludeFromStats: _excludeFromStats,
+          isPayout: savedIsPayout,
+          excludeFromStats: savedExcludeFromStats,
         );
         if (widget.product!.active != _active && widget.canDeactivate) {
           await svc.setActive(widget.product!.id, _active);
@@ -189,11 +200,16 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
             const SizedBox(height: 12),
             TextField(
               controller: _price,
-              decoration: const InputDecoration(
-                labelText: 'Preis (€)',
-                helperText: 'Negativ für Rückgabe/Aufladen, z.B. -2.00',
+              decoration: InputDecoration(
+                labelText: _isTopup ? 'Auflade-Betrag (€)' : 'Preis (€)',
+                helperText: _isTopup
+                    ? 'Positiver Betrag, der dem Guthaben gutgeschrieben wird'
+                    : 'Negativ für Rückgabe/Aufladen, z.B. -2.00',
               ),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+              keyboardType: TextInputType.numberWithOptions(
+                decimal: true,
+                signed: !_isTopup,
+              ),
             ),
             const SizedBox(height: 16),
             Text('Farbe', style: Theme.of(context).textTheme.labelMedium),
@@ -212,21 +228,46 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
                 controlAffinity: ListTileControlAffinity.leading,
               ),
             CheckboxListTile(
-              title: const Text('Auszahlungs-Artikel'),
-              subtitle: const Text('Buchung zahlt Gesamtguthaben aus'),
-              value: _isPayout,
-              onChanged: (v) => setState(() => _isPayout = v ?? _isPayout),
+              title: const Text('Guthaben Aufladung'),
+              subtitle: const Text('Guthaben wird um den Betrag erhöht'),
+              value: _isTopup,
+              onChanged: (v) {
+                final isTopup = v ?? _isTopup;
+                setState(() {
+                  _isTopup = isTopup;
+                  if (isTopup) {
+                    _isPayout = false;
+                    _excludeFromStats = true;
+                    final current = double.tryParse(
+                        _price.text.trim().replaceAll(',', '.'));
+                    if (current != null && current < 0) {
+                      _price.text = current.abs().toStringAsFixed(2);
+                    }
+                  }
+                });
+              },
               contentPadding: EdgeInsets.zero,
               controlAffinity: ListTileControlAffinity.leading,
             ),
-            CheckboxListTile(
-              title: const Text('Von Statistik ausschließen'),
-              subtitle: const Text('Nicht in Umsatzauswertung'),
-              value: _excludeFromStats,
-              onChanged: (v) => setState(() => _excludeFromStats = v ?? _excludeFromStats),
-              contentPadding: EdgeInsets.zero,
-              controlAffinity: ListTileControlAffinity.leading,
-            ),
+            if (!_isTopup) ...[
+              CheckboxListTile(
+                title: const Text('Auszahlungs-Artikel'),
+                subtitle: const Text('Buchung zahlt Gesamtguthaben aus'),
+                value: _isPayout,
+                onChanged: (v) => setState(() => _isPayout = v ?? _isPayout),
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
+              CheckboxListTile(
+                title: const Text('Von Statistik ausschließen'),
+                subtitle: const Text('Nicht in Umsatzauswertung'),
+                value: _excludeFromStats,
+                onChanged: (v) =>
+                    setState(() => _excludeFromStats = v ?? _excludeFromStats),
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
+            ],
             if (_error != null) ...[
               const SizedBox(height: 8),
               Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),

@@ -8,11 +8,13 @@ covers localhost only.
 """
 
 import os
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
-from routers import auth, products, sales, stats, topup, update, users
+from routers import auth, download, products, sales, stats, topup, update, users
 
 app = FastAPI(
     title="NFC-Kasse API",
@@ -46,6 +48,7 @@ app.include_router(topup.router)
 app.include_router(users.router)
 app.include_router(stats.router)
 app.include_router(update.router)
+app.include_router(download.router)
 
 
 # ---------------------------------------------------------------------------
@@ -54,3 +57,17 @@ app.include_router(update.router)
 @app.get("/health", tags=["system"])
 def health():
     return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# Flutter Web App — served from backend/webapp/ if the build exists.
+# The route is configurable via WEBAPP_ROUTE in config.env (default /webapp).
+# To rebuild after changing the route:
+#   flutter build web --release --base-href /your-route/
+# ---------------------------------------------------------------------------
+_webapp_route = os.environ.get("WEBAPP_ROUTE", "/webapp").strip().rstrip("/")
+if not _webapp_route.startswith("/"):
+    _webapp_route = "/" + _webapp_route
+_webapp_dir = Path(__file__).parent / "webapp"
+if _webapp_dir.is_dir():
+    app.mount(_webapp_route, StaticFiles(directory=str(_webapp_dir), html=True), name="webapp")

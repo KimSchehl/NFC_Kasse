@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+import 'app_storage.dart';
 
 
 /// Central HTTP client for all backend communication.
@@ -12,7 +13,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 ///    share the same refresh attempt via [_refreshFuture], preventing the
 ///    refresh token from being consumed more than once.
 class ApiClient {
-  final FlutterSecureStorage _storage;
+  final AppStorage _storage;
   final String _baseUrl;
   late final Dio dio;
 

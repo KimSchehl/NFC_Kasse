@@ -21,7 +21,7 @@ echo.
 :: ---- 1. Ensure config.env exists ----------------------------
 if not exist "config.env" (
     echo  [SETUP] config.env not found -- creating with defaults ...
-    powershell -NoProfile -Command "$k=[System.Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32)); Set-Content config.env -Encoding UTF8 -Value @('# NFC-Kasse Configuration','# Edit this file before starting the backend.','# Changes take effect on the next server start.','','# Network interface to bind to (0.0.0.0 = all interfaces).','HOST=0.0.0.0','','# Port the backend listens on.','PORT=8000','','# Secret used to sign login tokens (JWT).','# IMPORTANT: Change this before using with real data!',\"SECRET_KEY=`$k\",'','# Chip deposit in EUR (e.g. 3.00 for 3 Euro).','# Deducted automatically on first chip issuance; refunded on payout.','# Set to 0 to disable deposit logic.','CHIP_DEPOSIT=3.00')"
+    powershell -NoProfile -Command "$k=[System.Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32)); Set-Content config.env -Encoding UTF8 -Value @('# NFC-Kasse Configuration','# Edit this file before starting the backend.','# Changes take effect on the next server start.','','# Network interface to bind to (0.0.0.0 = all interfaces).','HOST=0.0.0.0','','# Port the backend listens on.','PORT=8000','','# Secret used to sign login tokens (JWT).','# IMPORTANT: Change this before using with real data!',\"SECRET_KEY=`$k\",'','# Chip deposit in EUR (e.g. 3.00 for 3 Euro).','# Deducted automatically on first chip issuance; refunded on payout.','# Set to 0 to disable deposit logic.','CHIP_DEPOSIT=3.00','','# URL-Pfad der Flutter Web App (nur aktiv wenn backend\webapp\ existiert).','# Nach Pfad-Aenderung neu bauen: flutter build web --release --base-href /neuer-pfad/','WEBAPP_ROUTE=/webapp')"
     if errorlevel 1 (
         echo  [ERROR] Could not create config.env.
         pause
@@ -111,6 +111,7 @@ for /f "usebackq tokens=1,2 delims== eol=#" %%a in ("config.env") do (
 
 if not defined HOST set HOST=0.0.0.0
 if not defined PORT set PORT=8000
+if not defined WEBAPP_ROUTE set WEBAPP_ROUTE=/webapp
 if not defined SECRET_KEY (
     echo  [ERROR] SECRET_KEY is not set in config.env.
     pause
@@ -142,11 +143,15 @@ for /f %%i in ('powershell -NoProfile -Command "(Get-NetIPConfiguration | Where-
 
 if defined LAN_IP (
     echo  Backend URL: http://%LAN_IP%:%PORT%
+    echo  Web App:     http://%LAN_IP%:%PORT%%WEBAPP_ROUTE%
+    echo  App-Download: http://%LAN_IP%:%PORT%/download
 ) else (
     echo  Backend URL: [could not detect IP -- check ipconfig manually]
 )
 echo  Local URL:   http://localhost:%PORT%
 echo  API Docs:    http://localhost:%PORT%/docs
+echo  Web App:     http://localhost:%PORT%%WEBAPP_ROUTE%
+echo  App-Download: http://localhost:%PORT%/download
 echo.
 echo  Press Ctrl+C to stop the server.
 echo  ================================================

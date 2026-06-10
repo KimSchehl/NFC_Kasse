@@ -86,12 +86,31 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
     }
   }
 
-  Future<void> _showCloseDialog() async {
+  String _defaultLabel() {
     final now = DateTime.now();
-    final defaultLabel =
-        '${now.day.toString().padLeft(2, '0')}.${now.month.toString().padLeft(2, '0')}. '
+    return '${now.day.toString().padLeft(2, '0')}.${now.month.toString().padLeft(2, '0')}. '
         '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')} Uhr';
+  }
 
+  Future<void> _executePeriodClose(String label) async {
+    try {
+      final newPeriod = await ref.read(statsServiceProvider).closePeriod(label);
+      await _loadPeriods();
+      if (!mounted) return;
+      setState(() => _selectedPeriodId = newPeriod.id);
+      ref.invalidate(_statsProvider);
+      ref.invalidate(_txProvider);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Fehler: $e'),
+        backgroundColor: Theme.of(context).colorScheme.error,
+      ));
+    }
+  }
+
+  Future<void> _showCloseDialog() async {
+    final defaultLabel = _defaultLabel();
     final labelCtrl = TextEditingController(text: defaultLabel);
 
     final confirmed = await showDialog<bool>(
@@ -129,24 +148,97 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
     );
 
     if (confirmed != true || !mounted) return;
-
     final label = labelCtrl.text.trim().isEmpty ? defaultLabel : labelCtrl.text.trim();
+    await _executePeriodClose(label);
+  }
+
+  Future<void> _showEventResetDialog() async {
+    final theme = Theme.of(context);
+    final defaultLabel = 'Neues Event ${_defaultLabel()}';
+    final labelCtrl = TextEditingController(text: defaultLabel);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: theme.colorScheme.error),
+            const SizedBox(width: 8),
+            const Text('Neues Event starten'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.errorContainer,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                'Diese Aktion setzt ALLE NFC-Chips zurück:\n\n'
+                '• Alle Guthaben werden auf 0,00 € gesetzt\n'
+                '• Alle Chips gelten beim nächsten Scan\n'
+                '   als neue Kunden (Pfand wird erneut erhoben)\n'
+                '• Ein Tagesabschluss wird automatisch gemacht\n\n'
+                'Artikel, Benutzer und der Buchungsverlauf\n'
+                'bleiben vollständig erhalten.',
+                style: TextStyle(
+                  color: theme.colorScheme.onErrorContainer,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: labelCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Bezeichnung der neuen Periode',
+                border: OutlineInputBorder(),
+              ),
+              autofocus: true,
+              textCapitalization: TextCapitalization.sentences,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: theme.colorScheme.error,
+              foregroundColor: theme.colorScheme.onError,
+            ),
+            child: const Text('Zurücksetzen'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+    final label = labelCtrl.text.trim().isEmpty ? defaultLabel : labelCtrl.text.trim();
+
     try {
-      final newPeriod = await ref.read(statsServiceProvider).closePeriod(label);
+      final newPeriod = await ref.read(statsServiceProvider).eventReset(label);
       await _loadPeriods();
       if (!mounted) return;
       setState(() => _selectedPeriodId = newPeriod.id);
-      // Invalidate stats providers so they reload for the new period.
       ref.invalidate(_statsProvider);
       ref.invalidate(_txProvider);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Alle Chips zurückgesetzt — bereit für neues Event.')),
+      );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Fehler: $e'),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Fehler: $e'),
+        backgroundColor: Theme.of(context).colorScheme.error,
+      ));
     }
   }
 
@@ -227,26 +319,39 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
                         },
                       ),
               ),
-              // Row 2: Tagesabschluss button right-aligned
+              // Row 2: action buttons
               if (canClose)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 2, 12, 6),
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: FilledButton.icon(
-                      onPressed: _showCloseDialog,
-                      icon: const Icon(Icons.flag_outlined, size: 16),
-                      label: const Text('Tagesabschluss'),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: theme.colorScheme.secondary,
-                        foregroundColor: theme.colorScheme.onSecondary,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
-                        textStyle: const TextStyle(fontSize: 13),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      FilledButton.icon(
+                        onPressed: _showCloseDialog,
+                        icon: const Icon(Icons.flag_outlined, size: 18),
+                        label: const Text('Tagesabschluss'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: theme.colorScheme.secondary,
+                          foregroundColor: theme.colorScheme.onSecondary,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 10),
+                          textStyle: const TextStyle(fontSize: 14),
+                        ),
                       ),
-                    ),
+                      const SizedBox(width: 8),
+                      FilledButton.icon(
+                        onPressed: _showEventResetDialog,
+                        icon: const Icon(Icons.restart_alt, size: 18),
+                        label: const Text('Neues Event'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: theme.colorScheme.error,
+                          foregroundColor: theme.colorScheme.onError,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 10),
+                          textStyle: const TextStyle(fontSize: 14),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               TabBar(

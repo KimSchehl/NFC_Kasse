@@ -17,14 +17,17 @@ String? normalizeUid(String input) {
   if (RegExp(r'^\d+$').hasMatch(stripped)) {
     // Decimal input — bytes were encoded as a little-endian integer by the reader.
     final decimal = int.tryParse(stripped);
-    if (decimal == null) return null;
-    final byteCount = decimal <= 0xFFFFFFFF ? 4 : decimal <= 0xFFFFFFFFFFFFFF ? 7 : null;
+    if (decimal == null || decimal < 0) return null;
+    // Determine byte count from hex length — avoids large literals that
+    // exceed JavaScript's safe integer range (dart2js / web builds).
+    final hex = decimal.toRadixString(16);
+    final byteCount = hex.length <= 8 ? 4 : hex.length <= 14 ? 7 : null;
     if (byteCount == null) return null;
-    final hex = decimal.toRadixString(16).padLeft(byteCount * 2, '0');
+    final paddedHex = hex.padLeft(byteCount * 2, '0');
     // Reverse bytes to recover big-endian UID order.
     final bytes = <String>[];
-    for (int i = hex.length - 2; i >= 0; i -= 2) {
-      bytes.add(hex.substring(i, i + 2));
+    for (int i = paddedHex.length - 2; i >= 0; i -= 2) {
+      bytes.add(paddedHex.substring(i, i + 2));
     }
     hexStr = bytes.join();
   } else {

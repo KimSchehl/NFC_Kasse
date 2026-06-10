@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../config/api_config.dart';
+import '../services/app_storage.dart';
 import '../models/cart_item.dart';
 import '../models/category_model.dart';
 import '../models/customer_model.dart';
@@ -20,8 +20,9 @@ import 'package:package_info_plus/package_info_plus.dart';
 // Infrastructure
 // ---------------------------------------------------------------------------
 
-final storageProvider = Provider<FlutterSecureStorage>(
-  (_) => const FlutterSecureStorage(),
+// Overridden in main() with a SharedPreferences-backed AppStorage instance.
+final storageProvider = Provider<AppStorage>(
+  (_) => throw StateError('storageProvider must be overridden in main()'),
 );
 
 /// The backend URL the user configured on the login screen.

@@ -1,17 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'config/api_config.dart';
 import 'providers/providers.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_shell.dart';
+import 'services/app_storage.dart';
 import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  const storage = FlutterSecureStorage();
+  final prefs = await SharedPreferences.getInstance();
+  final storage = AppStorage(prefs);
 
   // Restore server URL.
   final savedUrl = await storage.read(key: 'server_url');
@@ -31,6 +33,7 @@ Future<void> main() async {
 
   runApp(ProviderScope(
     overrides: [
+      storageProvider.overrideWithValue(storage),
       serverUrlProvider.overrideWith((ref) => initialUrl),
       textScaleProvider.overrideWith((ref) => initialTextScale),
       gridColumnsProvider.overrideWith((ref) => initialGridColumns),
