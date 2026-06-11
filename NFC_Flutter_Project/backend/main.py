@@ -7,10 +7,86 @@ without a code change.  In development (e.g. Android emulator) the default
 covers localhost only.
 """
 
+import logging
+import logging.handlers
 import os
 from pathlib import Path
 
 from fastapi import FastAPI
+
+
+import time as _time
+from datetime import datetime as _datetime
+
+
+class _TopOfHourHandler(logging.handlers.TimedRotatingFileHandler):
+    """
+    Schreibt in kasse_YYYY-MM-DD_HH.log und rotiert exakt zur vollen Stunde.
+    Beim Rotieren wird eine neue Datei für die aktuelle Stunde geöffnet.
+    Alte Dateien werden gelöscht, sobald mehr als backupCount vorhanden sind.
+    """
+
+    def __init__(self, log_dir: Path, backup_count: int = 168, encoding: str = "utf-8"):
+        self._log_dir = log_dir
+        super().__init__(
+            filename=str(log_dir / self._filename_for_now()),
+            when="h",
+            interval=1,
+            backupCount=backup_count,
+            encoding=encoding,
+        )
+        self.rolloverAt = self._next_full_hour()
+
+    @staticmethod
+    def _filename_for_now() -> str:
+        return _datetime.now().strftime("kasse_%Y-%m-%d_%H.log")
+
+    @staticmethod
+    def _next_full_hour() -> int:
+        t = int(_time.time())
+        return (t // 3600 + 1) * 3600
+
+    def doRollover(self) -> None:
+        if self.stream:
+            self.stream.close()
+            self.stream = None
+        self.baseFilename = str(self._log_dir / self._filename_for_now())
+        self.stream = self._open()
+        self.rolloverAt = self._next_full_hour()
+        self._delete_old_files()
+
+    def _delete_old_files(self) -> None:
+        files = sorted(
+            self._log_dir.glob("kasse_*.log"),
+            key=lambda p: p.stat().st_mtime,
+        )
+        for old in files[: max(0, len(files) - self.backupCount)]:
+            try:
+                old.unlink()
+            except OSError:
+                pass
+
+
+def _setup_logging() -> None:
+    log_dir = Path(__file__).parent / "logs"
+    log_dir.mkdir(exist_ok=True)
+
+    file_handler = _TopOfHourHandler(log_dir=log_dir, backup_count=168)
+    file_handler.setFormatter(logging.Formatter(
+        fmt="%(asctime)s %(levelname)-8s %(name)-24s %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    ))
+
+    # /health wird alle 10 s gepollt — aus dem Log herausfiltern
+    class _SuppressHealth(logging.Filter):
+        def filter(self, record: logging.LogRecord) -> bool:
+            return '"/health"' not in record.getMessage()
+
+    file_handler.addFilter(_SuppressHealth())
+    logging.getLogger().addHandler(file_handler)
+
+
+_setup_logging()
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 

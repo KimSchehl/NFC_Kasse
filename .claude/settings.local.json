@@ -16,7 +16,10 @@
       "Bash(python -c \"import sqlite3; db=sqlite3.connect\\('kasse.db'\\); db.row_factory=sqlite3.Row; rows=db.execute\\('SELECT * FROM category'\\).fetchall\\(\\); print\\([dict\\(r\\) for r in rows]\\)\")",
       "Bash(Get-Content \"C:\\\\Users\\\\ks\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-ks-Documents-KS-GitHub-Repos-NFC-Kasse\\\\0493c80c-dddf-4a7d-a50d-c75031f30f4b\\\\tasks\\\\b1xgj039g.output\" -Tail 30)",
       "Bash(dart run *)",
-      "Bash(flutter build *)"
+      "Bash(flutter build *)",
+      "Bash(cmd /c \"where py && py -3.14 -c \\\\\"import sys; print\\(sys.executable\\)\\\\\"\")",
+      "PowerShell(\\(Get-Command py\\).Source; py -3.14 -c \"import sys; print\\(sys.executable\\)\")",
+      "PowerShell(py -3.14 -c \"import fastapi; print\\(fastapi.__file__\\)\")"
     ]
   }
 }

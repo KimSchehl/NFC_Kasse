@@ -72,11 +72,22 @@ def chip_summary(
             (event_id,),
         ).fetchone()
 
+        # Aufladungen die als Artikel gebucht wurden (negative price_at_sale)
+        # gehen in die sale-Tabelle, nicht in topup — beide Quellen addieren.
+        article_topup_row = db.execute(
+            """
+            SELECT COALESCE(SUM(ABS(price_at_sale)), 0.0) AS topup_from_articles
+            FROM sale
+            WHERE event_id = ? AND cancelled = 0 AND price_at_sale < 0
+            """,
+            (event_id,),
+        ).fetchone()
+
     return ChipSummaryResponse(
         total_chips=chip_row["total_chips"],
         active_chips=chip_row["active_chips"],
         total_balance=chip_row["total_balance"],
         pending_pfand=chip_row["active_chips"] * CHIP_DEPOSIT,
-        total_topup=topup_row["total_topup"],
+        total_topup=topup_row["total_topup"] + article_topup_row["topup_from_articles"],
         total_payout=topup_row["total_payout"],
     )
