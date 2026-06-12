@@ -3,32 +3,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/product_model.dart';
 import '../../providers/providers.dart';
+import '../product_color_picker.dart';
 
 /// Dialog for creating a new product or editing an existing one.
 ///
 /// Pass [product] = null to create. [categoryId] is always required.
 /// [canDelete] / [canDeactivate] gate the delete button and active toggle.
-
-// Predefined tile color palette. null = no custom color → tile uses theme default.
-const List<Color?> _palette = [
-  null,
-  Color(0xFFA5D6A7), // light green
-  Color(0xFF81C784), // green
-  Color(0xFF80DEEA), // cyan
-  Color(0xFFFFF176), // yellow
-  Color(0xFFFFCC80), // orange
-  Color(0xFFEF9A9A), // light red
-  Color(0xFFF48FB1), // pink
-  Color(0xFFCE93D8), // light purple
-  Color(0xFFBA68C8), // purple
-  Color(0xFFBCAAA4), // brown
-  Color(0xFFB0BEC5), // blue-grey
-];
-
+///
+/// Button colors are now per-user preferences (long-press a tile on the POS
+/// screen to set a color). This dialog handles name, price, and flags only.
 class EditProductDialog extends ConsumerStatefulWidget {
-  /// Pass null to create a new product in [categoryId]
   final ProductModel? product;
   final int categoryId;
+  final bool canEditDetails;
   final bool canDelete;
   final bool canDeactivate;
 
@@ -36,6 +23,7 @@ class EditProductDialog extends ConsumerStatefulWidget {
     super.key,
     this.product,
     required this.categoryId,
+    this.canEditDetails = true,
     this.canDelete = false,
     this.canDeactivate = false,
   });
@@ -61,7 +49,9 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
   void initState() {
     super.initState();
     final p = widget.product;
-    // Detect topup: negative price + excludeFromStats + not a payout article
+    if (p != null) {
+      _color = ref.read(userPrefsProvider).getProductColor(p.id);
+    }
     _isTopup = p != null && p.price < 0 && p.excludeFromStats && !p.isPayout;
     _name = TextEditingController(text: p?.name ?? '');
     _price = TextEditingController(
@@ -70,7 +60,6 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
     _active = p?.active ?? true;
     _isPayout = p?.isPayout ?? false;
     _excludeFromStats = p?.excludeFromStats ?? false;
-    _color = p?.color;
   }
 
   @override
@@ -81,6 +70,15 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
   }
 
   Future<void> _save() async {
+    // No edit rights — only save the color preference.
+    if (!widget.canEditDetails) {
+      if (!isNew) {
+        ref.read(userPrefsProvider.notifier).setProductColor(widget.product!.id, _color);
+      }
+      if (mounted) Navigator.of(context).pop(true);
+      return;
+    }
+
     final name = _name.text.trim();
     final priceText = _price.text.trim().replaceAll(',', '.');
     final price = double.tryParse(priceText);
@@ -96,7 +94,6 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
       return;
     }
 
-    // Topup articles are stored with a negative price and excluded from stats.
     final savedPrice = _isTopup ? -price.abs() : price;
     final savedExcludeFromStats = _isTopup ? true : _excludeFromStats;
     final savedIsPayout = _isTopup ? false : _isPayout;
@@ -108,31 +105,28 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
 
     try {
       final svc = ref.read(productServiceProvider);
-      final colorHex = _colorToHex(_color);
       if (isNew) {
         await svc.createProduct(
           name: name,
           price: savedPrice,
           categoryId: widget.categoryId,
-          color: colorHex,
           isPayout: savedIsPayout,
           excludeFromStats: savedExcludeFromStats,
         );
       } else {
-        // Always send sendColor=true when editing so the user can explicitly
-        // clear a color by selecting the "no color" swatch (sends null).
         await svc.updateProduct(
           widget.product!.id,
           name: name,
           price: savedPrice,
-          sendColor: true,
-          color: colorHex,
           isPayout: savedIsPayout,
           excludeFromStats: savedExcludeFromStats,
         );
         if (widget.product!.active != _active && widget.canDeactivate) {
           await svc.setActive(widget.product!.id, _active);
         }
+      }
+      if (!isNew) {
+        ref.read(userPrefsProvider.notifier).setProductColor(widget.product!.id, _color);
       }
       ref.read(productsRefreshProvider.notifier).state++;
       if (mounted) Navigator.of(context).pop(true);
@@ -175,11 +169,6 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
     }
   }
 
-  static String? _colorToHex(Color? color) {
-    if (color == null) return null;
-    return '#${(color.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
-  }
-
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
@@ -191,91 +180,97 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-            TextField(
-              controller: _name,
-              decoration: const InputDecoration(labelText: 'Name'),
-              autofocus: true,
-              textCapitalization: TextCapitalization.sentences,
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _price,
-              decoration: InputDecoration(
-                labelText: _isTopup ? 'Auflade-Betrag (€)' : 'Preis (€)',
-                helperText: _isTopup
-                    ? 'Positiver Betrag, der dem Guthaben gutgeschrieben wird'
-                    : 'Negativ für Rückgabe/Aufladen, z.B. -2.00',
+              TextField(
+                controller: _name,
+                enabled: widget.canEditDetails,
+                decoration: const InputDecoration(labelText: 'Name'),
+                autofocus: widget.canEditDetails,
+                textCapitalization: TextCapitalization.sentences,
               ),
-              keyboardType: TextInputType.numberWithOptions(
-                decimal: true,
-                signed: !_isTopup,
+              const SizedBox(height: 12),
+              TextField(
+                controller: _price,
+                enabled: widget.canEditDetails,
+                decoration: InputDecoration(
+                  labelText: _isTopup ? 'Auflade-Betrag (€)' : 'Preis (€)',
+                  helperText: _isTopup
+                      ? 'Positiver Betrag, der dem Guthaben gutgeschrieben wird'
+                      : 'Negativ für Rückgabe/Aufladen, z.B. -2.00',
+                ),
+                keyboardType: TextInputType.numberWithOptions(
+                  decimal: true,
+                  signed: !_isTopup,
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            Text('Farbe', style: Theme.of(context).textTheme.labelMedium),
-            const SizedBox(height: 8),
-            _ColorPicker(
-              selected: _color,
-              onChanged: (c) => setState(() => _color = c),
-            ),
-            const SizedBox(height: 4),
-            if (!isNew && widget.canDeactivate)
+              if (widget.canEditDetails) ...[
+              const SizedBox(height: 4),
+              if (!isNew && widget.canDeactivate)
+                CheckboxListTile(
+                  title: const Text('Aktiv (buchbar)'),
+                  value: _active,
+                  onChanged: (v) => setState(() => _active = v ?? _active),
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                ),
               CheckboxListTile(
-                title: const Text('Aktiv (buchbar)'),
-                value: _active,
-                onChanged: (v) => setState(() => _active = v ?? _active),
-                contentPadding: EdgeInsets.zero,
-                controlAffinity: ListTileControlAffinity.leading,
-              ),
-            CheckboxListTile(
-              title: const Text('Guthaben Aufladung'),
-              subtitle: const Text('Guthaben wird um den Betrag erhöht'),
-              value: _isTopup,
-              onChanged: (v) {
-                final isTopup = v ?? _isTopup;
-                setState(() {
-                  _isTopup = isTopup;
-                  if (isTopup) {
-                    _isPayout = false;
-                    _excludeFromStats = true;
-                    final current = double.tryParse(
-                        _price.text.trim().replaceAll(',', '.'));
-                    if (current != null && current < 0) {
-                      _price.text = current.abs().toStringAsFixed(2);
+                title: const Text('Guthaben Aufladung'),
+                subtitle: const Text('Guthaben wird um den Betrag erhöht'),
+                value: _isTopup,
+                onChanged: (v) {
+                  final isTopup = v ?? _isTopup;
+                  setState(() {
+                    _isTopup = isTopup;
+                    if (isTopup) {
+                      _isPayout = false;
+                      _excludeFromStats = true;
+                      final current = double.tryParse(
+                          _price.text.trim().replaceAll(',', '.'));
+                      if (current != null && current < 0) {
+                        _price.text = current.abs().toStringAsFixed(2);
+                      }
                     }
-                  }
-                });
-              },
-              contentPadding: EdgeInsets.zero,
-              controlAffinity: ListTileControlAffinity.leading,
-            ),
-            if (!_isTopup) ...[
-              CheckboxListTile(
-                title: const Text('Auszahlungs-Artikel'),
-                subtitle: const Text('Buchung zahlt Gesamtguthaben aus'),
-                value: _isPayout,
-                onChanged: (v) => setState(() => _isPayout = v ?? _isPayout),
+                  });
+                },
                 contentPadding: EdgeInsets.zero,
                 controlAffinity: ListTileControlAffinity.leading,
               ),
-              CheckboxListTile(
-                title: const Text('Von Statistik ausschließen'),
-                subtitle: const Text('Nicht in Umsatzauswertung'),
-                value: _excludeFromStats,
-                onChanged: (v) =>
-                    setState(() => _excludeFromStats = v ?? _excludeFromStats),
-                contentPadding: EdgeInsets.zero,
-                controlAffinity: ListTileControlAffinity.leading,
-              ),
+              if (!_isTopup) ...[
+                CheckboxListTile(
+                  title: const Text('Auszahlungs-Artikel'),
+                  subtitle: const Text('Buchung zahlt Gesamtguthaben aus'),
+                  value: _isPayout,
+                  onChanged: (v) => setState(() => _isPayout = v ?? _isPayout),
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                ),
+                CheckboxListTile(
+                  title: const Text('Von Statistik ausschließen'),
+                  subtitle: const Text('Nicht in Umsatzauswertung'),
+                  value: _excludeFromStats,
+                  onChanged: (v) =>
+                      setState(() => _excludeFromStats = v ?? _excludeFromStats),
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                ),
+              ],
+              ], // end canEditDetails
+              if (!isNew) ...[
+                const SizedBox(height: 12),
+                Text('Button-Farbe', style: Theme.of(context).textTheme.labelMedium),
+                const SizedBox(height: 8),
+                ProductColorPicker(
+                  selected: _color,
+                  onChanged: (c) => setState(() => _color = c),
+                ),
+              ],
+              if (_error != null) ...[
+                const SizedBox(height: 8),
+                Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              ],
             ],
-            if (_error != null) ...[
-              const SizedBox(height: 8),
-              Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-            ],
-          ],
-          ),   // Column
-        ),     // SingleChildScrollView
-      ),       // SizedBox
+          ),
+        ),
+      ),
       actionsAlignment: MainAxisAlignment.spaceBetween,
       actions: [
         if (!isNew && widget.canDelete)
@@ -301,73 +296,5 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
         ),
       ],
     );
-  }
-}
-
-class _ColorPicker extends StatelessWidget {
-  final Color? selected;
-  final ValueChanged<Color?> onChanged;
-
-  const _ColorPicker({required this.selected, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: _palette.map((color) => _Swatch(
-            color: color,
-            isSelected: selected == color,
-            onTap: () => onChanged(color),
-          )).toList(),
-    );
-  }
-}
-
-class _Swatch extends StatelessWidget {
-  final Color? color;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  const _Swatch({required this.color, required this.isSelected, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isNone = color == null;
-
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          color: isNone ? theme.colorScheme.surfaceContainerHigh : color,
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: isSelected
-                ? theme.colorScheme.primary
-                : theme.colorScheme.outlineVariant,
-            width: isSelected ? 3 : 1,
-          ),
-        ),
-        child: isNone
-            ? Icon(Icons.block, size: 18, color: theme.colorScheme.onSurfaceVariant)
-            : isSelected
-                ? Icon(
-                    Icons.check,
-                    size: 18,
-                    color: _contrastColor(color!),
-                  )
-                : null,
-      ),
-    );
-  }
-
-  static Color _contrastColor(Color bg) {
-    // Simple luminance check: dark background → white icon, light → dark icon
-    final luminance = (0.299 * bg.r + 0.587 * bg.g + 0.114 * bg.b);
-    return luminance > 0.5 ? Colors.black87 : Colors.white;
   }
 }

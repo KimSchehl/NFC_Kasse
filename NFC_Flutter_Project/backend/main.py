@@ -87,10 +87,29 @@ def _setup_logging() -> None:
 
 
 _setup_logging()
+
+from database import get_db
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from routers import auth, customers, download, products, sales, stats, topup, update, users
+from routers import auth, customers, download, preferences, products, sales, stats, topup, update, users
+
+
+def _migrate() -> None:
+    """Creates tables added after initial DB setup (safe to run on every start)."""
+    with get_db() as db:
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS user_preference_store (
+                user_id  INTEGER NOT NULL REFERENCES user(id),
+                key      TEXT    NOT NULL,
+                profile  TEXT    NOT NULL DEFAULT '*',
+                value    TEXT    NOT NULL,
+                PRIMARY KEY (user_id, key, profile)
+            )
+        """)
+
+
+_migrate()
 
 app = FastAPI(
     title="NFC-Kasse API",
@@ -124,6 +143,7 @@ app.include_router(topup.router)
 app.include_router(users.router)
 app.include_router(stats.router)
 app.include_router(customers.router)
+app.include_router(preferences.router)
 app.include_router(update.router)
 app.include_router(download.router)
 

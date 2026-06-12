@@ -11,6 +11,8 @@ Design notes:
   set in a single transaction.
 """
 
+from typing import Any
+
 from pydantic import BaseModel, field_validator
 
 
@@ -99,7 +101,6 @@ class ProductResponse(BaseModel):
     category_id: int
     sort_order: int
     active: bool
-    color: str | None = None
     is_payout: bool = False
     exclude_from_stats: bool = False
 
@@ -109,7 +110,6 @@ class ProductCreate(BaseModel):
     price: float
     category_id: int
     sort_order: int = 0
-    color: str | None = None
     is_payout: bool = False
     exclude_from_stats: bool = False
 
@@ -118,7 +118,6 @@ class ProductUpdate(BaseModel):
     name: str | None = None
     price: float | None = None
     sort_order: int | None = None
-    color: str | None = None  # explicitly sent None clears the color
     is_payout: bool | None = None
     exclude_from_stats: bool | None = None
 
@@ -332,3 +331,18 @@ class ChipSummaryResponse(BaseModel):
     pending_pfand: float    # active_chips × CHIP_DEPOSIT
     total_topup: float      # sum of positive topup rows for this event
     total_payout: float     # sum of payout rows (abs) for this event
+
+
+# ---------------------------------------------------------------------------
+# User Preference Store
+# ---------------------------------------------------------------------------
+
+class PreferenceItem(BaseModel):
+    key: str
+    profile: str     # 'P' | 'L' | '*'
+    value: Any
+
+
+class PreferenceUpsert(BaseModel):
+    profile: str
+    value: Any

@@ -126,9 +126,8 @@ class AppSidebar extends ConsumerWidget {
               onTap: () => _navigate(context, ref, AppScreen.settings),
             ),
 
-            // Edit mode toggle (only in POS with editable categories)
-            if (currentScreen == AppScreen.pos &&
-                (user?.isManager == true || (selectedCat?.canManageArticles ?? false)))
+            // Edit mode toggle: always visible on POS (everyone can set button colors)
+            if (currentScreen == AppScreen.pos)
               _NavTile(
                 icon: editMode ? Icons.edit_off_outlined : Icons.edit_outlined,
                 label: 'Bearbeitungsmodus',

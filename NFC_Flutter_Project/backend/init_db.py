@@ -140,7 +140,6 @@ def init_db():
         category_id INTEGER NOT NULL REFERENCES category(id),
         name        TEXT    NOT NULL,
         price       REAL    NOT NULL,
-        color       TEXT,                        -- hex background color, e.g. '#A5D6A7' (NULL = default)
         sort_order  INTEGER NOT NULL DEFAULT 0,
         active      INTEGER NOT NULL DEFAULT 1,  -- temporarily disable without deleting
         deleted     INTEGER NOT NULL DEFAULT 0,  -- soft-delete, keeps historical sales valid
@@ -272,6 +271,21 @@ def init_db():
         key         TEXT    NOT NULL,   -- e.g. 'grid_columns', 'theme'
         value       TEXT    NOT NULL,
         UNIQUE(user_id, event_id, key)
+    )""")
+
+    # ------------------------------------------------------------------
+    # USER PREFERENCE STORE — generic per-user key/value store
+    # key:     dotted identifier, e.g. 'layout.cat_3', 'product.color.42'
+    # profile: 'P' (portrait/narrow), 'L' (landscape/wide), '*' (any)
+    # value:   JSON-serialised value (list, string, number, …)
+    # ------------------------------------------------------------------
+    c.execute("""
+    CREATE TABLE user_preference_store (
+        user_id  INTEGER NOT NULL REFERENCES user(id),
+        key      TEXT    NOT NULL,
+        profile  TEXT    NOT NULL DEFAULT '*',
+        value    TEXT    NOT NULL,
+        PRIMARY KEY (user_id, key, profile)
     )""")
 
     # ------------------------------------------------------------------

@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'dart:async';
@@ -12,9 +13,11 @@ import '../models/category_model.dart';
 import '../models/customer_model.dart';
 import '../models/product_model.dart';
 import '../models/user_model.dart';
+import '../models/user_preferences_model.dart';
 import '../services/api_client.dart';
 import '../services/auth_service.dart';
 import '../services/customer_service.dart';
+import '../services/preferences_service.dart';
 import '../services/product_service.dart';
 import '../services/sales_service.dart';
 import '../services/stats_service.dart';
@@ -70,6 +73,9 @@ final updateServiceProvider = Provider(
 final customerServiceProvider = Provider(
   (ref) => CustomerService(ref.watch(apiClientProvider)),
 );
+final preferencesServiceProvider = Provider(
+  (ref) => PreferencesService(ref.watch(apiClientProvider)),
+);
 
 /// Polls /health every 10 seconds and emits true/false.
 /// Restarts automatically when the server URL changes.
@@ -122,7 +128,9 @@ class AuthNotifier extends AsyncNotifier<UserModel?> {
     final client = ref.read(apiClientProvider);
     if (!await client.hasStoredTokens()) return null;
     try {
-      return await ref.read(authServiceProvider).fetchMe();
+      final user = await ref.read(authServiceProvider).fetchMe();
+      unawaited(ref.read(userPrefsProvider.notifier).load());
+      return user;
     } catch (_) {
       await client.clearTokens();
       return null;
@@ -134,17 +142,70 @@ class AuthNotifier extends AsyncNotifier<UserModel?> {
     state = await AsyncValue.guard(
       () => ref.read(authServiceProvider).login(username, password),
     );
+    if (state.hasValue && state.value != null) {
+      unawaited(ref.read(userPrefsProvider.notifier).load());
+      ref.invalidate(categoriesProvider);
+      ref.invalidate(productsProvider);
+    }
   }
 
   Future<void> logout() async {
     final token = await ref.read(storageProvider).read(key: 'refresh_token') ?? '';
     await ref.read(authServiceProvider).logout(token);
+    ref.read(userPrefsProvider.notifier).reset();
+    ref.invalidate(categoriesProvider);
+    ref.invalidate(productsProvider);
     state = const AsyncData(null);
   }
 }
 
 final authProvider = AsyncNotifierProvider<AuthNotifier, UserModel?>(
   AuthNotifier.new,
+);
+
+// ---------------------------------------------------------------------------
+// User Preferences
+// ---------------------------------------------------------------------------
+
+class UserPrefsNotifier extends Notifier<UserPreferences> {
+  @override
+  UserPreferences build() => UserPreferences.empty;
+
+  Future<void> load() async {
+    try {
+      state = await ref.read(preferencesServiceProvider).fetchAll();
+    } catch (_) {
+      // Non-fatal: keep empty prefs, grid falls back to server order.
+    }
+  }
+
+  void reset() => state = UserPreferences.empty;
+
+  Future<void> setLayout(int categoryId, String profile, List<int?> layout) async {
+    state = state.withLayout(categoryId, profile, layout);
+    unawaited(ref
+        .read(preferencesServiceProvider)
+        .upsert('layout.cat_$categoryId', profile, layout));
+  }
+
+  Future<void> setProductColor(int productId, Color? color) async {
+    state = state.withProductColor(productId, color);
+    if (color == null) {
+      unawaited(ref
+          .read(preferencesServiceProvider)
+          .delete('product.color.$productId', profile: '*'));
+    } else {
+      final hex =
+          '#${(color.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
+      unawaited(ref
+          .read(preferencesServiceProvider)
+          .upsert('product.color.$productId', '*', hex));
+    }
+  }
+}
+
+final userPrefsProvider = NotifierProvider<UserPrefsNotifier, UserPreferences>(
+  UserPrefsNotifier.new,
 );
 
 // ---------------------------------------------------------------------------

@@ -25,7 +25,6 @@ class ProductService {
     required String name,
     required double price,
     required int categoryId,
-    String? color,
     bool isPayout = false,
     bool excludeFromStats = false,
   }) async {
@@ -33,34 +32,22 @@ class ProductService {
       'name': name,
       'price': price,
       'category_id': categoryId,
-      'color': color,
       'is_payout': isPayout,
       'exclude_from_stats': excludeFromStats,
     });
     return ProductModel.fromJson(resp.data as Map<String, dynamic>);
   }
 
-  /// Updates a product. The [sendColor] flag controls whether the `color` field
-  /// is included in the request body at all.
-  ///
-  /// Why the flag? The backend interprets a missing `color` key as "don't touch
-  /// the color" and an explicit `null` as "clear the color". Omitting the flag
-  /// (default `false`) lets callers update name/price without accidentally
-  /// resetting the color.
   Future<ProductModel> updateProduct(
     int id, {
     String? name,
     double? price,
-    bool sendColor = false,
-    String? color,
     bool? isPayout,
     bool? excludeFromStats,
   }) async {
     final data = <String, dynamic>{};
     if (name != null) data['name'] = name;
     if (price != null) data['price'] = price;
-    // sendColor=true means we explicitly set the color field (even if null = clear)
-    if (sendColor) data['color'] = color;
     if (isPayout != null) data['is_payout'] = isPayout;
     if (excludeFromStats != null) data['exclude_from_stats'] = excludeFromStats;
     final resp = await _client.dio.put('/api/products/$id', data: data);
