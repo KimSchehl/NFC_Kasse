@@ -24,7 +24,12 @@
       "Bash(cp /c/Users/KimSc/AppData/Local/Pub/Cache/hosted/pub.dev/shared_preferences-2.5.5/extension/devtools/build/assets/packages/devtools_app_shared/fonts/Roboto/Roboto-Regular.ttf /c/Users/KimSc/Desktop/NFC_Kasse/NFC_Flutter_Project/nfc_kasse_app/assets/fonts/Roboto/Roboto-Regular.ttf)",
       "Bash(cp /c/Users/KimSc/AppData/Local/Pub/Cache/hosted/pub.dev/shared_preferences-2.5.5/extension/devtools/build/assets/packages/devtools_app_shared/fonts/Roboto/Roboto-Medium.ttf /c/Users/KimSc/Desktop/NFC_Kasse/NFC_Flutter_Project/nfc_kasse_app/assets/fonts/Roboto/Roboto-Medium.ttf)",
       "Bash(cp /c/Users/KimSc/AppData/Local/Pub/Cache/hosted/pub.dev/shared_preferences-2.5.5/extension/devtools/build/assets/packages/devtools_app_shared/fonts/Roboto/Roboto-Bold.ttf /c/Users/KimSc/Desktop/NFC_Kasse/NFC_Flutter_Project/nfc_kasse_app/assets/fonts/Roboto/Roboto-Bold.ttf)",
-      "Bash(cp /c/Users/KimSc/AppData/Local/Pub/Cache/hosted/pub.dev/shared_preferences-2.5.5/extension/devtools/build/assets/packages/devtools_app_shared/fonts/Roboto/Roboto-Black.ttf /c/Users/KimSc/Desktop/NFC_Kasse/NFC_Flutter_Project/nfc_kasse_app/assets/fonts/Roboto/Roboto-Black.ttf)"
+      "Bash(cp /c/Users/KimSc/AppData/Local/Pub/Cache/hosted/pub.dev/shared_preferences-2.5.5/extension/devtools/build/assets/packages/devtools_app_shared/fonts/Roboto/Roboto-Black.ttf /c/Users/KimSc/Desktop/NFC_Kasse/NFC_Flutter_Project/nfc_kasse_app/assets/fonts/Roboto/Roboto-Black.ttf)",
+      "Bash(sqlite3 kasse.db ' *)",
+      "Bash(sqlite3 -column -header kasse.db ' *)",
+      "Bash(sqlite3 kasse.db \"PRAGMA table_info\\(product\\);\")",
+      "Bash(python -)",
+      "Bash(python -c \"import sqlite3; conn=sqlite3.connect\\('kasse.db'\\); conn.row_factory=sqlite3.Row; rows=conn.execute\\('SELECT name, price FROM product ORDER BY price DESC LIMIT 20'\\).fetchall\\(\\); [print\\(dict\\(r\\)\\) for r in rows]\")"
     ]
   }
 }

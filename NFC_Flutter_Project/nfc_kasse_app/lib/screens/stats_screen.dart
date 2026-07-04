@@ -453,67 +453,296 @@ class _RevenueTab extends ConsumerWidget {
 // Tab: Transaktionen
 // ---------------------------------------------------------------------------
 
-class _TransactionsTab extends ConsumerWidget {
+/// Groups consecutive rows that belong to the same cart submission:
+/// same nfcUid + same cashier + all booked within 3 seconds of each other.
+List<_BookingGroup> _groupTransactions(List<TransactionItem> items) {
+  if (items.isEmpty) return [];
+
+  // Items come newest-first; group by proximity in time.
+  final groups = <_BookingGroup>[];
+  _BookingGroup? current;
+
+  for (final tx in items) {
+    if (current != null &&
+        tx.nfcUid == current.nfcUid &&
+        tx.bookedByUsername == current.bookedByUsername &&
+        _parseSeconds(current.bookedAt) - _parseSeconds(tx.bookedAt) <= 3) {
+      current.items.add(tx);
+    } else {
+      current = _BookingGroup(
+        nfcUid: tx.nfcUid,
+        bookedAt: tx.bookedAt,
+        bookedByUsername: tx.bookedByUsername,
+        items: [tx],
+      );
+      groups.add(current);
+    }
+  }
+  return groups;
+}
+
+double _parseSeconds(String dt) {
+  try {
+    return DateTime.parse(dt.replaceFirst(' ', 'T'))
+        .millisecondsSinceEpoch
+        .toDouble();
+  } catch (_) {
+    return 0;
+  }
+}
+
+class _BookingGroup {
+  final String nfcUid;
+  final String bookedAt;
+  final String bookedByUsername;
+  final List<TransactionItem> items;
+
+  _BookingGroup({
+    required this.nfcUid,
+    required this.bookedAt,
+    required this.bookedByUsername,
+    required this.items,
+  });
+
+  double get total => items.fold(0.0, (s, t) => s + (t.cancelled ? 0 : t.priceAtSale));
+  bool get allCancelled => items.every((t) => t.cancelled);
+}
+
+class _TransactionsTab extends ConsumerStatefulWidget {
   final int? periodId;
   const _TransactionsTab({this.periodId});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final txAsync = ref.watch(_txProvider(periodId));
-    final theme = Theme.of(context);
+  ConsumerState<_TransactionsTab> createState() => _TransactionsTabState();
+}
 
-    return txAsync.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('Fehler: ${formatApiError(e)}')),
-      data: (transactions) => transactions.isEmpty
-          ? const Center(child: Text('Keine Transaktionen'))
-          : ListView.separated(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              itemCount: transactions.length,
-              separatorBuilder: (_, i) => const Divider(height: 1, indent: 16),
-              itemBuilder: (_, i) {
-                final tx = transactions[i];
-                return ListTile(
-                  dense: true,
-                  leading: CircleAvatar(
-                    radius: 16,
-                    backgroundColor: tx.cancelled
-                        ? theme.colorScheme.errorContainer
-                        : theme.colorScheme.secondaryContainer,
-                    child: Icon(
-                      tx.cancelled
-                          ? Icons.cancel_outlined
-                          : Icons.receipt_outlined,
-                      size: 16,
-                      color: tx.cancelled
-                          ? theme.colorScheme.onErrorContainer
-                          : theme.colorScheme.onSecondaryContainer,
-                    ),
-                  ),
-                  title: Text(
-                    tx.productName,
-                    style: tx.cancelled
-                        ? TextStyle(
-                            decoration: TextDecoration.lineThrough,
-                            color: theme.colorScheme.onSurfaceVariant,
-                          )
-                        : null,
-                  ),
-                  subtitle: Text('${tx.nfcUid}  ·  ${formatTime(tx.bookedAt)} Uhr'),
-                  trailing: Text(
-                    formatPrice(tx.priceAtSale),
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: tx.cancelled
-                          ? theme.colorScheme.onSurfaceVariant
-                          : tx.priceAtSale < 0
-                              ? theme.colorScheme.tertiary
-                              : theme.colorScheme.primary,
-                    ),
-                  ),
-                );
-              },
+class _TransactionsTabState extends ConsumerState<_TransactionsTab> {
+  final _searchCtrl = TextEditingController();
+  String _uidFilter = '';
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final txAsync = ref.watch(_txProvider(widget.periodId));
+
+    return Column(
+      children: [
+        // NFC-UID-Suchfeld
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          child: TextField(
+            controller: _searchCtrl,
+            decoration: InputDecoration(
+              hintText: 'Chip-UID suchen (scannen oder tippen) …',
+              prefixIcon: const Icon(Icons.contactless, size: 20),
+              isDense: true,
+              border: const OutlineInputBorder(),
+              suffixIcon: _uidFilter.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear, size: 18),
+                      onPressed: () => setState(() {
+                        _searchCtrl.clear();
+                        _uidFilter = '';
+                      }),
+                    )
+                  : null,
             ),
+            onChanged: (v) => setState(() => _uidFilter = v.trim().toUpperCase()),
+          ),
+        ),
+
+        Expanded(
+          child: txAsync.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, _) => Center(child: Text('Fehler: ${formatApiError(e)}')),
+            data: (transactions) {
+              final filtered = _uidFilter.isEmpty
+                  ? transactions
+                  : transactions
+                      .where((t) => t.nfcUid.toUpperCase().contains(_uidFilter))
+                      .toList();
+
+              if (filtered.isEmpty) {
+                return const Center(child: Text('Keine Transaktionen'));
+              }
+
+              final groups = _groupTransactions(filtered);
+
+              return ListView.separated(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                itemCount: groups.length,
+                separatorBuilder: (_, _) =>
+                    const Divider(height: 1, indent: 16),
+                itemBuilder: (_, i) => _BookingGroupTile(group: groups[i]),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _BookingGroupTile extends StatefulWidget {
+  final _BookingGroup group;
+  const _BookingGroupTile({required this.group});
+
+  @override
+  State<_BookingGroupTile> createState() => _BookingGroupTileState();
+}
+
+class _BookingGroupTileState extends State<_BookingGroupTile> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final g = widget.group;
+    final single = g.items.length == 1;
+
+    // For single-item groups, show a flat ListTile (no expansion needed).
+    if (single) {
+      final tx = g.items.first;
+      return ListTile(
+        dense: true,
+        leading: CircleAvatar(
+          radius: 16,
+          backgroundColor: tx.cancelled
+              ? theme.colorScheme.errorContainer
+              : theme.colorScheme.secondaryContainer,
+          child: Icon(
+            tx.cancelled ? Icons.cancel_outlined : Icons.receipt_outlined,
+            size: 16,
+            color: tx.cancelled
+                ? theme.colorScheme.onErrorContainer
+                : theme.colorScheme.onSecondaryContainer,
+          ),
+        ),
+        title: Text(
+          tx.productName,
+          style: tx.cancelled
+              ? TextStyle(
+                  decoration: TextDecoration.lineThrough,
+                  color: theme.colorScheme.onSurfaceVariant,
+                )
+              : null,
+        ),
+        subtitle: Text('${tx.nfcUid}  ·  ${_fmtDt(tx.bookedAt)}  ·  ${tx.bookedByUsername}'),
+        trailing: Text(
+          formatPrice(tx.priceAtSale),
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: tx.cancelled
+                ? theme.colorScheme.onSurfaceVariant
+                : tx.priceAtSale < 0
+                    ? theme.colorScheme.tertiary
+                    : theme.colorScheme.primary,
+          ),
+        ),
+      );
+    }
+
+    // Multi-item group: collapsible header + item rows.
+    final headerColor = g.allCancelled
+        ? theme.colorScheme.errorContainer
+        : theme.colorScheme.primaryContainer;
+    final headerOnColor = g.allCancelled
+        ? theme.colorScheme.onErrorContainer
+        : theme.colorScheme.onPrimaryContainer;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InkWell(
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 16,
+                  backgroundColor: headerColor,
+                  child: Icon(Icons.shopping_bag_outlined,
+                      size: 16, color: headerOnColor),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${g.items.length} Artikel',
+                        style: theme.textTheme.bodyMedium
+                            ?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                      Text(
+                        '${g.nfcUid}  ·  ${_fmtDt(g.bookedAt)}  ·  ${g.bookedByUsername}',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                Text(
+                  formatPrice(g.total),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: g.allCancelled
+                        ? theme.colorScheme.onSurfaceVariant
+                        : theme.colorScheme.primary,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(_expanded ? Icons.expand_less : Icons.expand_more,
+                    size: 18, color: theme.colorScheme.onSurfaceVariant),
+              ],
+            ),
+          ),
+        ),
+        if (_expanded)
+          ...g.items.map((tx) => Padding(
+                padding: const EdgeInsets.only(left: 44, right: 16, bottom: 4),
+                child: Row(
+                  children: [
+                    Icon(
+                      tx.cancelled ? Icons.cancel_outlined : Icons.circle,
+                      size: tx.cancelled ? 14 : 6,
+                      color: tx.cancelled
+                          ? theme.colorScheme.error
+                          : theme.colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        tx.productName,
+                        style: tx.cancelled
+                            ? TextStyle(
+                                decoration: TextDecoration.lineThrough,
+                                color: theme.colorScheme.onSurfaceVariant,
+                                fontSize: 13,
+                              )
+                            : const TextStyle(fontSize: 13),
+                      ),
+                    ),
+                    Text(
+                      formatPrice(tx.priceAtSale),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: tx.cancelled
+                            ? theme.colorScheme.onSurfaceVariant
+                            : tx.priceAtSale < 0
+                                ? theme.colorScheme.tertiary
+                                : theme.colorScheme.onSurface,
+                      ),
+                    ),
+                  ],
+                ),
+              )),
+      ],
     );
   }
 }

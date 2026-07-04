@@ -16,15 +16,28 @@ import 'dialogs/cancel_booking_dialog.dart';
 /// - For payout: shows "Auszahlungsbetrag" (balance + deposit) instead
 /// - Disables the Buchen button when the result would be a negative balance
 /// - Shows the "Letzte Buchung stornieren" button after a successful booking
-class CartPanel extends ConsumerWidget {
+class CartPanel extends ConsumerStatefulWidget {
   final bool showHeader;
 
   const CartPanel({super.key, this.showHeader = true});
 
-  Future<void> _book(BuildContext context, WidgetRef ref) async {
+  @override
+  ConsumerState<CartPanel> createState() => _CartPanelState();
+}
+
+class _CartPanelState extends ConsumerState<CartPanel> {
+  bool _isBooking = false;
+
+  Future<void> _book(BuildContext context) async {
+    if (_isBooking) return;
+    setState(() => _isBooking = true);
+
     final cart = ref.read(cartProvider.notifier);
     final customer = ref.read(customerProvider);
-    if (customer == null || cart.productIds.isEmpty) return;
+    if (customer == null || cart.productIds.isEmpty) {
+      setState(() => _isBooking = false);
+      return;
+    }
 
     final isPayout = ref.read(cartProvider).any((i) => i.product.isPayout);
 
@@ -33,11 +46,9 @@ class CartPanel extends ConsumerWidget {
       final result = await svc.book(customer.nfcUid, cart.productIds);
 
       if (isPayout) {
-        // Chip returned — clear customer and suppress storno button.
         ref.read(customerProvider.notifier).state = null;
         ref.read(lastBookingProvider.notifier).state = null;
       } else {
-        // Store for potential storno
         final items = ref.read(cartProvider)
             .map((i) => {'name': i.product.name, 'price': i.subtotal})
             .toList();
@@ -52,6 +63,25 @@ class CartPanel extends ConsumerWidget {
       }
 
       cart.clear();
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle_outline, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Text(isPayout ? 'Auszahlung bestätigt' : 'Buchung bestätigt'),
+              ],
+            ),
+            backgroundColor: Colors.green.shade700,
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.only(top: 8, left: 8, right: 8),
+            dismissDirection: DismissDirection.up,
+          ),
+        );
+      }
     } on Exception catch (e) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -60,6 +90,8 @@ class CartPanel extends ConsumerWidget {
           backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
+    } finally {
+      if (mounted) setState(() => _isBooking = false);
     }
   }
 
@@ -71,7 +103,8 @@ class CartPanel extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
+    final ref = this.ref;
     final items = ref.watch(cartProvider);
     final cart = ref.read(cartProvider.notifier);
     final customer = ref.watch(customerProvider);
@@ -100,7 +133,8 @@ class CartPanel extends ConsumerWidget {
 
     // Client-side guard: disabled when balance would go negative.
     // Payout is always allowed as long as a customer is loaded.
-    final canBook = items.isNotEmpty &&
+    final canBook = !_isBooking &&
+        items.isNotEmpty &&
         customer != null &&
         (hasPayout || restBalance >= 0);
 
@@ -113,7 +147,7 @@ class CartPanel extends ConsumerWidget {
       child: Column(
       children: [
         // Header (hidden in narrow layout where the drag handle shows the title)
-        if (showHeader)
+        if (widget.showHeader)
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
             color: theme.colorScheme.surfaceContainerHigh,
@@ -133,7 +167,7 @@ class CartPanel extends ConsumerWidget {
             ),
           ),
         // "Leeren" button when header is hidden (narrow layout)
-        if (!showHeader && items.isNotEmpty)
+        if (!widget.showHeader && items.isNotEmpty)
           Align(
             alignment: Alignment.centerRight,
             child: TextButton(
@@ -275,9 +309,24 @@ class CartPanel extends ConsumerWidget {
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                 child: FilledButton.icon(
-                  onPressed: canBook ? () => _book(context, ref) : null,
-                  icon: Icon(hasPayout ? Icons.payments_outlined : Icons.check, size: 22),
-                  label: Text(hasPayout ? 'Auszahlen' : 'Buchen'),
+                  onPressed: canBook ? () => _book(context) : null,
+                  icon: _isBooking
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : Icon(hasPayout ? Icons.payments_outlined : Icons.check, size: 22),
+                  label: Text(
+                    _isBooking
+                        ? 'Wird verarbeitet …'
+                        : hasPayout
+                            ? 'Auszahlen'
+                            : 'Buchen',
+                  ),
                   style: FilledButton.styleFrom(
                     minimumSize: const Size(double.infinity, 56),
                     textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),

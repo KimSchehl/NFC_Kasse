@@ -1,0 +1,158 @@
+DOPPELBUCHUNGEN – FELDTEST 19.–22. JUNI 2026
+========================================================================
+
+Methode: Erkannt als separate Buchungen (gleicher Zeitstempel + 1) fuer
+         denselben Chip/Bediener mit mind. einem identischen Artikel
+         innerhalb von 5 Sekunden.
+
+DOPPELBUCHUNGEN (Verkauf): 21 Vorfaelle
+------------------------------------------------------------------------
+
+#01  Chip: 22:0A:0F:9E  |  Bediener: bar
+     Buchungen: 2x innerhalb 4s
+     Original:    19:59:02  1x Aperol / Hugo  (7.50 EUR)
+     Duplikat 1:  19:59:06  1x Aperol / Hugo  (7.50 EUR)
+     Ueberbelastung: 7.50 EUR  (Duplikat(e) komplett falsch abgebucht)
+
+#02  Chip: BB:8D:50:D3  |  Bediener: bar
+     Buchungen: 2x innerhalb 1s
+     Original:    19:21:24  2x Sommer Schorle  (12.00 EUR)
+     Duplikat 1:  19:21:25  2x Sommer Schorle  (12.00 EUR)
+     Ueberbelastung: 12.00 EUR  (Duplikat(e) komplett falsch abgebucht)
+
+#03  Chip: DC:F6:23:8E  |  Bediener: bar
+     Buchungen: 2x innerhalb 1s
+     Original:    15:26:59  1x Pfand Glas  (3.00 EUR)
+     Duplikat 1:  15:27:00  1x Pfand Glas  (3.00 EUR)
+     Ueberbelastung: 3.00 EUR  (Duplikat(e) komplett falsch abgebucht)
+
+#04  Chip: BB:8D:50:D3  |  Bediener: bierwagen-1
+     Buchungen: 2x innerhalb 1s
+     Original:    16:11:05  1x Sommerschorle 0,5L, 1x Pfand Glas  (9.00 EUR)
+     Duplikat 1:  16:11:06  1x Sommerschorle 0,5L, 1x Pfand Glas  (9.00 EUR)
+     Ueberbelastung: 9.00 EUR  (Duplikat(e) komplett falsch abgebucht)
+
+#05  Chip: B6:80:0E:9E  |  Bediener: bierwagen-1
+     Buchungen: 2x innerhalb 1s
+     Original:    18:12:25  1x Pfand Flasche, 1x Mineralwasser 0,7L  (5.00 EUR)
+     Duplikat 1:  18:12:26  1x Pfand Flasche, 1x Mineralwasser 0,7L  (5.00 EUR)
+     Ueberbelastung: 5.00 EUR  (Duplikat(e) komplett falsch abgebucht)
+
+#06  Chip: BB:6F:23:8E  |  Bediener: bierwagen-1
+     Buchungen: 2x innerhalb 5s
+     Original:    22:12:18  1x Pfand Glas, 1x Radler 0,5L  (8.00 EUR)
+     Duplikat 1:  22:12:23  1x Pfand Glas, 1x Radler 0,5L  (8.00 EUR)
+     Ueberbelastung: 8.00 EUR  (Duplikat(e) komplett falsch abgebucht)
+
+#07  Chip: 6B:E9:0E:9E  |  Bediener: bierwagen-1
+     Buchungen: 2x innerhalb 1s
+     Original:    23:46:01  1x Weizen 0,5  (5.00 EUR)
+     Duplikat 1:  23:46:02  1x Weizen 0,5  (5.00 EUR)
+     Ueberbelastung: 5.00 EUR  (Duplikat(e) komplett falsch abgebucht)
+
+#08  Chip: D5:00:4C:D3  |  Bediener: bierwagen-1
+     Buchungen: 2x innerhalb 1s
+     Original:    10:22:31  1x Pils 0,5L  (5.00 EUR)
+     Duplikat 1:  10:22:32  1x Pils 0,5L  (5.00 EUR)
+     Ueberbelastung: 5.00 EUR  (Duplikat(e) komplett falsch abgebucht)
+
+#09  Chip: DD:58:10:9E  |  Bediener: bierwagen-1
+     Buchungen: 2x innerhalb 1s
+     Original:    10:30:45  1x Weizen 0,5  (5.00 EUR)
+     Duplikat 1:  10:30:46  1x Weizen 0,5  (5.00 EUR)
+     Ueberbelastung: 5.00 EUR  (Duplikat(e) komplett falsch abgebucht)
+
+#10  Chip: D5:00:4C:D3  |  Bediener: bierwagen-1
+     Buchungen: 3x innerhalb 2s
+     Original:    13:54:40  2x Pils 0,5L  (10.00 EUR)
+     Duplikat 1:  13:54:41  2x Pils 0,5L  (10.00 EUR)
+     Duplikat 2:  13:54:42  2x Pils 0,5L  (10.00 EUR)
+     Ueberbelastung: 20.00 EUR  (Duplikat(e) komplett falsch abgebucht)
+
+#11  Chip: BB:8D:50:D3  |  Bediener: bierwagen-1
+     Buchungen: 2x innerhalb 1s
+     Original:    15:56:08  1x Mineralwasser 0,7L  (4.00 EUR)
+     Duplikat 1:  15:56:09  1x Mineralwasser 0,7L  (4.00 EUR)
+     Ueberbelastung: 4.00 EUR  (Duplikat(e) komplett falsch abgebucht)
+
+#12  Chip: B3:20:55:D3  |  Bediener: bierwagen-1
+     Buchungen: 2x innerhalb 2s
+     Original:    16:09:37  1x Sommerschorle 0,5L, 1x Mineralwasser 0,7L, 1x Pfand Glas, 1x Pfand Flasche  (14.00 EUR)
+     Duplikat 1:  16:09:39  1x Sommerschorle 0,5L, 1x Mineralwasser 0,7L, 1x Pfand Glas, 1x Pfand Flasche  (14.00 EUR)
+     Ueberbelastung: 14.00 EUR  (Duplikat(e) komplett falsch abgebucht)
+
+#13  Chip: D5:00:4C:D3  |  Bediener: bierwagen-2
+     Buchungen: 2x innerhalb 2s
+     Original:    22:27:27  1x Weizen 0,5  (5.00 EUR)
+     Duplikat 1:  22:27:29  1x Weizen 0,5  (5.00 EUR)
+     Ueberbelastung: 5.00 EUR  (Duplikat(e) komplett falsch abgebucht)
+
+#14  Chip: BB:8D:50:D3  |  Bediener: essen
+     Buchungen: 2x innerhalb 1s
+     Original:    15:50:07  1x Bratwurst im Brötchen  (4.50 EUR)
+     Duplikat 1:  15:50:08  1x Bratwurst im Brötchen  (4.50 EUR)
+     Ueberbelastung: 4.50 EUR  (Duplikat(e) komplett falsch abgebucht)
+
+#15  Chip: BB:8D:50:D3  |  Bediener: essen
+     Buchungen: 2x innerhalb 1s
+     Original:    15:52:24  1x Bratwurst im Brötchen, 1x Currywurst mit Brötchen  (11.00 EUR)
+     Duplikat 1:  15:52:25  1x Bratwurst im Brötchen, 1x Currywurst mit Brötchen  (11.00 EUR)
+     Ueberbelastung: 11.00 EUR  (Duplikat(e) komplett falsch abgebucht)
+
+#16  Chip: D3:DE:4D:D3  |  Bediener: essen
+     Buchungen: 2x innerhalb 2s
+     Original:    16:47:52  1x Currywurst mit Brötchen  (6.50 EUR)
+     Duplikat 1:  16:47:54  1x Currywurst mit Brötchen  (6.50 EUR)
+     Ueberbelastung: 6.50 EUR  (Duplikat(e) komplett falsch abgebucht)
+
+#17  Chip: 2B:A5:4E:D3  |  Bediener: essen
+     Buchungen: 2x innerhalb 1s
+     Original:    17:53:51  1x Currywurst mit Brötchen  (6.50 EUR)
+     Duplikat 1:  17:53:52  1x Currywurst mit Brötchen  (6.50 EUR)
+     Ueberbelastung: 6.50 EUR  (Duplikat(e) komplett falsch abgebucht)
+
+#18  Chip: 75:19:09:9E  |  Bediener: essen
+     Buchungen: 2x innerhalb 2s
+     Original:    17:30:29  1x Currywurst mit Pommes  (8.00 EUR)
+     Duplikat 1:  17:30:31  1x Currywurst mit Pommes  (8.00 EUR)
+     Ueberbelastung: 8.00 EUR  (Duplikat(e) komplett falsch abgebucht)
+
+#19  Chip: 2B:A5:4E:D3  |  Bediener: essen
+     Buchungen: 2x innerhalb 4s
+     Original:    12:50:55  1x Bratwurst im Brötchen  (4.50 EUR)
+     Duplikat 1:  12:50:59  1x Bratwurst im Brötchen  (4.50 EUR)
+     Ueberbelastung: 4.50 EUR  (Duplikat(e) komplett falsch abgebucht)
+
+#20  Chip: DD:74:25:8E  |  Bediener: essen
+     Buchungen: 2x innerhalb 2s
+     Original:    16:49:19  1x Currywurst mit Pommes  (8.00 EUR)
+     Duplikat 1:  16:49:21  2x Currywurst mit Pommes  (16.00 EUR)
+     Ueberbelastung: 16.00 EUR  (Duplikat(e) komplett falsch abgebucht)
+
+#21  Chip: 2B:34:4D:D3  |  Bediener: essen
+     Buchungen: 2x innerhalb 2s
+     Original:    16:34:20  1x Flammkuchen Griechisch  (8.50 EUR)
+     Duplikat 1:  16:34:22  1x Flammkuchen Griechisch  (8.50 EUR)
+     Ueberbelastung: 8.50 EUR  (Duplikat(e) komplett falsch abgebucht)
+
+========================================================================
+ZUSAMMENFASSUNG VERKAUFS-DOPPELBUCHUNGEN
+  Anzahl Vorfaelle:      21
+  Gesamt-Ueberbelastung: 168.00 EUR
+
+  Nach Bediener:
+    bierwagen-1          75.00 EUR  (9 Vorfaelle)
+    essen                65.50 EUR  (8 Vorfaelle)
+    bar                  22.50 EUR  (3 Vorfaelle)
+    bierwagen-2           5.00 EUR  (1 Vorfaelle)
+
+========================================================================
+DOPPELTE AUFLADUNGEN (Bonkasse/Nico): 1 Vorfaelle
+  (Chip wurde doppelt aufgeladen – Guthaben zu hoch, kein Schaden fuer Gast)
+------------------------------------------------------------------------
+
+  #01  Chip: B3:20:55:D3  |  Kasse: nico  |  Zeit: 2026-06-20 16:26:39
+       2x aufgeladen: 4x +50€
+       Ueberladung: 100.00 EUR zu viel aufgeladen
+
+  Gesamt zu viel aufgeladen: 100.00 EUR

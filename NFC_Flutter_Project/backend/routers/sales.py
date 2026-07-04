@@ -112,6 +112,22 @@ def create_booking(
     with get_db(exclusive=True) as db:
         customer_id, is_new = _get_or_create_customer(db, tenant_id, body.nfc_uid)
 
+        # Reject duplicate submissions: same customer + cashier within 2 seconds.
+        last = db.execute(
+            "SELECT booked_at FROM sale WHERE customer_id=? AND booked_by=? "
+            "ORDER BY booked_at DESC LIMIT 1",
+            (customer_id, user_id),
+        ).fetchone()
+        if last:
+            last_at = datetime.fromisoformat(last["booked_at"])
+            if last_at.tzinfo is None:
+                last_at = last_at.replace(tzinfo=timezone.utc)
+            if (datetime.now(timezone.utc) - last_at).total_seconds() < 2.0:
+                raise HTTPException(
+                    status_code=429,
+                    detail="Doppelbuchung verhindert — bitte 2 Sekunden warten",
+                )
+
         # body.product_ids may contain repeated IDs (e.g. [5, 5] = 2 beers).
         # SQL `IN` de-duplicates, so we query only the unique IDs, then use
         # the full product_ids list for pricing and sale row creation.
