@@ -36,9 +36,9 @@ class StatsService {
     );
   }
 
-  Future<RevenueStats> getRevenue({int? periodId, String? from, String? to}) async {
+  Future<RevenueStats> getRevenue({String? periodIds, String? from, String? to}) async {
     final params = <String, dynamic>{};
-    if (periodId != null) params['period_id'] = periodId;
+    if (periodIds != null) params['period_ids'] = periodIds;
     if (from != null) params['period_start'] = from;
     if (to != null) params['period_end'] = to;
     final resp = await _client.dio.get('/api/stats/revenue', queryParameters: params);
@@ -46,14 +46,14 @@ class StatsService {
   }
 
   Future<List<TransactionItem>> getTransactions({
-    int? periodId,
+    String? periodIds,
     String? from,
     String? to,
     int limit = 100,
     int offset = 0,
   }) async {
     final params = <String, dynamic>{'limit': limit, 'offset': offset};
-    if (periodId != null) params['period_id'] = periodId;
+    if (periodIds != null) params['period_ids'] = periodIds;
     if (from != null) params['period_start'] = from;
     if (to != null) params['period_end'] = to;
     final resp = await _client.dio.get('/api/stats/transactions', queryParameters: params);
@@ -62,8 +62,8 @@ class StatsService {
         .toList();
   }
 
-  String exportUrl({int? periodId}) {
+  String exportUrl({String? periodIds}) {
     final base = '${_client.dio.options.baseUrl}/api/stats/export';
-    return periodId != null ? '$base?period_id=$periodId' : base;
+    return periodIds != null ? '$base?period_ids=$periodIds' : base;
   }
 }

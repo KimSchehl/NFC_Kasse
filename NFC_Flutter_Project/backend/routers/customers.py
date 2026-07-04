@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from config import CHIP_DEPOSIT
 from database import get_db
 from dependencies import RequestContext, require_permission
+from routers.stats import _period_time_bounds
 from schemas import ChipResponse, ChipSummaryResponse
 
 router = APIRouter(prefix="/api/customers", tags=["customers"])
@@ -43,12 +44,14 @@ def list_chips(
 
 @router.get("/summary", response_model=ChipSummaryResponse)
 def chip_summary(
+    period_ids: str | None = Query(None, description="Comma-separated period IDs to scope topup/sale totals"),
     ctx: RequestContext = Depends(require_permission("statistics.revenue")),
 ):
-    """Aggregate balance overview for the current event."""
+    """Aggregate balance overview. total_topup/total_payout respect period_ids if given."""
     tenant_id = ctx["user"]["tenant_id"]
     event_id = ctx["event"]["id"]
     with get_db() as db:
+        # Current chip counts and balance are always event-wide (live state).
         chip_row = db.execute(
             """
             SELECT
@@ -61,26 +64,38 @@ def chip_summary(
             (tenant_id,),
         ).fetchone()
 
+        # Build optional time bounds from period selection.
+        min_start, max_end = _period_time_bounds(db, event_id, period_ids)
+        time_clauses: list[str] = []
+        time_params: list = []
+        if min_start:
+            time_clauses.append("booked_at >= ?")
+            time_params.append(min_start)
+        if max_end:
+            time_clauses.append("booked_at <= ?")
+            time_params.append(max_end)
+        time_where = (" AND " + " AND ".join(time_clauses)) if time_clauses else ""
+
         topup_row = db.execute(
-            """
+            f"""
             SELECT
                 COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0.0) AS total_topup,
                 COALESCE(ABS(SUM(CASE WHEN amount < 0 THEN amount ELSE 0 END)), 0.0) AS total_payout
             FROM topup
-            WHERE event_id = ?
+            WHERE event_id = ? AND cancelled = 0 {time_where}
             """,
-            (event_id,),
+            (event_id, *time_params),
         ).fetchone()
 
         # Aufladungen die als Artikel gebucht wurden (negative price_at_sale)
         # gehen in die sale-Tabelle, nicht in topup — beide Quellen addieren.
         article_topup_row = db.execute(
-            """
+            f"""
             SELECT COALESCE(SUM(ABS(price_at_sale)), 0.0) AS topup_from_articles
             FROM sale
-            WHERE event_id = ? AND cancelled = 0 AND price_at_sale < 0
+            WHERE event_id = ? AND cancelled = 0 AND price_at_sale < 0 {time_where}
             """,
-            (event_id,),
+            (event_id, *time_params),
         ).fetchone()
 
     return ChipSummaryResponse(

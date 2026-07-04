@@ -54,16 +54,39 @@ def _build_time_filter(period_start: str | None, period_end: str | None) -> tupl
 def _resolve_time_filter(
     db,
     event_id: int,
+    period_ids: str | None,
     period_id: int | None,
     period_start: str | None,
     period_end: str | None,
 ) -> tuple[str, list]:
     """
-    Returns a time-filter fragment + params.
+    Returns a time-filter fragment + params for the `sale` table (alias `s`).
 
-    Priority: period_id > manual period_start/period_end.
-    If period_id is given, its started_at/closed_at are used as bounds.
+    Priority: period_ids (multi) > period_id (single) > manual start/end.
+    period_ids is a comma-separated string of stats_period IDs.
+    The resolved time range spans min(started_at) … max(closed_at) of all
+    selected periods; if any selected period is still open, no upper bound.
     """
+    if period_ids:
+        ids = [int(x) for x in period_ids.split(",") if x.strip().isdigit()]
+        if ids:
+            ph = ",".join("?" * len(ids))
+            rows = db.execute(
+                f"SELECT started_at, closed_at FROM stats_period "
+                f"WHERE id IN ({ph}) AND event_id=?",
+                [*ids, event_id],
+            ).fetchall()
+            if rows:
+                min_start = min(r["started_at"] for r in rows)
+                has_open = any(r["closed_at"] is None for r in rows)
+                max_end = None if has_open else max(r["closed_at"] for r in rows)
+                clauses = ["s.booked_at >= ?"]
+                params: list = [min_start]
+                if max_end:
+                    clauses.append("s.booked_at <= ?")
+                    params.append(max_end)
+                return " AND " + " AND ".join(clauses), params
+
     if period_id is not None:
         row = db.execute(
             "SELECT started_at, closed_at FROM stats_period WHERE id=? AND event_id=?",
@@ -78,6 +101,33 @@ def _resolve_time_filter(
             return " AND " + " AND ".join(clauses), params
 
     return _build_time_filter(period_start, period_end)
+
+
+def _period_time_bounds(
+    db, event_id: int, period_ids: str | None
+) -> tuple[str | None, str | None]:
+    """
+    Returns (min_started_at, max_closed_at) for a given period_ids string.
+    max_closed_at is None if any selected period is still open.
+    Used by other routers that need the same bounds with different table aliases.
+    """
+    if not period_ids:
+        return None, None
+    ids = [int(x) for x in period_ids.split(",") if x.strip().isdigit()]
+    if not ids:
+        return None, None
+    ph = ",".join("?" * len(ids))
+    rows = db.execute(
+        f"SELECT started_at, closed_at FROM stats_period "
+        f"WHERE id IN ({ph}) AND event_id=?",
+        [*ids, event_id],
+    ).fetchall()
+    if not rows:
+        return None, None
+    min_start = min(r["started_at"] for r in rows)
+    has_open = any(r["closed_at"] is None for r in rows)
+    max_end = None if has_open else max(r["closed_at"] for r in rows)
+    return min_start, max_end
 
 
 # ---------------------------------------------------------------------------
@@ -185,7 +235,8 @@ def event_reset(
 
 @router.get("/revenue", response_model=RevenueResponse)
 def get_revenue(
-    period_id: int | None = Query(None, description="Filter by saved period (overrides period_start/period_end)"),
+    period_ids: str | None = Query(None, description="Comma-separated period IDs (highest priority)"),
+    period_id: int | None = Query(None, description="Single period ID (fallback)"),
     period_start: str | None = Query(None, description="ISO datetime, e.g. 2026-06-01T00:00:00"),
     period_end: str | None = Query(None, description="ISO datetime, e.g. 2026-06-01T23:59:59"),
     ctx: RequestContext = Depends(require_permission("statistics.revenue")),
@@ -194,7 +245,7 @@ def get_revenue(
 
     with get_db() as db:
         time_where, time_params = _resolve_time_filter(
-            db, event_id, period_id, period_start, period_end
+            db, event_id, period_ids, period_id, period_start, period_end
         )
 
         # Revenue per category — excludes payout articles and products marked
@@ -244,6 +295,7 @@ def get_revenue(
 
 @router.get("/transactions", response_model=TransactionListResponse)
 def get_transactions(
+    period_ids: str | None = Query(None),
     period_id: int | None = Query(None),
     period_start: str | None = Query(None),
     period_end: str | None = Query(None),
@@ -259,7 +311,7 @@ def get_transactions(
 
     with get_db() as db:
         time_where, time_params = _resolve_time_filter(
-            db, event_id, period_id, period_start, period_end
+            db, event_id, period_ids, period_id, period_start, period_end
         )
 
         rows = db.execute(
@@ -310,6 +362,7 @@ def get_transactions(
 
 @router.get("/export")
 def export_transactions(
+    period_ids: str | None = Query(None),
     period_id: int | None = Query(None),
     period_start: str | None = Query(None),
     period_end: str | None = Query(None),
@@ -319,7 +372,7 @@ def export_transactions(
 
     with get_db() as db:
         time_where, time_params = _resolve_time_filter(
-            db, event_id, period_id, period_start, period_end
+            db, event_id, period_ids, period_id, period_start, period_end
         )
 
         rows = db.execute(

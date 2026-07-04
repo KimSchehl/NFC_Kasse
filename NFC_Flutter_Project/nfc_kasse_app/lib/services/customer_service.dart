@@ -12,8 +12,10 @@ class CustomerService {
         .toList();
   }
 
-  Future<ChipSummary> getSummary() async {
-    final resp = await _client.dio.get('/api/customers/summary');
+  Future<ChipSummary> getSummary({String? periodIds}) async {
+    final params = <String, dynamic>{};
+    if (periodIds != null) params['period_ids'] = periodIds;
+    final resp = await _client.dio.get('/api/customers/summary', queryParameters: params);
     return ChipSummary.fromJson(resp.data as Map<String, dynamic>);
   }
 }

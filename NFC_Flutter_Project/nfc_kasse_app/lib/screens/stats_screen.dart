@@ -8,25 +8,27 @@ import '../utils/formatters.dart';
 
 // ---------------------------------------------------------------------------
 // File-level providers — autoDispose so data is fresh on each screen visit.
-// Each takes an optional period ID; null = no time filter (all time).
+// Family key is String? where null = all time, "1" = single period,
+// "1,3,5" = combined periods (sorted, comma-separated IDs).
 // ---------------------------------------------------------------------------
 
 final _statsProvider = FutureProvider.autoDispose
-    .family<RevenueStats, int?>((ref, periodId) async {
-  return ref.read(statsServiceProvider).getRevenue(periodId: periodId);
+    .family<RevenueStats, String?>((ref, periodKey) async {
+  return ref.read(statsServiceProvider).getRevenue(periodIds: periodKey);
 });
 
 final _txProvider = FutureProvider.autoDispose
-    .family<List<TransactionItem>, int?>((ref, periodId) async {
-  return ref.read(statsServiceProvider).getTransactions(limit: 200, periodId: periodId);
+    .family<List<TransactionItem>, String?>((ref, periodKey) async {
+  return ref.read(statsServiceProvider).getTransactions(limit: 200, periodIds: periodKey);
 });
 
 final _chipsProvider = FutureProvider.autoDispose<List<ChipModel>>((ref) async {
   return ref.read(customerServiceProvider).getChips();
 });
 
-final _chipSummaryProvider = FutureProvider.autoDispose<ChipSummary>((ref) async {
-  return ref.read(customerServiceProvider).getSummary();
+final _chipSummaryProvider = FutureProvider.autoDispose
+    .family<ChipSummary, String?>((ref, periodKey) async {
+  return ref.read(customerServiceProvider).getSummary(periodIds: periodKey);
 });
 
 // ---------------------------------------------------------------------------
@@ -59,8 +61,15 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
   late final TabController _tab;
 
   List<StatsPeriod> _periods = [];
-  int? _selectedPeriodId; // null = "Alle Zeiten"
+  Set<int> _selectedPeriodIds = {};
   bool _loadingPeriods = true;
+
+  /// Null = "Alle Zeiten", "5" = single period, "1,3,5" = combined.
+  String? get _periodKey {
+    if (_selectedPeriodIds.isEmpty) return null;
+    final sorted = _selectedPeriodIds.toList()..sort();
+    return sorted.join(',');
+  }
 
   @override
   void initState() {
@@ -87,7 +96,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
             (p) => p.isOpen,
             orElse: () => periods.first,
           );
-          _selectedPeriodId = current.id;
+          _selectedPeriodIds = {current.id};
         }
       });
     } catch (e) {
@@ -111,9 +120,10 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
       final newPeriod = await ref.read(statsServiceProvider).closePeriod(label);
       await _loadPeriods();
       if (!mounted) return;
-      setState(() => _selectedPeriodId = newPeriod.id);
-      ref.invalidate(_statsProvider);
-      ref.invalidate(_txProvider);
+      setState(() => _selectedPeriodIds = {newPeriod.id});
+      ref.invalidate(_statsProvider(_periodKey));
+      ref.invalidate(_txProvider(_periodKey));
+      ref.invalidate(_chipSummaryProvider(_periodKey));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -241,9 +251,10 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
       final newPeriod = await ref.read(statsServiceProvider).eventReset(label);
       await _loadPeriods();
       if (!mounted) return;
-      setState(() => _selectedPeriodId = newPeriod.id);
-      ref.invalidate(_statsProvider);
-      ref.invalidate(_txProvider);
+      setState(() => _selectedPeriodIds = {newPeriod.id});
+      ref.invalidate(_statsProvider(_periodKey));
+      ref.invalidate(_txProvider(_periodKey));
+      ref.invalidate(_chipSummaryProvider(_periodKey));
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Alle Chips zurückgesetzt — bereit für neues Event.')),
       );
@@ -261,6 +272,31 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
     return '${p.label}  ${_fmtDt(p.startedAt)} – ${_fmtDt(p.closedAt!)}';
   }
 
+  String get _selectionSummary {
+    if (_selectedPeriodIds.isEmpty) return 'Alle Zeiten';
+    if (_selectedPeriodIds.length == 1) {
+      final p = _periods.where((p) => p.id == _selectedPeriodIds.first).firstOrNull;
+      return p != null ? _periodLabel(p) : '1 Periode';
+    }
+    return '${_selectedPeriodIds.length} Perioden';
+  }
+
+  Future<void> _openPeriodSelector() async {
+    final result = await showDialog<Set<int>>(
+      context: context,
+      builder: (ctx) => _PeriodSelectorDialog(
+        periods: _periods,
+        selected: Set.of(_selectedPeriodIds),
+        periodLabel: _periodLabel,
+      ),
+    );
+    if (result == null || !mounted) return;
+    setState(() => _selectedPeriodIds = result);
+    ref.invalidate(_statsProvider(_periodKey));
+    ref.invalidate(_txProvider(_periodKey));
+    ref.invalidate(_chipSummaryProvider(_periodKey));
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -275,7 +311,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Row 1: period dropdown full width
+              // Row 1: period selector button
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
                 child: _loadingPeriods
@@ -283,54 +319,35 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
                         height: 36,
                         child: Center(child: LinearProgressIndicator()),
                       )
-                    : DropdownButton<int?>(
-                        value: _selectedPeriodId,
-                        isExpanded: true,
-                        isDense: true,
-                        underline: const SizedBox(),
-                        icon: const Icon(Icons.expand_more, size: 20),
-                        items: [
-                          const DropdownMenuItem<int?>(
-                            value: null,
-                            child: Text('Alle Zeiten'),
-                          ),
-                          ..._periods.map(
-                            (p) => DropdownMenuItem<int?>(
-                              value: p.id,
-                              child: Row(
-                                children: [
-                                  if (p.isOpen)
-                                    Container(
-                                      width: 8,
-                                      height: 8,
-                                      margin: const EdgeInsets.only(right: 8),
-                                      decoration: BoxDecoration(
+                    : OutlinedButton.icon(
+                        onPressed: _openPeriodSelector,
+                        icon: const Icon(Icons.date_range, size: 18),
+                        label: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                _selectionSummary,
+                                overflow: TextOverflow.ellipsis,
+                                style: _selectedPeriodIds.length == 1 &&
+                                        _periods
+                                            .where((p) => p.id == _selectedPeriodIds.first)
+                                            .any((p) => p.isOpen)
+                                    ? TextStyle(
                                         color: theme.colorScheme.primary,
-                                        shape: BoxShape.circle,
-                                      ),
-                                    ),
-                                  Expanded(
-                                    child: Text(
-                                      _periodLabel(p),
-                                      overflow: TextOverflow.ellipsis,
-                                      style: p.isOpen
-                                          ? TextStyle(
-                                              color: theme.colorScheme.primary,
-                                              fontWeight: FontWeight.w600,
-                                            )
-                                          : null,
-                                    ),
-                                  ),
-                                ],
+                                        fontWeight: FontWeight.w600,
+                                      )
+                                    : null,
                               ),
                             ),
-                          ),
-                        ],
-                        onChanged: (v) {
-                          setState(() => _selectedPeriodId = v);
-                          ref.invalidate(_statsProvider(v));
-                          ref.invalidate(_txProvider(v));
-                        },
+                            Icon(Icons.expand_more,
+                                size: 18,
+                                color: theme.colorScheme.onSurfaceVariant),
+                          ],
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          alignment: Alignment.centerLeft,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
                       ),
               ),
               // Row 2: action buttons
@@ -385,9 +402,9 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
           child: TabBarView(
             controller: _tab,
             children: [
-              _RevenueTab(periodId: _selectedPeriodId),
-              _TransactionsTab(periodId: _selectedPeriodId),
-              const _ChipsTab(),
+              _RevenueTab(periodKey: _periodKey),
+              _TransactionsTab(periodKey: _periodKey),
+              _ChipsTab(periodKey: _periodKey),
             ],
           ),
         ),
@@ -401,12 +418,12 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
 // ---------------------------------------------------------------------------
 
 class _RevenueTab extends ConsumerWidget {
-  final int? periodId;
-  const _RevenueTab({this.periodId});
+  final String? periodKey;
+  const _RevenueTab({this.periodKey});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final statsAsync = ref.watch(_statsProvider(periodId));
+    final statsAsync = ref.watch(_statsProvider(periodKey));
     final theme = Theme.of(context);
 
     return statsAsync.when(
@@ -509,8 +526,8 @@ class _BookingGroup {
 }
 
 class _TransactionsTab extends ConsumerStatefulWidget {
-  final int? periodId;
-  const _TransactionsTab({this.periodId});
+  final String? periodKey;
+  const _TransactionsTab({this.periodKey});
 
   @override
   ConsumerState<_TransactionsTab> createState() => _TransactionsTabState();
@@ -528,7 +545,7 @@ class _TransactionsTabState extends ConsumerState<_TransactionsTab> {
 
   @override
   Widget build(BuildContext context) {
-    final txAsync = ref.watch(_txProvider(widget.periodId));
+    final txAsync = ref.watch(_txProvider(widget.periodKey));
 
     return Column(
       children: [
@@ -824,7 +841,8 @@ class _CategoryRow extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _ChipsTab extends ConsumerStatefulWidget {
-  const _ChipsTab();
+  final String? periodKey;
+  const _ChipsTab({this.periodKey});
 
   @override
   ConsumerState<_ChipsTab> createState() => _ChipsTabState();
@@ -842,7 +860,7 @@ class _ChipsTabState extends ConsumerState<_ChipsTab> {
 
   @override
   Widget build(BuildContext context) {
-    final summaryAsync = ref.watch(_chipSummaryProvider);
+    final summaryAsync = ref.watch(_chipSummaryProvider(widget.periodKey));
     final chipsAsync = ref.watch(_chipsProvider);
     final theme = Theme.of(context);
 
@@ -1011,6 +1029,117 @@ class _ChipsTabState extends ConsumerState<_ChipsTab> {
               );
             },
           ),
+        ),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Period multi-selector dialog
+// ---------------------------------------------------------------------------
+
+class _PeriodSelectorDialog extends StatefulWidget {
+  final List<StatsPeriod> periods;
+  final Set<int> selected;
+  final String Function(StatsPeriod) periodLabel;
+
+  const _PeriodSelectorDialog({
+    required this.periods,
+    required this.selected,
+    required this.periodLabel,
+  });
+
+  @override
+  State<_PeriodSelectorDialog> createState() => _PeriodSelectorDialogState();
+}
+
+class _PeriodSelectorDialogState extends State<_PeriodSelectorDialog> {
+  late Set<int> _current;
+
+  @override
+  void initState() {
+    super.initState();
+    _current = Set.of(widget.selected);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      title: const Text('Zeitraum auswählen'),
+      contentPadding: const EdgeInsets.fromLTRB(0, 12, 0, 0),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              dense: true,
+              leading: Icon(
+                _current.isEmpty ? Icons.check_circle : Icons.circle_outlined,
+                color: _current.isEmpty
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.onSurfaceVariant,
+                size: 20,
+              ),
+              title: const Text('Alle Zeiten'),
+              onTap: () => setState(() => _current.clear()),
+            ),
+            const Divider(height: 1),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 320),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: widget.periods.length,
+                itemBuilder: (_, i) {
+                  final p = widget.periods[i];
+                  final checked = _current.contains(p.id);
+                  return CheckboxListTile(
+                    dense: true,
+                    value: checked,
+                    secondary: p.isOpen
+                        ? Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.primary,
+                              shape: BoxShape.circle,
+                            ),
+                          )
+                        : const SizedBox(width: 8),
+                    title: Text(
+                      widget.periodLabel(p),
+                      style: p.isOpen
+                          ? TextStyle(
+                              color: theme.colorScheme.primary,
+                              fontWeight: FontWeight.w600,
+                            )
+                          : null,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    onChanged: (v) => setState(() {
+                      if (v == true) {
+                        _current.add(p.id);
+                      } else {
+                        _current.remove(p.id);
+                      }
+                    }),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Abbrechen'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _current),
+          child: const Text('Übernehmen'),
         ),
       ],
     );
