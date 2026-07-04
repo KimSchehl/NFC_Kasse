@@ -7,10 +7,13 @@ import 'providers/providers.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_shell.dart';
 import 'services/app_storage.dart';
+import 'services/notification_service.dart';
 import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  await NotificationService().init();
 
   final prefs = await SharedPreferences.getInstance();
   final storage = AppStorage(prefs);

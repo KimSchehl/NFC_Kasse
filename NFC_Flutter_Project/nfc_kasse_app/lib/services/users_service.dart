@@ -94,6 +94,8 @@ class UsersService {
       {'id': 'users.deactivate',        'label': 'Benutzer deaktivieren',   'group': 'Benutzer'},
       {'id': 'users.delete',            'label': 'Benutzer löschen',        'group': 'Benutzer'},
       {'id': 'users.manage_permissions','label': 'Rechte vergeben',         'group': 'Benutzer'},
+      // Notfall
+      {'id': 'help.receive',            'label': 'Notfall-Kontakt',          'group': 'Notfall'},
     ];
   }
 }

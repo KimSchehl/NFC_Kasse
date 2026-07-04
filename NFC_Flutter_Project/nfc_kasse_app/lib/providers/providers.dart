@@ -2,21 +2,26 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../config/api_config.dart';
 import '../services/app_storage.dart';
 import '../models/cart_item.dart';
 import '../models/category_model.dart';
 import '../models/customer_model.dart';
+import '../models/help_model.dart';
 import '../models/product_model.dart';
 import '../models/user_model.dart';
 import '../models/user_preferences_model.dart';
 import '../services/api_client.dart';
 import '../services/auth_service.dart';
 import '../services/customer_service.dart';
+import '../services/help_service.dart';
+import '../services/notification_service.dart';
 import '../services/preferences_service.dart';
 import '../services/product_service.dart';
 import '../services/sales_service.dart';
@@ -76,6 +81,12 @@ final customerServiceProvider = Provider(
 final preferencesServiceProvider = Provider(
   (ref) => PreferencesService(ref.watch(apiClientProvider)),
 );
+final helpServiceProvider = Provider(
+  (ref) => HelpService(ref.watch(apiClientProvider)),
+);
+final notificationServiceProvider = Provider<NotificationService>(
+  (ref) => NotificationService(),
+);
 
 /// Polls /health every 10 seconds and emits true/false.
 /// Restarts automatically when the server URL changes.
@@ -130,6 +141,7 @@ class AuthNotifier extends AsyncNotifier<UserModel?> {
     try {
       final user = await ref.read(authServiceProvider).fetchMe();
       unawaited(ref.read(userPrefsProvider.notifier).load());
+      unawaited(ref.read(helpProvider.notifier).connect());
       return user;
     } catch (_) {
       await client.clearTokens();
@@ -144,6 +156,7 @@ class AuthNotifier extends AsyncNotifier<UserModel?> {
     );
     if (state.hasValue && state.value != null) {
       unawaited(ref.read(userPrefsProvider.notifier).load());
+      unawaited(ref.read(helpProvider.notifier).connect());
       ref.invalidate(categoriesProvider);
       ref.invalidate(productsProvider);
     }
@@ -153,6 +166,7 @@ class AuthNotifier extends AsyncNotifier<UserModel?> {
     final token = await ref.read(storageProvider).read(key: 'refresh_token') ?? '';
     await ref.read(authServiceProvider).logout(token);
     ref.read(userPrefsProvider.notifier).reset();
+    ref.read(helpProvider.notifier).disconnect();
     ref.invalidate(categoriesProvider);
     ref.invalidate(productsProvider);
     state = const AsyncData(null);
@@ -206,6 +220,218 @@ class UserPrefsNotifier extends Notifier<UserPreferences> {
 
 final userPrefsProvider = NotifierProvider<UserPrefsNotifier, UserPreferences>(
   UserPrefsNotifier.new,
+);
+
+// ---------------------------------------------------------------------------
+// Help / Notfall
+// ---------------------------------------------------------------------------
+
+@immutable
+class HelpState {
+  final HelpRequest? myRequest;
+  final List<HelpRequest> allRequests;
+  final bool wsConnected;
+
+  const HelpState({
+    this.myRequest,
+    this.allRequests = const [],
+    this.wsConnected = false,
+  });
+
+  HelpState copyWith({
+    HelpRequest? Function()? myRequest,
+    List<HelpRequest>? allRequests,
+    bool? wsConnected,
+  }) =>
+      HelpState(
+        myRequest: myRequest != null ? myRequest() : this.myRequest,
+        allRequests: allRequests ?? this.allRequests,
+        wsConnected: wsConnected ?? this.wsConnected,
+      );
+}
+
+class HelpNotifier extends Notifier<HelpState> {
+  WebSocketChannel? _channel;
+  StreamSubscription<dynamic>? _sub;
+  Timer? _pingTimer;
+  bool _shouldReconnect = false;
+
+  @override
+  HelpState build() => const HelpState();
+
+  Future<void> connect() async {
+    _shouldReconnect = true;
+    await _doConnect();
+  }
+
+  Future<void> _doConnect() async {
+    final storage = ref.read(storageProvider);
+    final serverUrl = ref.read(serverUrlProvider);
+    final token = await storage.read(key: 'access_token');
+    if (token == null || !_shouldReconnect) return;
+
+    final wsBase = serverUrl
+        .replaceFirst('http://', 'ws://')
+        .replaceFirst('https://', 'wss://');
+    final wsUrl = '$wsBase/api/help/ws?token=${Uri.encodeComponent(token)}';
+
+    try {
+      _channel = WebSocketChannel.connect(Uri.parse(wsUrl));
+      state = state.copyWith(wsConnected: true);
+
+      _sub = _channel!.stream.listen(
+        _handleMessage,
+        onDone: () { if (_shouldReconnect) _scheduleReconnect(); },
+        onError: (_) { if (_shouldReconnect) _scheduleReconnect(); },
+        cancelOnError: true,
+      );
+
+      _pingTimer?.cancel();
+      _pingTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+        try {
+          _channel?.sink.add(jsonEncode({'type': 'ping'}));
+        } catch (_) {}
+      });
+    } catch (_) {
+      state = state.copyWith(wsConnected: false);
+      if (_shouldReconnect) _scheduleReconnect();
+    }
+  }
+
+  void _scheduleReconnect() {
+    state = state.copyWith(wsConnected: false);
+    Future.delayed(const Duration(seconds: 5), () {
+      if (_shouldReconnect) _doConnect();
+    });
+  }
+
+  void _handleMessage(dynamic raw) {
+    try {
+      final msg = jsonDecode(raw as String) as Map<String, dynamic>;
+      final type = msg['type'] as String;
+
+      switch (type) {
+        case 'pong':
+          break;
+
+        case 'init':
+          final requests = (msg['requests'] as List)
+              .map((j) => HelpRequest.fromJson(j as Map<String, dynamic>))
+              .toList();
+          final myId = ref.read(authProvider).valueOrNull?.id;
+          final mine = requests.where((r) => r.requesterId == myId).firstOrNull;
+          state = HelpState(
+            allRequests: requests,
+            myRequest: mine,
+            wsConnected: true,
+          );
+
+        case 'new_request':
+          final req = HelpRequest.fromJson(
+              msg['request'] as Map<String, dynamic>);
+          final user = ref.read(authProvider).valueOrNull;
+          // Skip if already added via optimistic update in requestHelp().
+          final alreadyKnown = state.allRequests.any((r) => r.id == req.id);
+          if (!alreadyKnown) {
+            HelpState next = state.copyWith(
+                allRequests: [...state.allRequests, req]);
+            if (req.requesterId == user?.id) {
+              next = next.copyWith(myRequest: () => req);
+            }
+            state = next;
+          }
+          if (user != null && user.hasPermission('help.receive')) {
+            unawaited(ref
+                .read(notificationServiceProvider)
+                .showHelpAlert(req.id, req.requesterName));
+          }
+
+        case 'new_response':
+          final requestId = msg['request_id'] as int;
+          final resp =
+              HelpResponse.fromJson(msg['response'] as Map<String, dynamic>);
+          final updated = state.allRequests.map((r) {
+            if (r.id != requestId) return r;
+            final list = [...r.responses];
+            final idx = list.indexWhere((x) => x.responderId == resp.responderId);
+            if (idx >= 0) {
+              list[idx] = resp;
+            } else {
+              list.add(resp);
+            }
+            return r.copyWith(responses: list);
+          }).toList();
+          HelpRequest? mine = state.myRequest;
+          if (mine != null && mine.id == requestId) {
+            final list = [...mine.responses];
+            final idx = list.indexWhere((x) => x.responderId == resp.responderId);
+            if (idx >= 0) {
+              list[idx] = resp;
+            } else {
+              list.add(resp);
+            }
+            mine = mine.copyWith(responses: list);
+          }
+          state = state.copyWith(allRequests: updated, myRequest: () => mine);
+
+        case 'resolved':
+          final requestId = msg['request_id'] as int;
+          final remaining =
+              state.allRequests.where((r) => r.id != requestId).toList();
+          HelpRequest? mine = state.myRequest;
+          if (mine?.id == requestId) mine = null;
+          state = state.copyWith(
+              allRequests: remaining, myRequest: () => mine);
+          unawaited(ref
+              .read(notificationServiceProvider)
+              .cancelAlert(requestId));
+      }
+    } catch (_) {}
+  }
+
+  void disconnect() {
+    _shouldReconnect = false;
+    _pingTimer?.cancel();
+    _pingTimer = null;
+    _sub?.cancel();
+    _sub = null;
+    _channel?.sink.close();
+    _channel = null;
+    state = const HelpState();
+  }
+
+  Future<void> requestHelp() async {
+    final id = await ref.read(helpServiceProvider).requestHelp();
+    final user = ref.read(authProvider).valueOrNull;
+    if (user == null) return;
+    final req = HelpRequest(
+      id: id,
+      requesterId: user.id,
+      requesterName: user.displayLabel,
+    );
+    state = state.copyWith(
+      allRequests: [...state.allRequests, req],
+      myRequest: () => req,
+    );
+  }
+
+  Future<void> respond(int requestId, String response) async {
+    await ref.read(helpServiceProvider).respond(requestId, response);
+  }
+
+  Future<void> resolve(int requestId) async {
+    await ref.read(helpServiceProvider).resolve(requestId);
+    final remaining =
+        state.allRequests.where((r) => r.id != requestId).toList();
+    HelpRequest? mine = state.myRequest;
+    if (mine?.id == requestId) mine = null;
+    state = state.copyWith(allRequests: remaining, myRequest: () => mine);
+    unawaited(ref.read(notificationServiceProvider).cancelAlert(requestId));
+  }
+}
+
+final helpProvider = NotifierProvider<HelpNotifier, HelpState>(
+  HelpNotifier.new,
 );
 
 // ---------------------------------------------------------------------------

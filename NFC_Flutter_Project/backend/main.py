@@ -92,7 +92,7 @@ from database import get_db
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from routers import auth, customers, download, preferences, products, sales, stats, topup, update, users
+from routers import auth, customers, download, help, preferences, products, sales, stats, topup, update, users
 
 
 def _migrate() -> None:
@@ -106,6 +106,34 @@ def _migrate() -> None:
                 value    TEXT    NOT NULL,
                 PRIMARY KEY (user_id, key, profile)
             )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS help_request (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id     INTEGER NOT NULL REFERENCES event(id),
+                requester_id INTEGER NOT NULL REFERENCES user(id),
+                status       TEXT    NOT NULL DEFAULT 'active',
+                created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS help_response (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                request_id   INTEGER NOT NULL REFERENCES help_request(id),
+                responder_id INTEGER NOT NULL REFERENCES user(id),
+                response     TEXT    NOT NULL,
+                created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(request_id, responder_id)
+            )
+        """)
+        # Insert 'help.receive' permission node if not yet seeded
+        db.execute("""
+            INSERT OR IGNORE INTO permission_node (id, parent_id, label, node_type, sort_order)
+            VALUES ('help', NULL, 'Notfall', 'group', 5)
+        """)
+        db.execute("""
+            INSERT OR IGNORE INTO permission_node (id, parent_id, label, node_type, sort_order)
+            VALUES ('help.receive', 'help', 'Notfall-Kontakt', 'w', 1)
         """)
 
 
@@ -144,6 +172,7 @@ app.include_router(users.router)
 app.include_router(stats.router)
 app.include_router(customers.router)
 app.include_router(preferences.router)
+app.include_router(help.router)
 app.include_router(update.router)
 app.include_router(download.router)
 

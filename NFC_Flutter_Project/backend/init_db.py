@@ -304,6 +304,30 @@ def init_db():
     )""")
 
     # ------------------------------------------------------------------
+    # HELP REQUEST / NOTFALL SYSTEM
+    # help_request: one row per active help call (status active|resolved)
+    # help_response: emergency contacts react per request (one row per responder)
+    # ------------------------------------------------------------------
+    c.execute("""
+    CREATE TABLE help_request (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id     INTEGER NOT NULL REFERENCES event(id),
+        requester_id INTEGER NOT NULL REFERENCES user(id),
+        status       TEXT    NOT NULL DEFAULT 'active',
+        created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+    )""")
+
+    c.execute("""
+    CREATE TABLE help_response (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        request_id   INTEGER NOT NULL REFERENCES help_request(id),
+        responder_id INTEGER NOT NULL REFERENCES user(id),
+        response     TEXT    NOT NULL,  -- 'on_way' | '5min' | 'cannot'
+        created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(request_id, responder_id)
+    )""")
+
+    # ------------------------------------------------------------------
     # INDEXES — for frequent query patterns
     # ------------------------------------------------------------------
     c.execute("CREATE INDEX idx_sale_customer         ON sale(customer_id)")
@@ -367,6 +391,10 @@ def seed_permissions(conn):
         ("users.deactivate",        "users",            "Benutzer deaktivieren",    "w",     4),
         ("users.delete",            "users",            "Benutzer löschen",         "w",     5),
         ("users.manage_permissions","users",            "Rechte vergeben",          "w",     6),
+
+        # --- Notfall / Help ---
+        ("help",                    None,               "Notfall",                  "group", 5),
+        ("help.receive",            "help",             "Notfall-Kontakt",          "w",     1),
     ]
 
     c.executemany(

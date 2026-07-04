@@ -9,6 +9,7 @@ class AppTheme {
           brightness: Brightness.dark,
         ),
         useMaterial3: true,
+        fontFamily: 'Roboto',
         cardTheme: const CardThemeData(
           elevation: 2,
           margin: EdgeInsets.all(4),
@@ -30,6 +31,7 @@ class AppTheme {
           brightness: Brightness.light,
         ),
         useMaterial3: true,
+        fontFamily: 'Roboto',
         cardTheme: const CardThemeData(elevation: 2, margin: EdgeInsets.all(4)),
         filledButtonTheme: FilledButtonThemeData(
           style: FilledButton.styleFrom(

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/providers.dart';
 import '../widgets/app_sidebar.dart';
 import '../widgets/dialogs/update_dialog.dart';
+import '../widgets/help_button.dart';
 import 'account_screen.dart';
 import 'pos_screen.dart';
 import 'settings_screen.dart';
@@ -81,9 +82,18 @@ class _MainShellState extends ConsumerState<MainShell> {
                       title: Text(screenTitle),
                       centerTitle: false,
                       automaticallyImplyLeading: false,
-                      actions: [_ConnectionIndicator(), const SizedBox(width: 8)],
+                      actions: [
+                        const HelpButton(),
+                        _ConnectionIndicator(),
+                        const SizedBox(width: 8),
+                      ],
                     ),
-                    body: body,
+                    body: Stack(
+                      children: [
+                        body,
+                        const HelpResponderOverlay(),
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -94,10 +104,19 @@ class _MainShellState extends ConsumerState<MainShell> {
             appBar: AppBar(
               title: Text(screenTitle),
               centerTitle: false,
-              actions: [_ConnectionIndicator(), const SizedBox(width: 8)],
+              actions: [
+                const HelpButton(),
+                _ConnectionIndicator(),
+                const SizedBox(width: 8),
+              ],
             ),
             drawer: const Drawer(child: AppSidebar()),
-            body: body,
+            body: Stack(
+              children: [
+                body,
+                const HelpResponderOverlay(),
+              ],
+            ),
           );
         }
       },

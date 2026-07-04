@@ -19,7 +19,12 @@
       "Bash(flutter build *)",
       "Bash(cmd /c \"where py && py -3.14 -c \\\\\"import sys; print\\(sys.executable\\)\\\\\"\")",
       "PowerShell(\\(Get-Command py\\).Source; py -3.14 -c \"import sys; print\\(sys.executable\\)\")",
-      "PowerShell(py -3.14 -c \"import fastapi; print\\(fastapi.__file__\\)\")"
+      "PowerShell(py -3.14 -c \"import fastapi; print\\(fastapi.__file__\\)\")",
+      "Bash(cp /c/Users/KimSc/AppData/Local/Pub/Cache/hosted/pub.dev/shared_preferences-2.5.5/extension/devtools/build/assets/packages/devtools_app_shared/fonts/Roboto/Roboto-Light.ttf /c/Users/KimSc/Desktop/NFC_Kasse/NFC_Flutter_Project/nfc_kasse_app/assets/fonts/Roboto/Roboto-Light.ttf)",
+      "Bash(cp /c/Users/KimSc/AppData/Local/Pub/Cache/hosted/pub.dev/shared_preferences-2.5.5/extension/devtools/build/assets/packages/devtools_app_shared/fonts/Roboto/Roboto-Regular.ttf /c/Users/KimSc/Desktop/NFC_Kasse/NFC_Flutter_Project/nfc_kasse_app/assets/fonts/Roboto/Roboto-Regular.ttf)",
+      "Bash(cp /c/Users/KimSc/AppData/Local/Pub/Cache/hosted/pub.dev/shared_preferences-2.5.5/extension/devtools/build/assets/packages/devtools_app_shared/fonts/Roboto/Roboto-Medium.ttf /c/Users/KimSc/Desktop/NFC_Kasse/NFC_Flutter_Project/nfc_kasse_app/assets/fonts/Roboto/Roboto-Medium.ttf)",
+      "Bash(cp /c/Users/KimSc/AppData/Local/Pub/Cache/hosted/pub.dev/shared_preferences-2.5.5/extension/devtools/build/assets/packages/devtools_app_shared/fonts/Roboto/Roboto-Bold.ttf /c/Users/KimSc/Desktop/NFC_Kasse/NFC_Flutter_Project/nfc_kasse_app/assets/fonts/Roboto/Roboto-Bold.ttf)",
+      "Bash(cp /c/Users/KimSc/AppData/Local/Pub/Cache/hosted/pub.dev/shared_preferences-2.5.5/extension/devtools/build/assets/packages/devtools_app_shared/fonts/Roboto/Roboto-Black.ttf /c/Users/KimSc/Desktop/NFC_Kasse/NFC_Flutter_Project/nfc_kasse_app/assets/fonts/Roboto/Roboto-Black.ttf)"
     ]
   }
 }
