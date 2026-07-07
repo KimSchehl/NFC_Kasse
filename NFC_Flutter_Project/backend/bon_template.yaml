@@ -1,0 +1,25 @@
+# bon_template.yaml — Thermodrucker Bon-Vorlage (ESC/POS)
+# ==========================================================
+# Änderungen werden beim nächsten Druckauftrag übernommen — kein Neustart nötig.
+# Maximale Zeilenbreite: PRINTER_LINE_WIDTH in config.env (Standard: 42 Zeichen)
+
+header:
+  event_name_override: ""     # Leer = Eventname aus DB; z.B. "Sommerfest 2026" überschreibt ihn
+  show_event_name: true       # Veranstaltungsname fett und zentriert drucken
+  show_datetime: true         # Datum + Uhrzeit zentriert (TT.MM.JJJJ  HH:MM Uhr)
+  separator_before: false      # Trennlinie VOR dem Kopfbereich drucken
+  separator_after: true       # Trennlinie NACH dem Datum/Uhrzeit drucken
+  separator_char: "-"         # Zeichen für Trennlinie: - = * ─
+
+article:
+  bold: true                  # Artikelname fett drucken
+  uppercase: false            # Artikelname in GROSSBUCHSTABEN (true/false)
+  show_price: true            # Preis anzeigen (true/false)
+  price_same_line: true       # Preis rechts in gleicher Zeile (false = neue Zeile)
+
+footer:
+  custom_text: ""             # Optionaler Text unter dem Artikel, z.B. "Vielen Dank!"
+  show_user: true             # Benutzernamen des Druckenden anzeigen (true/false)
+  user_label: "Kassierer"     # Bezeichnung vor dem Namen; leer lassen für nur den Namen
+  blank_lines: 0              # Leerzeilen vor dem Schnitt (Papiervorschub)
+  cut: true                   # Bon automatisch abschneiden

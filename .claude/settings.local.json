@@ -30,7 +30,8 @@
       "Bash(sqlite3 kasse.db \"PRAGMA table_info\\(product\\);\")",
       "Bash(python -)",
       "Bash(python -c \"import sqlite3; conn=sqlite3.connect\\('kasse.db'\\); conn.row_factory=sqlite3.Row; rows=conn.execute\\('SELECT name, price FROM product ORDER BY price DESC LIMIT 20'\\).fetchall\\(\\); [print\\(dict\\(r\\)\\) for r in rows]\")",
-      "Bash(python -c \"from routers.stats import get_revenue; print\\('OK'\\)\")"
+      "Bash(python -c \"from routers.stats import get_revenue; print\\('OK'\\)\")",
+      "PowerShell(Get-Content \"C:\\\\Users\\\\KimSc\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-KimSc-Desktop-NFC-Kasse\\\\5bf04224-f868-463a-b923-6d7aed17d568\\\\tasks\\\\bgmw61g92.output\" -Wait -Tail 5)"
     ]
   }
 }

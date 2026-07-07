@@ -102,6 +102,82 @@ class _CartPanelState extends ConsumerState<CartPanel> {
     );
   }
 
+  // No BuildContext parameter — uses State.context directly to satisfy the
+  // use_build_context_synchronously lint after async gaps.
+  Future<void> _printDialog() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Kein Chip gescannt'),
+        content: const Text(
+          'Soll für jeden Artikel ein Bon gedruckt werden?\n'
+          'Der Betrag wird bar entgegengenommen.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.print_outlined, size: 18),
+            label: const Text('Drucken'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await _printAndBook();
+  }
+
+  Future<void> _printAndBook() async {
+    if (_isBooking) return;
+    setState(() => _isBooking = true);
+
+    final cart = ref.read(cartProvider.notifier);
+    final items = ref.read(cartProvider);
+    if (items.isEmpty) {
+      setState(() => _isBooking = false);
+      return;
+    }
+
+    try {
+      final svc = ref.read(printServiceProvider);
+      final printed = await svc.printBons(items);
+
+      cart.clear();
+      ref.read(lastBookingProvider.notifier).state = null;
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.print_outlined, color: Colors.white, size: 20),
+              const SizedBox(width: 8),
+              Text('$printed Bon${printed == 1 ? '' : 's'} gedruckt'),
+            ],
+          ),
+          backgroundColor: Colors.green.shade700,
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.only(top: 8, left: 8, right: 8),
+          dismissDirection: DismissDirection.up,
+        ),
+      );
+    } on Exception catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString()),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isBooking = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final ref = this.ref;
@@ -109,6 +185,7 @@ class _CartPanelState extends ConsumerState<CartPanel> {
     final cart = ref.read(cartProvider.notifier);
     final customer = ref.watch(customerProvider);
     final lastBooking = ref.watch(lastBookingProvider);
+    final user = ref.watch(authProvider).valueOrNull;
     final theme = Theme.of(context);
 
     final chipDeposit = customer?.chipDeposit ?? 0.0;
@@ -137,6 +214,13 @@ class _CartPanelState extends ConsumerState<CartPanel> {
         items.isNotEmpty &&
         customer != null &&
         (hasPayout || restBalance >= 0);
+
+    // "Drucken" mode: no chip scanned, user has bon.drucken permission, cart non-empty.
+    // Opens a confirmation dialog then books to the BAR virtual chip + prints bons.
+    final isPrintMode = customer == null &&
+        items.isNotEmpty &&
+        !_isBooking &&
+        (user?.hasPermission('bon.drucken') ?? false);
 
     final cartTextScale = ref.watch(cartTextScaleProvider);
 
@@ -309,7 +393,9 @@ class _CartPanelState extends ConsumerState<CartPanel> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                 child: FilledButton.icon(
-                  onPressed: canBook ? () => _book(context) : null,
+                  onPressed: isPrintMode
+                      ? _printDialog
+                      : (canBook ? () => _book(context) : null),
                   icon: _isBooking
                       ? const SizedBox(
                           width: 20,
@@ -319,13 +405,22 @@ class _CartPanelState extends ConsumerState<CartPanel> {
                             color: Colors.white,
                           ),
                         )
-                      : Icon(hasPayout ? Icons.payments_outlined : Icons.check, size: 22),
+                      : Icon(
+                          isPrintMode
+                              ? Icons.print_outlined
+                              : hasPayout
+                                  ? Icons.payments_outlined
+                                  : Icons.check,
+                          size: 22,
+                        ),
                   label: Text(
                     _isBooking
                         ? 'Wird verarbeitet …'
-                        : hasPayout
-                            ? 'Auszahlen'
-                            : 'Buchen',
+                        : isPrintMode
+                            ? 'Drucken'
+                            : hasPayout
+                                ? 'Auszahlen'
+                                : 'Buchen',
                   ),
                   style: FilledButton.styleFrom(
                     minimumSize: const Size(double.infinity, 56),

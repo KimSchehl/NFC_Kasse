@@ -343,6 +343,32 @@ class ChipSummaryResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Print / Bon
+# ---------------------------------------------------------------------------
+
+class PrintBonItem(BaseModel):
+    product_id: int
+    quantity: int = 1
+
+
+class PrintBonRequest(BaseModel):
+    items: list[PrintBonItem]
+
+    @field_validator("items")
+    @classmethod
+    def must_not_be_empty(cls, v: list) -> list:
+        if not v:
+            raise ValueError("items must not be empty")
+        return v
+
+
+class PrintBonResponse(BaseModel):
+    success: bool
+    bons_printed: int
+    sale_ids: list[int]
+
+
+# ---------------------------------------------------------------------------
 # User Preference Store
 # ---------------------------------------------------------------------------
 

@@ -96,6 +96,8 @@ class UsersService {
       {'id': 'users.manage_permissions','label': 'Rechte vergeben',         'group': 'Benutzer'},
       // Notfall
       {'id': 'help.receive',            'label': 'Notfall-Kontakt',          'group': 'Notfall'},
+      // Bon-Drucker
+      {'id': 'bon.drucken',             'label': 'Bon drucken',              'group': 'Bon-Drucker'},
     ];
   }
 }

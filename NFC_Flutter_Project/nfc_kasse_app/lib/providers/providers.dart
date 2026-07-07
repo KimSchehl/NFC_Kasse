@@ -23,6 +23,7 @@ import '../services/customer_service.dart';
 import '../services/help_service.dart';
 import '../services/notification_service.dart';
 import '../services/preferences_service.dart';
+import '../services/print_service.dart';
 import '../services/product_service.dart';
 import '../services/sales_service.dart';
 import '../services/stats_service.dart';
@@ -77,6 +78,9 @@ final updateServiceProvider = Provider(
 );
 final customerServiceProvider = Provider(
   (ref) => CustomerService(ref.watch(apiClientProvider)),
+);
+final printServiceProvider = Provider(
+  (ref) => PrintService(ref.watch(apiClientProvider)),
 );
 final preferencesServiceProvider = Provider(
   (ref) => PreferencesService(ref.watch(apiClientProvider)),

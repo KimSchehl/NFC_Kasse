@@ -92,7 +92,8 @@ from database import get_db
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from routers import auth, customers, download, help, preferences, products, sales, stats, topup, update, users
+from config import BAR_CHIP_UID, EVENT_NAME
+from routers import auth, customers, download, help, preferences, printer, products, sales, stats, topup, update, users
 
 
 def _migrate() -> None:
@@ -135,6 +136,42 @@ def _migrate() -> None:
             INSERT OR IGNORE INTO permission_node (id, parent_id, label, node_type, sort_order)
             VALUES ('help.receive', 'help', 'Notfall-Kontakt', 'w', 1)
         """)
+        # Insert 'bon.drucken' permission node if not yet seeded
+        db.execute("""
+            INSERT OR IGNORE INTO permission_node (id, parent_id, label, node_type, sort_order)
+            VALUES ('bon', NULL, 'Bon-Druck', 'group', 6)
+        """)
+        db.execute("""
+            INSERT OR IGNORE INTO permission_node (id, parent_id, label, node_type, sort_order)
+            VALUES ('bon.drucken', 'bon', 'Bon drucken', 'w', 1)
+        """)
+        # Sync event name from config.env on every start
+        db.execute(
+            "UPDATE event SET name = ? WHERE id = 1",
+            (EVENT_NAME,),
+        )
+        # Create BAR virtual chip for cash sales if not yet present (tenant_id=1 for local installs)
+        db.execute("""
+            INSERT OR IGNORE INTO customer (tenant_id, nfc_uid, balance, is_available)
+            SELECT 1, ?, 0.0, 0
+            WHERE EXISTS (SELECT 1 FROM tenant WHERE id = 1)
+        """, (BAR_CHIP_UID,))
+        # Print job queue table
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS print_job (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id     INTEGER NOT NULL REFERENCES event(id),
+                sale_id      INTEGER REFERENCES sale(id),
+                username     TEXT    NOT NULL,
+                event_name   TEXT    NOT NULL,
+                product_name TEXT    NOT NULL,
+                price        REAL    NOT NULL,
+                status       TEXT    NOT NULL DEFAULT 'pending',
+                error_msg    TEXT,
+                created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+                processed_at TEXT
+            )
+        """)
 
 
 _migrate()
@@ -171,10 +208,14 @@ app.include_router(topup.router)
 app.include_router(users.router)
 app.include_router(stats.router)
 app.include_router(customers.router)
+app.include_router(printer.router)
 app.include_router(preferences.router)
 app.include_router(help.router)
 app.include_router(update.router)
 app.include_router(download.router)
+
+# Start the background print-queue worker (daemon thread — stops with the server).
+printer.start_worker()
 
 
 # ---------------------------------------------------------------------------

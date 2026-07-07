@@ -13,6 +13,7 @@ import io
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 
+from config import BAR_CHIP_UID
 from database import get_db
 from dependencies import RequestContext, require_permission
 from schemas import (
@@ -222,9 +223,10 @@ def event_reset(
 
         # Alle Kunden zurücksetzen: Guthaben = 0, als neu markieren.
         # is_available=1 bewirkt beim nächsten Scan: neuer Kunde + Pfand wird erneut erhoben.
+        # BAR-Chip wird ausgenommen — er ist kein echter Gast-Chip.
         db.execute(
-            "UPDATE customer SET balance = 0.0, is_available = 1 WHERE tenant_id = ?",
-            (tenant_id,),
+            "UPDATE customer SET balance = 0.0, is_available = 1 WHERE tenant_id = ? AND nfc_uid != ?",
+            (tenant_id, BAR_CHIP_UID),
         )
 
     return PeriodCloseResponse(new_period=StatsPeriodResponse(**dict(new_row)))

@@ -328,8 +328,32 @@ def init_db():
     )""")
 
     # ------------------------------------------------------------------
+    # PRINT JOB QUEUE — async receipt printing via background worker
+    # One row = one bon slip (3× Bier = 3 rows).
+    # Booking to the BAR chip happens synchronously at request time;
+    # the worker thread prints them FIFO from this table.
+    # Snapshots (event_name, product_name, price, username) ensure the
+    # bon always shows the data from the moment of purchase.
+    # ------------------------------------------------------------------
+    c.execute("""
+    CREATE TABLE print_job (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id     INTEGER NOT NULL REFERENCES event(id),
+        sale_id      INTEGER REFERENCES sale(id),
+        username     TEXT    NOT NULL,
+        event_name   TEXT    NOT NULL,
+        product_name TEXT    NOT NULL,
+        price        REAL    NOT NULL,
+        status       TEXT    NOT NULL DEFAULT 'pending',  -- pending|printing|done|error
+        error_msg    TEXT,
+        created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+        processed_at TEXT
+    )""")
+
+    # ------------------------------------------------------------------
     # INDEXES — for frequent query patterns
     # ------------------------------------------------------------------
+    c.execute("CREATE INDEX idx_print_job_status       ON print_job(status, created_at)")
     c.execute("CREATE INDEX idx_sale_customer         ON sale(customer_id)")
     c.execute("CREATE INDEX idx_sale_event            ON sale(event_id)")
     c.execute("CREATE INDEX idx_sale_booked_at        ON sale(booked_at)")
@@ -395,6 +419,10 @@ def seed_permissions(conn):
         # --- Notfall / Help ---
         ("help",                    None,               "Notfall",                  "group", 5),
         ("help.receive",            "help",             "Notfall-Kontakt",          "w",     1),
+
+        # --- Bon-Druck (Thermodrucker für Barzahlungen ohne Chip) ---
+        ("bon",                     None,               "Bon-Druck",                "group", 6),
+        ("bon.drucken",             "bon",              "Bon drucken",              "w",     1),
     ]
 
     c.executemany(
@@ -410,6 +438,7 @@ def seed_default_data(conn):
     Admin password is 'admin' — MUST be changed on first login.
     """
     import bcrypt
+    from config import BAR_CHIP_UID, EVENT_NAME
 
     c = conn.cursor()
 
@@ -420,7 +449,7 @@ def seed_default_data(conn):
     # Event (content in German)
     c.execute(
         "INSERT INTO event (tenant_id, name, active) VALUES (?, ?, 1)",
-        (tenant_id, "Hauptveranstaltung")
+        (tenant_id, EVENT_NAME)
     )
     event_id = c.lastrowid
 
@@ -475,6 +504,13 @@ def seed_default_data(conn):
     c.execute(
         "INSERT INTO stats_period (event_id, label, created_by) VALUES (?, ?, ?)",
         (event_id, "Start", admin_id)
+    )
+
+    # Virtual BAR chip for cash sales without NFC — always is_available=0 (never a real guest).
+    # Balance goes negative as bar sales accumulate. Hidden from the Chips tab.
+    c.execute(
+        "INSERT OR IGNORE INTO customer (tenant_id, nfc_uid, balance, is_available) VALUES (?, ?, 0.0, 0)",
+        (tenant_id, BAR_CHIP_UID),
     )
 
     conn.commit()

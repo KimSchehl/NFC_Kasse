@@ -90,14 +90,13 @@ class _WidePosLayout extends ConsumerWidget {
   }
 
   /// Called when a UID is submitted (HID reader or native NFC).
-  /// Fetches the customer's balance and clears the cart — scanning a new
-  /// wristband always starts a fresh transaction.
+  /// Fetches the customer's balance. The cart is intentionally NOT cleared here
+  /// so staff can pre-fill the cart before scanning.
   Future<void> _handleNfc(String uid, WidgetRef ref) async {
     try {
       final svc = ref.read(salesServiceProvider);
       final customer = await svc.getBalance(uid);
       ref.read(customerProvider.notifier).state = customer;
-      ref.read(cartProvider.notifier).clear();
     } catch (e) {
       // Customer not found or network error — clear customer so the UI shows
       // the "Bitte NFC-Chip scannen" placeholder.
@@ -127,7 +126,6 @@ class _NarrowPosLayoutState extends ConsumerState<_NarrowPosLayout> {
       final svc = ref.read(salesServiceProvider);
       final customer = await svc.getBalance(uid);
       ref.read(customerProvider.notifier).state = customer;
-      ref.read(cartProvider.notifier).clear();
     } catch (_) {
       ref.read(customerProvider.notifier).state = null;
     }

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 
-from config import CHIP_DEPOSIT
+from config import BAR_CHIP_UID, CHIP_DEPOSIT
 from database import get_db
 from dependencies import RequestContext, require_permission
 from routers.stats import _period_time_bounds
@@ -34,10 +34,10 @@ def list_chips(
                     ORDER BY s.booked_at DESC LIMIT 1
                 ) AS last_product_name
             FROM customer c
-            WHERE c.tenant_id = ?
+            WHERE c.tenant_id = ? AND c.nfc_uid != ?
             ORDER BY c.balance DESC, c.nfc_uid
             """,
-            (tenant_id,),
+            (tenant_id, BAR_CHIP_UID),
         ).fetchall()
     return [ChipResponse(**dict(r)) for r in rows]
 
@@ -52,6 +52,7 @@ def chip_summary(
     event_id = ctx["event"]["id"]
     with get_db() as db:
         # Current chip counts and balance are always event-wide (live state).
+        # BAR virtual chip is excluded — it's not a real guest chip.
         chip_row = db.execute(
             """
             SELECT
@@ -59,9 +60,9 @@ def chip_summary(
                 COUNT(CASE WHEN is_available = 0 THEN 1 END) AS active_chips,
                 COALESCE(SUM(balance), 0.0) AS total_balance
             FROM customer
-            WHERE tenant_id = ?
+            WHERE tenant_id = ? AND nfc_uid != ?
             """,
-            (tenant_id,),
+            (tenant_id, BAR_CHIP_UID),
         ).fetchone()
 
         # Build optional time bounds from period selection.
