@@ -369,6 +369,23 @@ class PrintBonResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Customer display
+# ---------------------------------------------------------------------------
+
+class DisplayItem(BaseModel):
+    name: str
+    price: float
+    quantity: int = 1
+
+
+class DisplayUpdateRequest(BaseModel):
+    items: list[DisplayItem] = []
+    chip_uid: str | None = None
+    current_balance: float | None = None
+    balance_after: float | None = None
+
+
+# ---------------------------------------------------------------------------
 # User Preference Store
 # ---------------------------------------------------------------------------
 

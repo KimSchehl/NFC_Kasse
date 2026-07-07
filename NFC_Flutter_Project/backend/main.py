@@ -93,7 +93,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from config import BAR_CHIP_UID, EVENT_NAME
-from routers import auth, customers, download, help, preferences, printer, products, sales, stats, topup, update, users
+from routers import auth, customers, display, download, help, preferences, printer, products, sales, stats, topup, update, users
 
 
 def _migrate() -> None:
@@ -202,6 +202,8 @@ app.add_middleware(
 # Routers
 # ---------------------------------------------------------------------------
 app.include_router(auth.router)
+app.include_router(display.router)      # /display HTML pages (no /api prefix)
+app.include_router(display.api_router)  # /api/display/* API
 app.include_router(products.router)
 app.include_router(sales.router)
 app.include_router(topup.router)

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -27,6 +29,29 @@ class CartPanel extends ConsumerStatefulWidget {
 
 class _CartPanelState extends ConsumerState<CartPanel> {
   bool _isBooking = false;
+
+  void _pushDisplay() {
+    final items = ref.read(cartProvider);
+    final customer = ref.read(customerProvider);
+    final cartNotifier = ref.read(cartProvider.notifier);
+
+    final chipDeposit = customer?.chipDeposit ?? 0.0;
+    final hasPayout = items.any((i) => i.product.isPayout);
+    final showPfandDeduction = (customer?.isNew ?? false) && !hasPayout && chipDeposit > 0;
+    final adjustedTotal = hasPayout
+        ? (customer != null ? customer.balance + chipDeposit : 0.0)
+        : cartNotifier.total + (showPfandDeduction ? chipDeposit : 0.0);
+    final balanceAfter = customer != null && !hasPayout
+        ? customer.balance - adjustedTotal
+        : null;
+
+    unawaited(ref.read(displayServiceProvider).pushState(
+      items: items,
+      chipUid: customer?.nfcUid,
+      currentBalance: customer?.balance,
+      balanceAfter: balanceAfter,
+    ));
+  }
 
   Future<void> _book(BuildContext context) async {
     if (_isBooking) return;
@@ -181,6 +206,12 @@ class _CartPanelState extends ConsumerState<CartPanel> {
   @override
   Widget build(BuildContext context) {
     final ref = this.ref;
+    final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
+
+    // Push cart state to customer display on every cart or chip change.
+    ref.listen(cartProvider, (prev, next) => _pushDisplay());
+    ref.listen(customerProvider, (prev, next) => _pushDisplay());
+
     final items = ref.watch(cartProvider);
     final cart = ref.read(cartProvider.notifier);
     final customer = ref.watch(customerProvider);
@@ -336,60 +367,56 @@ class _CartPanelState extends ConsumerState<CartPanel> {
                 ),
         ),
 
-        // Totals
-        if (items.isNotEmpty || showPfandDeduction) ...[
-          const Divider(height: 1),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      hasPayout ? 'Auszahlungsbetrag:' : 'Gesamt:',
-                      style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                    Text(
-                      formatPrice(adjustedTotal.abs()),
-                      style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                  ],
-                ),
-                if (customer != null && !hasPayout) ...[
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Rest Guthaben:',
-                          style: theme.textTheme.bodyLarge?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant)),
-                      Text(
-                        formatPrice(restBalance),
-                        style: theme.textTheme.bodyLarge?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: restBalance < 0
-                              ? theme.colorScheme.error
-                              : theme.colorScheme.primary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
-
-        // Book + Storno buttons — wrapped in SafeArea so they stay above the
-        // system navigation bar on both phones and tablets.
-        SafeArea(
-          top: false,
-          left: false,
-          right: false,
+        // Totals + Buttons — viewPadding (not SafeArea) so parent SafeAreas
+        // that already consumed the bottom inset don't zero it out.
+        Padding(
+          padding: EdgeInsets.only(bottom: bottomInset),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Totals — always visible
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          hasPayout ? 'Auszahlungsbetrag:' : 'Gesamt:',
+                          style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                        Text(
+                          formatPrice(adjustedTotal.abs()),
+                          style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                      ],
+                    ),
+                    if (customer != null && !hasPayout) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Rest Guthaben:',
+                              style: theme.textTheme.bodyLarge?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant)),
+                          Text(
+                            formatPrice(restBalance),
+                            style: theme.textTheme.bodyLarge?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: restBalance < 0
+                                  ? theme.colorScheme.error
+                                  : theme.colorScheme.primary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              // Buttons
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                 child: FilledButton.icon(
