@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/kiosk_models.dart';
@@ -12,7 +13,8 @@ import '../utils/formatters.dart';
 ///
 /// Flow:
 ///   Idle → tap NFC chip → Loading → Result (shows balance + all transactions)
-///        → auto-reset after 30 s back to Idle
+///        → auto-reset after 60 s back to Idle
+///   Hidden logout: tap the storefront icon in the header 5× within 2 s.
 class KioskScreen extends ConsumerStatefulWidget {
   const KioskScreen({super.key});
 
@@ -29,7 +31,10 @@ class _KioskScreenState extends ConsumerState<KioskScreen> {
   Timer? _resetTimer;
   bool _nfcAvailable = false;
 
-  static const _resetAfter = Duration(seconds: 30);
+  final _uidController = TextEditingController();
+  final _uidFocus = FocusNode();
+
+  static const _resetAfter = Duration(minutes: 1);
 
   @override
   void initState() {
@@ -49,6 +54,13 @@ class _KioskScreenState extends ConsumerState<KioskScreen> {
   void _onNfcScan(String uid) {
     if (_state == _KioskState.loading) return; // already fetching
     _loadChip(uid);
+  }
+
+  void _submitUid(String raw) {
+    final trimmed = raw.replaceAll(RegExp(r'[\r\n]'), '').trim();
+    if (trimmed.isEmpty) return;
+    _uidController.clear();
+    _loadChip(trimmed);
   }
 
   Future<void> _loadChip(String rawUid) async {
@@ -81,16 +93,20 @@ class _KioskScreenState extends ConsumerState<KioskScreen> {
   void _resetToIdle() {
     _resetTimer?.cancel();
     if (!mounted) return;
+    _uidController.clear();
     setState(() {
       _state = _KioskState.idle;
       _info = null;
       _errorMsg = null;
     });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _uidFocus.requestFocus());
   }
 
   @override
   void dispose() {
     _resetTimer?.cancel();
+    _uidController.dispose();
+    _uidFocus.dispose();
     if (_nfcAvailable) NfcService.stopSession();
     super.dispose();
   }
@@ -111,7 +127,12 @@ class _KioskScreenState extends ConsumerState<KioskScreen> {
             ),
             Expanded(
               child: switch (_state) {
-                _KioskState.idle => _IdleView(nfcAvailable: _nfcAvailable),
+                _KioskState.idle => _IdleView(
+                    nfcAvailable: _nfcAvailable,
+                    controller: _uidController,
+                    focusNode: _uidFocus,
+                    onSubmit: _submitUid,
+                  ),
                 _KioskState.loading => const _LoadingView(),
                 _KioskState.result => _ResultView(
                     info: _info!,
@@ -132,14 +153,40 @@ class _KioskScreenState extends ConsumerState<KioskScreen> {
 }
 
 // ---------------------------------------------------------------------------
-// Header
+// Header — tap the icon 5× to log out (hidden gesture)
 // ---------------------------------------------------------------------------
 
-class _Header extends StatelessWidget {
+class _Header extends StatefulWidget {
   final String username;
   final VoidCallback onLogout;
 
   const _Header({required this.username, required this.onLogout});
+
+  @override
+  State<_Header> createState() => _HeaderState();
+}
+
+class _HeaderState extends State<_Header> {
+  int _taps = 0;
+  Timer? _tapReset;
+
+  void _onIconTap() {
+    _tapReset?.cancel();
+    _taps++;
+    if (_taps >= 5) {
+      _taps = 0;
+      widget.onLogout();
+      return;
+    }
+    // Reset counter if no further tap within 2 seconds
+    _tapReset = Timer(const Duration(seconds: 2), () => _taps = 0);
+  }
+
+  @override
+  void dispose() {
+    _tapReset?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -152,20 +199,18 @@ class _Header extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.storefront, size: 20),
+          GestureDetector(
+            onTap: _onIconTap,
+            behavior: HitTestBehavior.opaque,
+            child: const Padding(
+              padding: EdgeInsets.all(4),
+              child: Icon(Icons.storefront, size: 20),
+            ),
+          ),
           const SizedBox(width: 8),
           Text(
-            username,
+            widget.username,
             style: theme.textTheme.titleMedium,
-          ),
-          const Spacer(),
-          TextButton.icon(
-            onPressed: onLogout,
-            icon: const Icon(Icons.logout, size: 18),
-            label: const Text('Abmelden'),
-            style: TextButton.styleFrom(
-              foregroundColor: theme.colorScheme.onSurfaceVariant,
-            ),
           ),
         ],
       ),
@@ -179,38 +224,86 @@ class _Header extends StatelessWidget {
 
 class _IdleView extends StatelessWidget {
   final bool nfcAvailable;
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final void Function(String) onSubmit;
 
-  const _IdleView({required this.nfcAvailable});
+  const _IdleView({
+    required this.nfcAvailable,
+    required this.controller,
+    required this.focusNode,
+    required this.onSubmit,
+  });
+
+  void _onChanged(String value) {
+    if (value.endsWith('\n') || value.endsWith('\r')) {
+      onSubmit(value);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            nfcAvailable ? Icons.nfc : Icons.credit_card,
-            size: 120,
-            color: theme.colorScheme.primary.withValues(alpha: 0.2),
-          ),
-          const SizedBox(height: 32),
-          Text(
-            'Chip antippen',
-            style: theme.textTheme.displaySmall?.copyWith(
-              fontWeight: FontWeight.w300,
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+    return Column(
+      children: [
+        Expanded(
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  nfcAvailable ? Icons.nfc : Icons.credit_card,
+                  size: 120,
+                  color: theme.colorScheme.primary.withValues(alpha: 0.2),
+                ),
+                const SizedBox(height: 32),
+                Text(
+                  'Chip antippen',
+                  style: theme.textTheme.displaySmall?.copyWith(
+                    fontWeight: FontWeight.w300,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Armband oder Karte an das Lesegerät halten',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 12),
-          Text(
-            'Armband oder Karte an das Lesegerät halten',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: TextField(
+            controller: controller,
+            focusNode: focusNode,
+            autofocus: true,
+            keyboardType: TextInputType.visiblePassword,
+            textInputAction: TextInputAction.done,
+            textCapitalization: TextCapitalization.characters,
+            decoration: InputDecoration(
+              hintText: 'UID eingeben oder USB-Lesegerät verwenden …',
+              prefixIcon: Icon(
+                nfcAvailable ? Icons.nfc : Icons.usb,
+                color: nfcAvailable ? theme.colorScheme.primary : null,
+              ),
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.send),
+                onPressed: () => onSubmit(controller.text),
+                tooltip: 'Laden',
+              ),
             ),
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[A-Fa-f0-9:\- \r\n]')),
+            ],
+            onChanged: _onChanged,
+            onSubmitted: onSubmit,
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -260,7 +353,7 @@ class _ErrorView extends StatelessWidget {
 // Result view: balance card + transaction list
 // ---------------------------------------------------------------------------
 
-class _ResultView extends StatefulWidget {
+class _ResultView extends ConsumerStatefulWidget {
   final KioskChipInfo info;
   final VoidCallback onReset;
   final Duration resetDuration;
@@ -272,16 +365,18 @@ class _ResultView extends StatefulWidget {
   });
 
   @override
-  State<_ResultView> createState() => _ResultViewState();
+  ConsumerState<_ResultView> createState() => _ResultViewState();
 }
 
-class _ResultViewState extends State<_ResultView>
+class _ResultViewState extends ConsumerState<_ResultView>
     with SingleTickerProviderStateMixin {
   late AnimationController _progress;
+  String? _customerName;
 
   @override
   void initState() {
     super.initState();
+    _customerName = widget.info.customerName;
     _progress = AnimationController(vsync: this, duration: widget.resetDuration)
       ..forward();
     _progress.addStatusListener((s) {
@@ -295,54 +390,118 @@ class _ResultViewState extends State<_ResultView>
     super.dispose();
   }
 
+  Future<void> _editName() async {
+    _progress.stop();
+    final ctrl = TextEditingController(text: _customerName ?? '');
+    final result = await showDialog<String?>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Chip benennen'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          maxLength: 20,
+          decoration: const InputDecoration(
+            hintText: 'Name eingeben …',
+            border: OutlineInputBorder(),
+          ),
+          textCapitalization: TextCapitalization.words,
+        ),
+        actions: [
+          if (_customerName != null)
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, ''),
+              child: const Text('Name entfernen'),
+            ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Speichern'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    _progress.forward();
+    if (result == null) return; // cancelled
+    try {
+      await ref.read(kioskServiceProvider).setChipName(widget.info.nfcUid, result);
+      setState(() => _customerName = result.isEmpty ? null : result);
+    } catch (_) {}
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final info = widget.info;
     final balance = info.balance;
     final isNegative = balance < 0;
+    final onCardColor = isNegative
+        ? theme.colorScheme.onErrorContainer
+        : theme.colorScheme.onPrimaryContainer;
 
     return Column(
       children: [
         // Balance card
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+          padding: const EdgeInsets.fromLTRB(20, 20, 12, 20),
           color: isNegative
               ? theme.colorScheme.errorContainer
               : theme.colorScheme.primaryContainer,
-          child: Column(
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Aktuelles Guthaben',
-                style: theme.textTheme.labelLarge?.copyWith(
-                  color: isNegative
-                      ? theme.colorScheme.onErrorContainer
-                      : theme.colorScheme.onPrimaryContainer,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                _fmtEur(balance),
-                style: theme.textTheme.displayMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: isNegative
-                      ? theme.colorScheme.onErrorContainer
-                      : theme.colorScheme.onPrimaryContainer,
-                ),
-              ),
-              if (info.transactions.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    'Noch keine Buchungen',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onPrimaryContainer
-                          .withValues(alpha: 0.7),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Aktuelles Guthaben',
+                      style: theme.textTheme.labelLarge?.copyWith(color: onCardColor),
                     ),
-                  ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _fmtEur(balance),
+                      style: theme.textTheme.displayMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: onCardColor,
+                      ),
+                    ),
+                    if (_customerName != null) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        _customerName!,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          color: onCardColor.withValues(alpha: 0.8),
+                        ),
+                      ),
+                    ],
+                    if (info.transactions.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          'Noch keine Buchungen',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: onCardColor.withValues(alpha: 0.7),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
+              ),
+              // Name-Edit-Button top-right
+              IconButton(
+                onPressed: _editName,
+                icon: Icon(
+                  _customerName != null ? Icons.badge : Icons.badge_outlined,
+                  color: onCardColor.withValues(alpha: 0.7),
+                ),
+                tooltip: _customerName != null ? 'Name bearbeiten' : 'Name vergeben',
+              ),
             ],
           ),
         ),
@@ -391,8 +550,12 @@ class _ResultViewState extends State<_ResultView>
           padding: const EdgeInsets.all(16),
           child: SizedBox(
             width: double.infinity,
+            height: 56,
             child: OutlinedButton(
               onPressed: widget.onReset,
+              style: OutlinedButton.styleFrom(
+                textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+              ),
               child: const Text('Fertig'),
             ),
           ),

@@ -11,13 +11,37 @@ users to KioskScreen instead of MainShell.
 
 from datetime import timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 
 from config import CHIP_DEPOSIT
 from database import get_db
 from dependencies import get_active_event, get_current_user
 
 router = APIRouter(prefix="/api/kiosk", tags=["kiosk"])
+
+
+class _NameBody(BaseModel):
+    name: str = Field("", max_length=20)
+
+
+@router.put("/chip/{nfc_uid}/name")
+def set_chip_name(
+    nfc_uid: str,
+    body: _NameBody,
+    current_user: dict = Depends(get_current_user),
+):
+    """Sets or clears the customer-supplied name for a chip."""
+    tenant_id = current_user["tenant_id"]
+    name = body.name.strip() or None  # empty string → NULL
+    with get_db() as db:
+        result = db.execute(
+            "UPDATE customer SET customer_name=? WHERE tenant_id=? AND nfc_uid=?",
+            (name, tenant_id, nfc_uid),
+        )
+        if result.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Chip not found")
+    return {"ok": True, "name": name}
 
 
 @router.get("/chip/{nfc_uid}")
@@ -32,7 +56,7 @@ def kiosk_chip_info(
 
     with get_db() as db:
         customer = db.execute(
-            "SELECT id, balance, is_available FROM customer WHERE tenant_id=? AND nfc_uid=?",
+            "SELECT id, balance, customer_name, is_available FROM customer WHERE tenant_id=? AND nfc_uid=?",
             (tenant_id, nfc_uid),
         ).fetchone()
 
@@ -41,6 +65,7 @@ def kiosk_chip_info(
                 "nfc_uid": nfc_uid,
                 "balance": 0.0,
                 "chip_deposit": CHIP_DEPOSIT,
+                "customer_name": None,
                 "is_new_customer": True,
                 "transactions": [],
             }
@@ -125,6 +150,7 @@ def kiosk_chip_info(
         "nfc_uid": nfc_uid,
         "balance": customer["balance"],
         "chip_deposit": CHIP_DEPOSIT,
+        "customer_name": customer["customer_name"],
         "is_new_customer": bool(customer["is_available"]),
         "transactions": transactions,
     }

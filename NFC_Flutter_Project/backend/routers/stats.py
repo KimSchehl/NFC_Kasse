@@ -348,6 +348,7 @@ def get_transactions(
     period_start: str | None = Query(None),
     period_end: str | None = Query(None),
     category_id: int | None = Query(None),
+    customer_name: str | None = Query(None, description="Filter by customer name (case-insensitive substring)"),
     limit: int = Query(500, ge=1, le=5000),
     offset: int = Query(0, ge=0),
     ctx: RequestContext = Depends(require_permission("statistics.transactions")),
@@ -357,6 +358,9 @@ def get_transactions(
     category_where = "AND p.category_id = ?" if category_id else ""
     category_param = [category_id] if category_id else []
 
+    name_where = "AND cu.customer_name LIKE ?" if customer_name else ""
+    name_param = [f"%{customer_name}%"] if customer_name else []
+
     with get_db() as db:
         time_where, time_params = _resolve_time_filter(
             db, event_id, period_ids, period_id, period_start, period_end
@@ -364,7 +368,8 @@ def get_transactions(
 
         rows = db.execute(
             f"""
-            SELECT s.id, s.booked_at, cu.nfc_uid, p.name as product_name,
+            SELECT s.id, s.booked_at, cu.nfc_uid, cu.customer_name,
+                   p.name as product_name,
                    s.price_at_sale, c.name as category_name,
                    u.username as booked_by_username, s.cancelled
             FROM sale s
@@ -372,20 +377,21 @@ def get_transactions(
             JOIN product p ON s.product_id = p.id
             JOIN category c ON p.category_id = c.id
             JOIN user u ON s.booked_by = u.id
-            WHERE s.event_id=? {time_where} {category_where}
+            WHERE s.event_id=? {time_where} {category_where} {name_where}
             ORDER BY s.booked_at DESC
             LIMIT ? OFFSET ?
             """,
-            [event_id, *time_params, *category_param, limit, offset],
+            [event_id, *time_params, *category_param, *name_param, limit, offset],
         ).fetchall()
 
         total_row = db.execute(
             f"""
             SELECT COUNT(*) as total FROM sale s
+            JOIN customer cu ON s.customer_id = cu.id
             JOIN product p ON s.product_id = p.id
-            WHERE s.event_id=? {time_where} {category_where}
+            WHERE s.event_id=? {time_where} {category_where} {name_where}
             """,
-            [event_id, *time_params, *category_param],
+            [event_id, *time_params, *category_param, *name_param],
         ).fetchone()
 
     items = [
@@ -393,6 +399,7 @@ def get_transactions(
             id=r["id"],
             booked_at=r["booked_at"],
             nfc_uid=r["nfc_uid"],
+            customer_name=r["customer_name"],
             product_name=r["product_name"],
             price_at_sale=r["price_at_sale"],
             category_name=r["category_name"],

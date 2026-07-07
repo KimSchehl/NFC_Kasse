@@ -92,6 +92,7 @@ class TransactionItem {
   final int id;
   final String bookedAt;
   final String nfcUid;
+  final String? customerName;
   final String productName;
   final double priceAtSale;
   final String categoryName;
@@ -102,6 +103,7 @@ class TransactionItem {
     required this.id,
     required this.bookedAt,
     required this.nfcUid,
+    this.customerName,
     required this.productName,
     required this.priceAtSale,
     required this.categoryName,
@@ -113,6 +115,7 @@ class TransactionItem {
         id: j['id'] as int,
         bookedAt: j['booked_at'] as String,
         nfcUid: j['nfc_uid'] as String,
+        customerName: j['customer_name'] as String?,
         productName: j['product_name'] as String,
         priceAtSale: (j['price_at_sale'] as num).toDouble(),
         categoryName: j['category_name'] as String,

@@ -154,6 +154,11 @@ def _migrate() -> None:
             INSERT OR IGNORE INTO permission_node (id, parent_id, label, node_type, sort_order)
             VALUES ('kiosk.access', 'kiosk', 'Kiosk-Modus', 'w', 1)
         """)
+        # customer_name column — added for kiosk self-service naming
+        try:
+            db.execute("ALTER TABLE customer ADD COLUMN customer_name TEXT")
+        except Exception:
+            pass  # column already exists
         # Sync event name from config.env on every start
         db.execute(
             "UPDATE event SET name = ? WHERE id = 1",

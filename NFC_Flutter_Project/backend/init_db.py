@@ -198,6 +198,7 @@ def init_db():
         nfc_uid      TEXT    NOT NULL,
         display_name TEXT,                -- future: writable to tag
         balance      REAL    NOT NULL DEFAULT 0.0,
+        customer_name TEXT,                -- optional name set by the customer at the kiosk
         is_available INTEGER NOT NULL DEFAULT 1,
         created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
         UNIQUE(tenant_id, nfc_uid)

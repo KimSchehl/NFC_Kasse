@@ -17,9 +17,17 @@ final _statsProvider = FutureProvider.autoDispose
   return ref.read(statsServiceProvider).getRevenue(periodIds: periodKey);
 });
 
+// Family key: "$periodKey|$customerName" — pipe-separated so both parts travel together.
 final _txProvider = FutureProvider.autoDispose
-    .family<List<TransactionItem>, String?>((ref, periodKey) async {
-  return ref.read(statsServiceProvider).getTransactions(limit: 200, periodIds: periodKey);
+    .family<List<TransactionItem>, String?>((ref, compositeKey) async {
+  final parts = (compositeKey ?? '|').split('|');
+  final periodKey = parts[0].isEmpty ? null : parts[0];
+  final customerName = parts.length > 1 && parts[1].isNotEmpty ? parts[1] : null;
+  return ref.read(statsServiceProvider).getTransactions(
+        limit: 500,
+        periodIds: periodKey,
+        customerName: customerName,
+      );
 });
 
 final _chipsProvider = FutureProvider.autoDispose<List<ChipModel>>((ref) async {
@@ -122,7 +130,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
       if (!mounted) return;
       setState(() => _selectedPeriodIds = {newPeriod.id});
       ref.invalidate(_statsProvider(_periodKey));
-      ref.invalidate(_txProvider(_periodKey));
+      ref.invalidate(_txProvider);
       ref.invalidate(_chipSummaryProvider(_periodKey));
     } catch (e) {
       if (!mounted) return;
@@ -253,7 +261,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
       if (!mounted) return;
       setState(() => _selectedPeriodIds = {newPeriod.id});
       ref.invalidate(_statsProvider(_periodKey));
-      ref.invalidate(_txProvider(_periodKey));
+      ref.invalidate(_txProvider);
       ref.invalidate(_chipSummaryProvider(_periodKey));
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Alle Chips zurückgesetzt — bereit für neues Event.')),
@@ -293,7 +301,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
     if (result == null || !mounted) return;
     setState(() => _selectedPeriodIds = result);
     ref.invalidate(_statsProvider(_periodKey));
-    ref.invalidate(_txProvider(_periodKey));
+    ref.invalidate(_txProvider);
     ref.invalidate(_chipSummaryProvider(_periodKey));
   }
 
@@ -534,26 +542,32 @@ class _TransactionsTab extends ConsumerStatefulWidget {
 }
 
 class _TransactionsTabState extends ConsumerState<_TransactionsTab> {
-  final _searchCtrl = TextEditingController();
+  final _uidCtrl = TextEditingController();
+  final _nameCtrl = TextEditingController();
   String _uidFilter = '';
+  String _nameFilter = '';
+
+  String get _compositeKey =>
+      '${widget.periodKey ?? ''}|$_nameFilter';
 
   @override
   void dispose() {
-    _searchCtrl.dispose();
+    _uidCtrl.dispose();
+    _nameCtrl.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final txAsync = ref.watch(_txProvider(widget.periodKey));
+    final txAsync = ref.watch(_txProvider(_compositeKey));
 
     return Column(
       children: [
-        // NFC-UID-Suchfeld
+        // NFC-UID-Suchfeld (client-side)
         Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 2),
           child: TextField(
-            controller: _searchCtrl,
+            controller: _uidCtrl,
             decoration: InputDecoration(
               hintText: 'Chip-UID suchen (scannen oder tippen) …',
               prefixIcon: const Icon(Icons.contactless, size: 20),
@@ -563,13 +577,36 @@ class _TransactionsTabState extends ConsumerState<_TransactionsTab> {
                   ? IconButton(
                       icon: const Icon(Icons.clear, size: 18),
                       onPressed: () => setState(() {
-                        _searchCtrl.clear();
+                        _uidCtrl.clear();
                         _uidFilter = '';
                       }),
                     )
                   : null,
             ),
             onChanged: (v) => setState(() => _uidFilter = v.trim().toUpperCase()),
+          ),
+        ),
+        // Kunden-Name-Suchfeld (server-side)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 2, 12, 4),
+          child: TextField(
+            controller: _nameCtrl,
+            decoration: InputDecoration(
+              hintText: 'Kunden-Name suchen …',
+              prefixIcon: const Icon(Icons.badge_outlined, size: 20),
+              isDense: true,
+              border: const OutlineInputBorder(),
+              suffixIcon: _nameFilter.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear, size: 18),
+                      onPressed: () => setState(() {
+                        _nameCtrl.clear();
+                        _nameFilter = '';
+                      }),
+                    )
+                  : null,
+            ),
+            onChanged: (v) => setState(() => _nameFilter = v.trim()),
           ),
         ),
 
@@ -649,7 +686,12 @@ class _BookingGroupTileState extends State<_BookingGroupTile> {
                 )
               : null,
         ),
-        subtitle: Text('${tx.nfcUid}  ·  ${_fmtDt(tx.bookedAt)}  ·  ${tx.bookedByUsername}'),
+        subtitle: Text([
+          tx.nfcUid,
+          if (tx.customerName != null && tx.customerName!.isNotEmpty) tx.customerName!,
+          _fmtDt(tx.bookedAt),
+          tx.bookedByUsername,
+        ].join('  ·  ')),
         trailing: Text(
           formatPrice(tx.priceAtSale),
           style: TextStyle(
@@ -698,7 +740,14 @@ class _BookingGroupTileState extends State<_BookingGroupTile> {
                             ?.copyWith(fontWeight: FontWeight.w600),
                       ),
                       Text(
-                        '${g.nfcUid}  ·  ${_fmtDt(g.bookedAt)}  ·  ${g.bookedByUsername}',
+                        [
+                          g.nfcUid,
+                          if (g.items.first.customerName != null &&
+                              g.items.first.customerName!.isNotEmpty)
+                            g.items.first.customerName!,
+                          _fmtDt(g.bookedAt),
+                          g.bookedByUsername,
+                        ].join('  ·  '),
                         style: theme.textTheme.bodySmall,
                       ),
                     ],

@@ -37,6 +37,7 @@ class KioskChipInfo {
   final String nfcUid;
   final double balance;
   final double chipDeposit;
+  final String? customerName;
   final bool isNewCustomer;
   final List<KioskTransaction> transactions;
 
@@ -44,6 +45,7 @@ class KioskChipInfo {
     required this.nfcUid,
     required this.balance,
     required this.chipDeposit,
+    this.customerName,
     required this.isNewCustomer,
     required this.transactions,
   });
@@ -52,6 +54,7 @@ class KioskChipInfo {
         nfcUid: j['nfc_uid'] as String,
         balance: (j['balance'] as num).toDouble(),
         chipDeposit: (j['chip_deposit'] as num).toDouble(),
+        customerName: j['customer_name'] as String?,
         isNewCustomer: j['is_new_customer'] as bool,
         transactions: (j['transactions'] as List)
             .map((t) => KioskTransaction.fromJson(t as Map<String, dynamic>))

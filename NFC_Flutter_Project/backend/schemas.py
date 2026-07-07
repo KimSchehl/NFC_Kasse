@@ -309,6 +309,7 @@ class TransactionItem(BaseModel):
     id: int
     booked_at: str
     nfc_uid: str
+    customer_name: str | None
     product_name: str
     price_at_sale: float
     category_name: str

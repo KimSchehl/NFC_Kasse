@@ -49,6 +49,7 @@ class StatsService {
     String? periodIds,
     String? from,
     String? to,
+    String? customerName,
     int limit = 100,
     int offset = 0,
   }) async {
@@ -56,6 +57,7 @@ class StatsService {
     if (periodIds != null) params['period_ids'] = periodIds;
     if (from != null) params['period_start'] = from;
     if (to != null) params['period_end'] = to;
+    if (customerName != null && customerName.isNotEmpty) params['customer_name'] = customerName;
     final resp = await _client.dio.get('/api/stats/transactions', queryParameters: params);
     return (resp.data['items'] as List)
         .map((j) => TransactionItem.fromJson(j as Map<String, dynamic>))
