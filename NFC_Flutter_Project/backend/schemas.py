@@ -282,10 +282,19 @@ class PeriodCloseResponse(BaseModel):
 # Statistics
 # ---------------------------------------------------------------------------
 
+class CategoryArticle(BaseModel):
+    product_name: str
+    revenue: float       # SUM of price_at_sale; negative = money added to chip (topup/Pfand issue)
+    transaction_count: int
+    is_payout: bool
+    exclude_from_stats: bool
+
+
 class CategoryRevenue(BaseModel):
     category_name: str
     revenue: float
     transaction_count: int
+    articles: list[CategoryArticle] = []
 
 
 class RevenueResponse(BaseModel):

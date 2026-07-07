@@ -21,21 +21,50 @@ class StatsPeriod {
       );
 }
 
+class ArticleBreakdown {
+  final String productName;
+  final double revenue; // negative = money added to chip (topup / Pfand issue)
+  final int transactionCount;
+  final bool isPayout;
+  final bool excludeFromStats;
+
+  const ArticleBreakdown({
+    required this.productName,
+    required this.revenue,
+    required this.transactionCount,
+    required this.isPayout,
+    required this.excludeFromStats,
+  });
+
+  factory ArticleBreakdown.fromJson(Map<String, dynamic> j) => ArticleBreakdown(
+        productName: j['product_name'] as String,
+        revenue: (j['revenue'] as num).toDouble(),
+        transactionCount: j['transaction_count'] as int,
+        isPayout: j['is_payout'] as bool? ?? false,
+        excludeFromStats: j['exclude_from_stats'] as bool? ?? false,
+      );
+}
+
 class CategoryRevenue {
   final String categoryName;
   final double revenue;
   final int transactionCount;
+  final List<ArticleBreakdown> articles;
 
   const CategoryRevenue({
     required this.categoryName,
     required this.revenue,
     required this.transactionCount,
+    this.articles = const [],
   });
 
   factory CategoryRevenue.fromJson(Map<String, dynamic> j) => CategoryRevenue(
         categoryName: j['category_name'] as String,
         revenue: (j['revenue'] as num).toDouble(),
         transactionCount: j['transaction_count'] as int,
+        articles: (j['articles'] as List? ?? [])
+            .map((a) => ArticleBreakdown.fromJson(a as Map<String, dynamic>))
+            .toList(),
       );
 }
 

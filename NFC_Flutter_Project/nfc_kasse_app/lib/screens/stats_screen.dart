@@ -458,7 +458,7 @@ class _RevenueTab extends ConsumerWidget {
             const SizedBox(height: 16),
             Text('Nach Kategorie', style: theme.textTheme.titleMedium),
             const SizedBox(height: 8),
-            ...stats.byCategory.map((cat) => _CategoryRow(cat: cat)),
+            ...stats.byCategory.map((cat) => _CategoryExpansionTile(cat: cat)),
           ],
         ),
       ),
@@ -805,30 +805,154 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-class _CategoryRow extends StatelessWidget {
+class _CategoryExpansionTile extends StatefulWidget {
   final CategoryRevenue cat;
+  const _CategoryExpansionTile({required this.cat});
 
-  const _CategoryRow({required this.cat});
+  @override
+  State<_CategoryExpansionTile> createState() => _CategoryExpansionTileState();
+}
+
+class _CategoryExpansionTileState extends State<_CategoryExpansionTile> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cat = widget.cat;
+
+    final normalArticles =
+        cat.articles.where((a) => !a.isPayout && !a.excludeFromStats).toList();
+    final extraArticles =
+        cat.articles.where((a) => a.excludeFromStats && !a.isPayout).toList();
+    final payoutArticles = cat.articles.where((a) => a.isPayout).toList();
+    final hasDetails = cat.articles.isNotEmpty;
+
+    // Label for the excl_stats section: "Aufladungen" when all add credit to chip,
+    // "Pfand" when at least some take credit from chip.
+    String extraLabel = 'Pfand / Aufladungen';
+    if (extraArticles.isNotEmpty) {
+      final allToChip = extraArticles.every((a) => a.revenue < 0);
+      final allFromChip = extraArticles.every((a) => a.revenue > 0);
+      if (allToChip) extraLabel = 'Aufladungen';
+      if (allFromChip) extraLabel = 'Pfand';
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // ── Header row ──────────────────────────────────────────────────
+        InkWell(
+          onTap: hasDetails ? () => setState(() => _expanded = !_expanded) : null,
+          borderRadius: BorderRadius.circular(4),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 2),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(cat.categoryName,
+                      style: const TextStyle(fontWeight: FontWeight.w500)),
+                ),
+                Text(
+                  formatPrice(cat.revenue),
+                  style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: theme.colorScheme.primary),
+                ),
+                const SizedBox(width: 6),
+                Text('(${cat.transactionCount})',
+                    style: theme.textTheme.bodySmall),
+                if (hasDetails) ...[
+                  const SizedBox(width: 4),
+                  Icon(
+                    _expanded ? Icons.expand_less : Icons.expand_more,
+                    size: 18,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ] else
+                  const SizedBox(width: 22),
+              ],
+            ),
+          ),
+        ),
+
+        // ── Expanded article breakdown ──────────────────────────────────
+        if (_expanded) ...[
+          if (normalArticles.isNotEmpty)
+            ...normalArticles.map((a) => _ArticleDetailRow(article: a)),
+          if (extraArticles.isNotEmpty) ...[
+            _ArticleSectionHeader(label: extraLabel),
+            ...extraArticles.map((a) => _ArticleDetailRow(article: a)),
+          ],
+          if (payoutArticles.isNotEmpty) ...[
+            _ArticleSectionHeader(label: 'Auszahlungen'),
+            ...payoutArticles.map((a) => _ArticleDetailRow(article: a)),
+          ],
+          const SizedBox(height: 4),
+        ],
+
+        const Divider(height: 1),
+      ],
+    );
+  }
+}
+
+class _ArticleSectionHeader extends StatelessWidget {
+  final String label;
+  const _ArticleSectionHeader({required this.label});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.only(left: 8, top: 6, bottom: 2),
+      child: Text(
+        label.toUpperCase(),
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+          letterSpacing: 0.6,
+        ),
+      ),
+    );
+  }
+}
+
+class _ArticleDetailRow extends StatelessWidget {
+  final ArticleBreakdown article;
+  const _ArticleDetailRow({required this.article});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    // revenue < 0 means money was added to the chip (topup / Pfand issuance).
+    final toChip = article.revenue < 0;
+    final absRevenue = article.revenue.abs();
+    final displayAmount =
+        toChip ? '+ ${formatPrice(absRevenue)}' : formatPrice(absRevenue);
+    final amountColor =
+        toChip ? theme.colorScheme.tertiary : theme.colorScheme.onSurface;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       child: Row(
         children: [
-          Expanded(child: Text(cat.categoryName)),
-          Text(
-            formatPrice(cat.revenue),
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              color: theme.colorScheme.primary,
+          Expanded(
+            child: Text(
+              article.productName,
+              style: TextStyle(
+                  fontSize: 13, color: theme.colorScheme.onSurfaceVariant),
             ),
+          ),
+          Text(
+            '${article.transactionCount}×',
+            style: TextStyle(
+                fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
           ),
           const SizedBox(width: 8),
           Text(
-            '(${cat.transactionCount})',
-            style: theme.textTheme.bodySmall,
+            displayAmount,
+            style: TextStyle(
+                fontSize: 13, fontWeight: FontWeight.w500, color: amountColor),
           ),
         ],
       ),

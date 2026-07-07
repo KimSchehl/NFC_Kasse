@@ -16,6 +16,7 @@ from fastapi.responses import StreamingResponse
 from database import get_db
 from dependencies import RequestContext, require_permission
 from schemas import (
+    CategoryArticle,
     CategoryRevenue,
     PeriodCloseRequest,
     PeriodCloseResponse,
@@ -252,7 +253,7 @@ def get_revenue(
         # exclude_from_stats (e.g. Pfand products, Aufladungs-Artikel).
         rows = db.execute(
             f"""
-            SELECT c.name as category_name,
+            SELECT c.id as category_id, c.name as category_name,
                    COALESCE(SUM(s.price_at_sale), 0) as revenue,
                    COUNT(s.id) as transaction_count
             FROM category c
@@ -280,10 +281,55 @@ def get_revenue(
             [event_id, *time_params],
         ).fetchone()
 
+        # Per-article breakdown — all product types (incl. Pfand, Aufladungen, Auszahlungen).
+        # Only products that actually had sales in the selected period are returned.
+        article_rows = db.execute(
+            f"""
+            SELECT c.id as category_id,
+                   p.name as product_name,
+                   p.is_payout,
+                   p.exclude_from_stats,
+                   COALESCE(SUM(s.price_at_sale), 0.0) as revenue,
+                   COUNT(s.id) as transaction_count
+            FROM category c
+            JOIN product p ON p.category_id = c.id
+            LEFT JOIN sale s ON s.product_id = p.id
+                AND s.event_id = ? AND s.cancelled = 0 {time_where}
+            WHERE c.event_id = ? AND c.deleted = 0
+            GROUP BY c.id, p.id, p.name, p.is_payout, p.exclude_from_stats
+            HAVING COUNT(s.id) > 0
+            ORDER BY c.sort_order, c.id, p.is_payout, p.exclude_from_stats, p.sort_order
+            """,
+            [event_id, *time_params, event_id],
+        ).fetchall()
+
+    articles_by_cat: dict[int, list[CategoryArticle]] = {}
+    for ar in article_rows:
+        cid = ar["category_id"]
+        if cid not in articles_by_cat:
+            articles_by_cat[cid] = []
+        articles_by_cat[cid].append(
+            CategoryArticle(
+                product_name=ar["product_name"],
+                revenue=float(ar["revenue"]),
+                transaction_count=ar["transaction_count"],
+                is_payout=bool(ar["is_payout"]),
+                exclude_from_stats=bool(ar["exclude_from_stats"]),
+            )
+        )
+
     return RevenueResponse(
         total_revenue=total_row["total"],
         total_transactions=total_row["count"],
-        by_category=[CategoryRevenue(**dict(r)) for r in rows],
+        by_category=[
+            CategoryRevenue(
+                category_name=r["category_name"],
+                revenue=r["revenue"],
+                transaction_count=r["transaction_count"],
+                articles=articles_by_cat.get(r["category_id"], []),
+            )
+            for r in rows
+        ],
         period_start=period_start,
         period_end=period_end,
     )

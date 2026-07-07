@@ -156,3 +156,16 @@ DOPPELTE AUFLADUNGEN (Bonkasse/Nico): 1 Vorfaelle
        Ueberladung: 100.00 EUR zu viel aufgeladen
 
   Gesamt zu viel aufgeladen: 100.00 EUR
+
+
+
+
+
+
+
+5.952€ = 4.583,50 + 929,50 + 354 + 75 + ~10€ (Rundungen/Stornos)
+Posten					Betrag		Wo sichtbar
+Normale Käufe (Bier, Essen, etc.)	4.583,50€	Gesamtumsatz Tab
+Auszahlungen (33 × Chip-Rückgabe)	929,50€		weder Gesamtumsatz noch Chips-Tab
+Pfand-Rücknahmen (Glas/Flasche)		~354€		nirgendwo
+Restguthaben auf aktiven Chips		75€		Chips Tab
