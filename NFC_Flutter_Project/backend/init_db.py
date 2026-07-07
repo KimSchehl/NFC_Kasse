@@ -423,6 +423,10 @@ def seed_permissions(conn):
         # --- Bon-Druck (Thermodrucker für Barzahlungen ohne Chip) ---
         ("bon",                     None,               "Bon-Druck",                "group", 6),
         ("bon.drucken",             "bon",              "Bon drucken",              "w",     1),
+
+        # --- Kundenterminal / Kiosk ---
+        ("kiosk",                   None,               "Kundenterminal",           "group", 7),
+        ("kiosk.access",            "kiosk",            "Kiosk-Modus",              "w",     1),
     ]
 
     c.executemany(

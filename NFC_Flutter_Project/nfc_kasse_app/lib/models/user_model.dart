@@ -56,6 +56,8 @@ class UserModel {
                p == 'categories.deactivate' || p == 'categories.delete',
       );
 
+  bool get isKiosk => hasPermission('kiosk.access');
+
   bool get canManageUsers => hasPermission('users.manage_permissions');
 
   /// True for any statistics permission — stats screen and sidebar link are

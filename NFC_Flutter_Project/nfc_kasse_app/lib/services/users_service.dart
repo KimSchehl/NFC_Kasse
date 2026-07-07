@@ -69,35 +69,13 @@ class UsersService {
     });
   }
 
-  /// Returns the global leaf-permission nodes as a flat list grouped by section.
-  ///
-  /// Booking / storno / article permissions are per-category (user_category_access)
-  /// and are NOT in this list — they are shown separately in the category tree.
+  /// Fetches the global leaf-permission nodes from the backend, grouped by
+  /// their parent section label. Adding a new permission to the DB is now
+  /// sufficient — no Flutter change needed.
   Future<List<Map<String, dynamic>>> getPermissionTree() async {
-    return const [
-      // Guthaben
-      {'id': 'guthaben.topup',          'label': 'Aufladen',                'group': 'Guthaben'},
-      {'id': 'guthaben.payout',         'label': 'Auszahlen',               'group': 'Guthaben'},
-      // Kategorien
-      {'id': 'categories.create',       'label': 'Kategorie erstellen',     'group': 'Kategorien'},
-      {'id': 'categories.edit',         'label': 'Kategorie bearbeiten',    'group': 'Kategorien'},
-      {'id': 'categories.deactivate',   'label': 'Kategorie deaktivieren',  'group': 'Kategorien'},
-      {'id': 'categories.delete',       'label': 'Kategorie löschen',       'group': 'Kategorien'},
-      // Statistik
-      {'id': 'statistics.revenue',      'label': 'Umsatz anzeigen',         'group': 'Statistik'},
-      {'id': 'statistics.transactions', 'label': 'Transaktionen',           'group': 'Statistik'},
-      {'id': 'statistics.export',       'label': 'CSV Export',              'group': 'Statistik'},
-      // Benutzerverwaltung
-      {'id': 'users.view',              'label': 'Benutzer anzeigen',       'group': 'Benutzer'},
-      {'id': 'users.create',            'label': 'Benutzer erstellen',      'group': 'Benutzer'},
-      {'id': 'users.edit',              'label': 'Benutzer bearbeiten',     'group': 'Benutzer'},
-      {'id': 'users.deactivate',        'label': 'Benutzer deaktivieren',   'group': 'Benutzer'},
-      {'id': 'users.delete',            'label': 'Benutzer löschen',        'group': 'Benutzer'},
-      {'id': 'users.manage_permissions','label': 'Rechte vergeben',         'group': 'Benutzer'},
-      // Notfall
-      {'id': 'help.receive',            'label': 'Notfall-Kontakt',          'group': 'Notfall'},
-      // Bon-Drucker
-      {'id': 'bon.drucken',             'label': 'Bon drucken',              'group': 'Bon-Drucker'},
-    ];
+    final resp = await _client.dio.get('/api/users/permission-tree');
+    return (resp.data as List)
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
   }
 }

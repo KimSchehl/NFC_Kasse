@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'config/api_config.dart';
 import 'providers/providers.dart';
+import 'screens/kiosk_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_shell.dart';
 import 'services/app_storage.dart';
@@ -89,7 +90,11 @@ class _AuthGate extends ConsumerWidget {
         body: Center(child: CircularProgressIndicator()),
       ),
       error: (_, e) => const LoginScreen(),
-      data: (user) => user == null ? const LoginScreen() : const MainShell(),
+      data: (user) {
+        if (user == null) return const LoginScreen();
+        if (user.isKiosk) return const KioskScreen();
+        return const MainShell();
+      },
     );
   }
 }

@@ -24,6 +24,7 @@ import '../services/help_service.dart';
 import '../services/notification_service.dart';
 import '../services/preferences_service.dart';
 import '../services/display_service.dart';
+import '../services/kiosk_service.dart';
 import '../services/print_service.dart';
 import '../services/product_service.dart';
 import '../services/sales_service.dart';
@@ -85,6 +86,9 @@ final printServiceProvider = Provider(
 );
 final displayServiceProvider = Provider(
   (ref) => DisplayService(ref.watch(apiClientProvider)),
+);
+final kioskServiceProvider = Provider(
+  (ref) => KioskService(ref.watch(apiClientProvider)),
 );
 final preferencesServiceProvider = Provider(
   (ref) => PreferencesService(ref.watch(apiClientProvider)),

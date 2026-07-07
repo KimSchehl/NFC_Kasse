@@ -93,7 +93,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from config import BAR_CHIP_UID, EVENT_NAME
-from routers import auth, customers, display, download, help, preferences, printer, products, sales, stats, topup, update, users
+from routers import auth, customers, display, download, help, kiosk, preferences, printer, products, sales, stats, topup, update, users
 
 
 def _migrate() -> None:
@@ -144,6 +144,15 @@ def _migrate() -> None:
         db.execute("""
             INSERT OR IGNORE INTO permission_node (id, parent_id, label, node_type, sort_order)
             VALUES ('bon.drucken', 'bon', 'Bon drucken', 'w', 1)
+        """)
+        # Insert 'kiosk.access' permission node if not yet seeded
+        db.execute("""
+            INSERT OR IGNORE INTO permission_node (id, parent_id, label, node_type, sort_order)
+            VALUES ('kiosk', NULL, 'Kundenterminal', 'group', 7)
+        """)
+        db.execute("""
+            INSERT OR IGNORE INTO permission_node (id, parent_id, label, node_type, sort_order)
+            VALUES ('kiosk.access', 'kiosk', 'Kiosk-Modus', 'w', 1)
         """)
         # Sync event name from config.env on every start
         db.execute(
@@ -210,6 +219,7 @@ app.include_router(topup.router)
 app.include_router(users.router)
 app.include_router(stats.router)
 app.include_router(customers.router)
+app.include_router(kiosk.router)
 app.include_router(printer.router)
 app.include_router(preferences.router)
 app.include_router(help.router)

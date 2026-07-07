@@ -283,6 +283,35 @@ def set_user_category_access(
 
 
 # ---------------------------------------------------------------------------
+# Permission tree — served from DB so no Flutter change needed for new perms
+# ---------------------------------------------------------------------------
+
+@router.get("/permission-tree")
+def get_permission_tree(ctx: RequestContext = Depends(require_permission("users.manage_permissions"))):
+    """
+    Returns all leaf permission nodes grouped by their parent label.
+    Sorted by parent sort_order, then child sort_order.
+    The Flutter edit dialog renders this list without any hardcoded mapping.
+    """
+    with get_db() as db:
+        rows = db.execute(
+            """
+            SELECT n.id, n.label, n.sort_order,
+                   p.label     AS group_label,
+                   p.sort_order AS group_sort
+            FROM permission_node n
+            LEFT JOIN permission_node p ON n.parent_id = p.id
+            WHERE n.node_type != 'group'
+            ORDER BY p.sort_order, n.sort_order
+            """
+        ).fetchall()
+    return [
+        {"id": r["id"], "label": r["label"], "group": r["group_label"] or "Sonstiges"}
+        for r in rows
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Role templates
 # ---------------------------------------------------------------------------
 
