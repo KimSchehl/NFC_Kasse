@@ -92,8 +92,10 @@ from database import get_db
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from config import BAR_CHIP_UID, EVENT_NAME
+from config import BAR_CHIP_UID, EVENT_NAME, LEADERBOARD_ENABLED
 from routers import auth, customers, display, download, help, kiosk, preferences, printer, products, sales, stats, topup, update, users
+if LEADERBOARD_ENABLED:
+    from routers import leaderboard
 
 
 def _migrate() -> None:
@@ -159,6 +161,37 @@ def _migrate() -> None:
             db.execute("ALTER TABLE customer ADD COLUMN customer_name TEXT")
         except Exception:
             pass  # column already exists
+        # points per product — leaderboard scoring (kept even when LEADERBOARD=false,
+        # so data is preserved when the feature is toggled on/off)
+        try:
+            db.execute("ALTER TABLE product ADD COLUMN points INTEGER NOT NULL DEFAULT 0")
+        except Exception:
+            pass
+        # leaderboard_score table — full add-on, separate from customer table
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS leaderboard_score (
+                customer_id INTEGER PRIMARY KEY REFERENCES customer(id),
+                points      INTEGER NOT NULL DEFAULT 0,
+                opt_in      INTEGER NOT NULL DEFAULT 0,
+                updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        # Migrate legacy columns from customer table (if they existed) into leaderboard_score
+        try:
+            db.execute("""
+                INSERT OR IGNORE INTO leaderboard_score (customer_id, points, opt_in)
+                SELECT id,
+                       COALESCE((
+                           SELECT SUM(CASE WHEN s.cancelled=0 THEN p.points ELSE 0 END)
+                           FROM sale s JOIN product p ON s.product_id = p.id
+                           WHERE s.customer_id = customer.id
+                       ), 0) - COALESCE(points_earned_before_reset, 0),
+                       COALESCE(leaderboard_opt_in, 0)
+                FROM customer
+                WHERE leaderboard_opt_in = 1
+            """)
+        except Exception:
+            pass  # old columns may not exist on fresh installs
         # Sync event name from config.env on every start
         db.execute(
             "UPDATE event SET name = ? WHERE id = 1",
@@ -225,6 +258,9 @@ app.include_router(users.router)
 app.include_router(stats.router)
 app.include_router(customers.router)
 app.include_router(kiosk.router)
+if LEADERBOARD_ENABLED:
+    app.include_router(leaderboard.router)      # /leaderboard HTML page (no /api prefix)
+    app.include_router(leaderboard.api_router)  # /api/leaderboard/* API
 app.include_router(printer.router)
 app.include_router(preferences.router)
 app.include_router(help.router)

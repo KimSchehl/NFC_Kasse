@@ -14,34 +14,52 @@ from datetime import timezone
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from config import CHIP_DEPOSIT
+from config import CHIP_DEPOSIT, LEADERBOARD_ENABLED
 from database import get_db
 from dependencies import get_active_event, get_current_user
+
+if LEADERBOARD_ENABLED:
+    from routers import leaderboard as _leaderboard
 
 router = APIRouter(prefix="/api/kiosk", tags=["kiosk"])
 
 
-class _NameBody(BaseModel):
+class _ChipSettingsBody(BaseModel):
     name: str = Field("", max_length=20)
+    leaderboard_opt_in: bool = False
 
 
 @router.put("/chip/{nfc_uid}/name")
 def set_chip_name(
     nfc_uid: str,
-    body: _NameBody,
+    body: _ChipSettingsBody,
     current_user: dict = Depends(get_current_user),
 ):
-    """Sets or clears the customer-supplied name for a chip."""
+    """Sets/clears the customer-supplied name and leaderboard opt-in for a chip."""
     tenant_id = current_user["tenant_id"]
     name = body.name.strip() or None  # empty string → NULL
     with get_db() as db:
-        result = db.execute(
-            "UPDATE customer SET customer_name=? WHERE tenant_id=? AND nfc_uid=?",
-            (name, tenant_id, nfc_uid),
-        )
-        if result.rowcount == 0:
+        customer = db.execute(
+            "SELECT id FROM customer WHERE tenant_id=? AND nfc_uid=?",
+            (tenant_id, nfc_uid),
+        ).fetchone()
+        if not customer:
             raise HTTPException(status_code=404, detail="Chip not found")
-    return {"ok": True, "name": name}
+        db.execute(
+            "UPDATE customer SET customer_name=? WHERE id=?",
+            (name, customer["id"]),
+        )
+        if LEADERBOARD_ENABLED:
+            db.execute("""
+                INSERT INTO leaderboard_score (customer_id, points, opt_in)
+                VALUES (?, 0, ?)
+                ON CONFLICT(customer_id) DO UPDATE SET
+                    opt_in     = excluded.opt_in,
+                    updated_at = datetime('now')
+            """, (customer["id"], 1 if body.leaderboard_opt_in else 0))
+    if LEADERBOARD_ENABLED:
+        _leaderboard.check_and_notify()
+    return {"ok": True, "name": name, "leaderboard_opt_in": body.leaderboard_opt_in}
 
 
 @router.get("/chip/{nfc_uid}")
@@ -66,11 +84,25 @@ def kiosk_chip_info(
                 "balance": 0.0,
                 "chip_deposit": CHIP_DEPOSIT,
                 "customer_name": None,
+                "leaderboard_opt_in": False,
+                "total_points": 0,
                 "is_new_customer": True,
                 "transactions": [],
             }
 
         customer_id = customer["id"]
+
+        # Leaderboard score from dedicated table
+        if LEADERBOARD_ENABLED:
+            lb = db.execute(
+                "SELECT points, opt_in FROM leaderboard_score WHERE customer_id=?",
+                (customer_id,),
+            ).fetchone()
+            total_points = lb["points"] if lb else 0
+            leaderboard_opt_in = bool(lb["opt_in"]) if lb else False
+        else:
+            total_points = 0
+            leaderboard_opt_in = False
 
         # Sales — join product for name, join user for display name
         sales = db.execute(
@@ -151,6 +183,8 @@ def kiosk_chip_info(
         "balance": customer["balance"],
         "chip_deposit": CHIP_DEPOSIT,
         "customer_name": customer["customer_name"],
+        "leaderboard_opt_in": leaderboard_opt_in,
+        "total_points": total_points,
         "is_new_customer": bool(customer["is_available"]),
         "transactions": transactions,
     }

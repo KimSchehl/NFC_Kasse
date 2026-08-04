@@ -127,34 +127,6 @@ class _CartPanelState extends ConsumerState<CartPanel> {
     );
   }
 
-  // No BuildContext parameter — uses State.context directly to satisfy the
-  // use_build_context_synchronously lint after async gaps.
-  Future<void> _printDialog() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Kein Chip gescannt'),
-        content: const Text(
-          'Soll für jeden Artikel ein Bon gedruckt werden?\n'
-          'Der Betrag wird bar entgegengenommen.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Abbrechen'),
-          ),
-          FilledButton.icon(
-            onPressed: () => Navigator.pop(ctx, true),
-            icon: const Icon(Icons.print_outlined, size: 18),
-            label: const Text('Drucken'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-    await _printAndBook();
-  }
-
   Future<void> _printAndBook() async {
     if (_isBooking) return;
     setState(() => _isBooking = true);
@@ -421,7 +393,7 @@ class _CartPanelState extends ConsumerState<CartPanel> {
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                 child: FilledButton.icon(
                   onPressed: isPrintMode
-                      ? _printDialog
+                      ? _printAndBook
                       : (canBook ? () => _book(context) : null),
                   icon: _isBooking
                       ? const SizedBox(

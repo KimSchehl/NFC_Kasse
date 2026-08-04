@@ -231,7 +231,7 @@ def list_products(
 
         if show_inactive:
             rows = db.execute(
-                """SELECT id, name, price, category_id, sort_order, active, is_payout, exclude_from_stats
+                """SELECT id, name, price, category_id, sort_order, active, is_payout, exclude_from_stats, points
                    FROM product WHERE category_id=? AND deleted=0 ORDER BY sort_order""",
                 (category_id,),
             ).fetchall()
@@ -271,16 +271,16 @@ def create_product(
         next_sort = max_row["m"] + 1
 
         cursor = db.execute(
-            "INSERT INTO product (category_id, name, price, sort_order, is_payout, exclude_from_stats) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO product (category_id, name, price, sort_order, is_payout, exclude_from_stats, points) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (body.category_id, body.name, body.price, next_sort,
-             1 if body.is_payout else 0, 1 if body.exclude_from_stats else 0),
+             1 if body.is_payout else 0, 1 if body.exclude_from_stats else 0, body.points),
         )
         new_id = cursor.lastrowid
 
     return ProductResponse(
         id=new_id, name=body.name, price=body.price,
         category_id=body.category_id, sort_order=next_sort, active=True,
-        is_payout=body.is_payout, exclude_from_stats=body.exclude_from_stats,
+        is_payout=body.is_payout, exclude_from_stats=body.exclude_from_stats, points=body.points,
     )
 
 
@@ -313,17 +313,18 @@ def update_product(
         new_sort = body.sort_order if body.sort_order is not None else row["sort_order"]
         new_is_payout = body.is_payout if body.is_payout is not None else bool(row["is_payout"])
         new_exclude = body.exclude_from_stats if body.exclude_from_stats is not None else bool(row["exclude_from_stats"])
+        new_points = body.points if body.points is not None else int(row["points"])
 
         db.execute(
-            "UPDATE product SET name=?, price=?, sort_order=?, is_payout=?, exclude_from_stats=? WHERE id=?",
+            "UPDATE product SET name=?, price=?, sort_order=?, is_payout=?, exclude_from_stats=?, points=? WHERE id=?",
             (new_name, new_price, new_sort,
-             1 if new_is_payout else 0, 1 if new_exclude else 0, product_id),
+             1 if new_is_payout else 0, 1 if new_exclude else 0, new_points, product_id),
         )
 
     return ProductResponse(
         id=product_id, name=new_name, price=new_price,
         category_id=row["category_id"], sort_order=new_sort, active=bool(row["active"]),
-        is_payout=new_is_payout, exclude_from_stats=new_exclude,
+        is_payout=new_is_payout, exclude_from_stats=new_exclude, points=new_points,
     )
 
 
@@ -340,7 +341,7 @@ def set_product_active(
     with get_db() as db:
         row = db.execute(
             """
-            SELECT p.id, p.name, p.price, p.category_id, p.sort_order, p.active, p.is_payout, p.exclude_from_stats
+            SELECT p.id, p.name, p.price, p.category_id, p.sort_order, p.active, p.is_payout, p.exclude_from_stats, p.points
             FROM product p
             JOIN category c ON p.category_id = c.id
             WHERE p.id=? AND c.event_id=? AND p.deleted=0
@@ -359,6 +360,7 @@ def set_product_active(
         category_id=row["category_id"], sort_order=row["sort_order"], active=body.active,
         is_payout=bool(row["is_payout"]),
         exclude_from_stats=bool(row["exclude_from_stats"]),
+        points=int(row["points"]),
     )
 
 

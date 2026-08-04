@@ -29,8 +29,13 @@ BAR_CHIP_UID: str = os.getenv("BAR_CHIP_UID", "BAR")
 #
 # PRINTER_LINE_WIDTH: characters per line at normal font (80 mm paper = 42)
 
+# Leaderboard add-on (optional paid feature).
+# Set LEADERBOARD=true in config.env to enable.
+# When false, all leaderboard routes are inactive and no points are tracked.
+LEADERBOARD_ENABLED: bool = os.getenv("LEADERBOARD", "false").lower() in ("true", "1", "yes")
+
 PRINTER_TYPE: str = os.getenv("PRINTER_TYPE", "serial")
-PRINTER_PORT: str = os.getenv("PRINTER_PORT", "COM3")
+PRINTER_PORT: str = os.getenv("PRINTER_PORT", "COM4")
 PRINTER_BAUDRATE: int = int(os.getenv("PRINTER_BAUDRATE", "9600"))
 PRINTER_HOST: str = os.getenv("PRINTER_HOST", "192.168.1.100")
 PRINTER_LINE_WIDTH: int = int(os.getenv("PRINTER_LINE_WIDTH", "42"))

@@ -35,6 +35,7 @@ class EditProductDialog extends ConsumerStatefulWidget {
 class _EditProductDialogState extends ConsumerState<EditProductDialog> {
   late final TextEditingController _name;
   late final TextEditingController _price;
+  late final TextEditingController _points;
   bool _active = true;
   bool _isTopup = false;
   bool _isPayout = false;
@@ -57,6 +58,7 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
     _price = TextEditingController(
       text: p != null ? (_isTopup ? p.price.abs() : p.price).toStringAsFixed(2) : '',
     );
+    _points = TextEditingController(text: (p?.points ?? 0).toString());
     _active = p?.active ?? true;
     _isPayout = p?.isPayout ?? false;
     _excludeFromStats = p?.excludeFromStats ?? false;
@@ -66,6 +68,7 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
   void dispose() {
     _name.dispose();
     _price.dispose();
+    _points.dispose();
     super.dispose();
   }
 
@@ -82,6 +85,7 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
     final name = _name.text.trim();
     final priceText = _price.text.trim().replaceAll(',', '.');
     final price = double.tryParse(priceText);
+    final pointsVal = int.tryParse(_points.text.trim());
 
     if (name.isEmpty) {
       setState(() => _error = 'Name darf nicht leer sein');
@@ -91,6 +95,10 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
       setState(() => _error = _isTopup
           ? 'Ungültiger Betrag (Beispiel: 20.00)'
           : 'Ungültiger Preis (Beispiel: 3.50 oder -2.00)');
+      return;
+    }
+    if (pointsVal == null) {
+      setState(() => _error = 'Ungültige Punkte (ganze Zahl, z.B. 5 oder -10)');
       return;
     }
 
@@ -112,6 +120,7 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
           categoryId: widget.categoryId,
           isPayout: savedIsPayout,
           excludeFromStats: savedExcludeFromStats,
+          points: pointsVal,
         );
       } else {
         await svc.updateProduct(
@@ -120,6 +129,7 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
           price: savedPrice,
           isPayout: savedIsPayout,
           excludeFromStats: savedExcludeFromStats,
+          points: pointsVal,
         );
         if (widget.product!.active != _active && widget.canDeactivate) {
           await svc.setActive(widget.product!.id, _active);
@@ -202,6 +212,19 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
                   signed: !_isTopup,
                 ),
               ),
+              if (ref.watch(authProvider).valueOrNull?.leaderboardEnabled ?? false) ...[
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _points,
+                  enabled: widget.canEditDetails,
+                  decoration: const InputDecoration(
+                    labelText: 'Leaderboard-Punkte',
+                    helperText: 'Punkte pro Buchung (negativ erlaubt, z.B. -10)',
+                    prefixIcon: Icon(Icons.star_outline, size: 20),
+                  ),
+                  keyboardType: const TextInputType.numberWithOptions(signed: true),
+                ),
+              ],
               if (widget.canEditDetails) ...[
               const SizedBox(height: 4),
               if (!isNew && widget.canDeactivate)

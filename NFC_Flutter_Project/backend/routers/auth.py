@@ -200,10 +200,12 @@ def me(
             for r in cat_rows
         ]
 
+    from config import LEADERBOARD_ENABLED
     return MeResponse(
         id=current_user["id"],
         username=current_user["username"],
         display_name=current_user["display_name"],
         permissions=permissions,
         categories=categories,
+        leaderboard_enabled=LEADERBOARD_ENABLED,
     )

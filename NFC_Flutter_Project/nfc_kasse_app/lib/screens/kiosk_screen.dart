@@ -372,11 +372,13 @@ class _ResultViewState extends ConsumerState<_ResultView>
     with SingleTickerProviderStateMixin {
   late AnimationController _progress;
   String? _customerName;
+  bool _leaderboardOptIn = false;
 
   @override
   void initState() {
     super.initState();
     _customerName = widget.info.customerName;
+    _leaderboardOptIn = widget.info.leaderboardOptIn;
     _progress = AnimationController(vsync: this, duration: widget.resetDuration)
       ..forward();
     _progress.addStatusListener((s) {
@@ -393,43 +395,77 @@ class _ResultViewState extends ConsumerState<_ResultView>
   Future<void> _editName() async {
     _progress.stop();
     final ctrl = TextEditingController(text: _customerName ?? '');
-    final result = await showDialog<String?>(
+    bool dialogOptIn = _leaderboardOptIn;
+    final leaderboardEnabled =
+        ref.read(authProvider).valueOrNull?.leaderboardEnabled ?? false;
+
+    final result = await showDialog<({String name, bool optIn})?>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Chip benennen'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          maxLength: 20,
-          decoration: const InputDecoration(
-            hintText: 'Name eingeben …',
-            border: OutlineInputBorder(),
-          ),
-          textCapitalization: TextCapitalization.words,
-        ),
-        actions: [
-          if (_customerName != null)
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, ''),
-              child: const Text('Name entfernen'),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) => AlertDialog(
+          title: const Text('Chip-Einstellungen'),
+          content: SizedBox(
+            width: 320,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: ctrl,
+                  autofocus: true,
+                  maxLength: 20,
+                  decoration: const InputDecoration(
+                    labelText: 'Name (optional)',
+                    hintText: 'Name eingeben …',
+                    border: OutlineInputBorder(),
+                  ),
+                  textCapitalization: TextCapitalization.words,
+                ),
+                if (leaderboardEnabled) ...[
+                  const SizedBox(height: 4),
+                  SwitchListTile(
+                    title: const Text('Am Leaderboard teilnehmen'),
+                    subtitle: const Text('Im Bestenlisten-Ranking anzeigen'),
+                    value: dialogOptIn,
+                    onChanged: (v) => setDlgState(() => dialogOptIn = v),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ],
+              ],
             ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Abbrechen'),
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-            child: const Text('Speichern'),
-          ),
-        ],
+          actions: [
+            if (_customerName != null)
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, (name: '', optIn: dialogOptIn)),
+                child: const Text('Name entfernen'),
+              ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Abbrechen'),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.pop(ctx, (name: ctrl.text.trim(), optIn: dialogOptIn)),
+              child: const Text('Speichern'),
+            ),
+          ],
+        ),
       ),
     );
+    ctrl.dispose();
     if (!mounted) return;
     _progress.forward();
-    if (result == null) return; // cancelled
+    if (result == null) return;
     try {
-      await ref.read(kioskServiceProvider).setChipName(widget.info.nfcUid, result);
-      setState(() => _customerName = result.isEmpty ? null : result);
+      await ref.read(kioskServiceProvider).setChipSettings(
+        widget.info.nfcUid,
+        name: result.name,
+        leaderboardOptIn: result.optIn,
+      );
+      setState(() {
+        _customerName = result.name.isEmpty ? null : result.name;
+        _leaderboardOptIn = result.optIn;
+      });
     } catch (_) {}
   }
 
@@ -439,6 +475,8 @@ class _ResultViewState extends ConsumerState<_ResultView>
     final info = widget.info;
     final balance = info.balance;
     final isNegative = balance < 0;
+    final leaderboardEnabled =
+        ref.watch(authProvider).valueOrNull?.leaderboardEnabled ?? false;
     final onCardColor = isNegative
         ? theme.colorScheme.onErrorContainer
         : theme.colorScheme.onPrimaryContainer;
@@ -478,6 +516,31 @@ class _ResultViewState extends ConsumerState<_ResultView>
                         style: theme.textTheme.titleMedium?.copyWith(
                           color: onCardColor.withValues(alpha: 0.8),
                         ),
+                      ),
+                    ],
+                    if (leaderboardEnabled) ...[
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Icon(Icons.star, size: 16,
+                              color: onCardColor.withValues(alpha: 0.65)),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${info.totalPoints} Punkte',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: onCardColor.withValues(alpha: 0.65),
+                            ),
+                          ),
+                          if (_leaderboardOptIn) ...[
+                            const SizedBox(width: 8),
+                            Text(
+                              '· Leaderboard aktiv',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: onCardColor.withValues(alpha: 0.45),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ],
                     if (info.transactions.isEmpty)

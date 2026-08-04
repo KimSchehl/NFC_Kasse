@@ -280,11 +280,26 @@ def _print_worker() -> None:
                         )
 
                 except Exception as exc:
+                    err_str = str(exc)
+                    # Port busy / permission denied / device not found after a
+                    # previous close: Windows hasn't released the COM port yet.
+                    # Reset to pending so the outer loop retries after sleeping.
+                    is_conn_err = any(k in err_str for k in (
+                        "PermissionError", "Access is denied",
+                        "Device not found", "SerialException",
+                        "could not open port",
+                    ))
                     with get_db() as db:
-                        db.execute(
-                            "UPDATE print_job SET status = 'error', error_msg = ? WHERE id = ?",
-                            (str(exc)[:500], job_id),
-                        )
+                        if is_conn_err:
+                            db.execute(
+                                "UPDATE print_job SET status = 'pending' WHERE id = ?",
+                                (job_id,),
+                            )
+                        else:
+                            db.execute(
+                                "UPDATE print_job SET status = 'error', error_msg = ? WHERE id = ?",
+                                (err_str[:500], job_id),
+                            )
                     time.sleep(2.0)
                     break  # Close printer; outer loop will reopen on next attempt
 
@@ -293,6 +308,9 @@ def _print_worker() -> None:
                 p.close()
             except Exception:
                 pass
+            # Give Windows time to fully release the COM port before the next open.
+            if PRINTER_TYPE != "network":
+                time.sleep(1.0)
 
 
 def start_worker() -> None:

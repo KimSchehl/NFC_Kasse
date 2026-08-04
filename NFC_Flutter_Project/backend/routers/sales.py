@@ -2,10 +2,13 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from config import CHIP_DEPOSIT
+from config import CHIP_DEPOSIT, LEADERBOARD_ENABLED
 from database import get_db
 from dependencies import RequestContext, get_active_event, get_current_user
 from schemas import BalanceResponse, BookingRequest, BookingResponse, CancelResponse
+
+if LEADERBOARD_ENABLED:
+    from routers import leaderboard
 
 router = APIRouter(prefix="/api/sales", tags=["sales"])
 
@@ -135,7 +138,7 @@ def create_booking(
         placeholders = ",".join("?" * len(unique_ids))
         products = db.execute(
             f"""
-            SELECT p.id, p.price, p.active, p.category_id, p.is_payout, c.event_id
+            SELECT p.id, p.price, p.active, p.category_id, p.is_payout, p.points, c.event_id
             FROM product p
             JOIN category c ON p.category_id = c.id
             WHERE p.id IN ({placeholders}) AND p.deleted=0
@@ -200,7 +203,7 @@ def create_booking(
                 """,
                 (event_id, customer_id, body.product_ids[0], payout_amount, user_id),
             )
-            return BookingResponse(
+            _resp = BookingResponse(
                 success=True,
                 new_balance=0.0,
                 sale_ids=[cursor.lastrowid],
@@ -210,38 +213,55 @@ def create_booking(
         # ---- Normal booking flow -----------------------------------------
         # Build a price lookup keyed by ID, then sum over the full list (with
         # repeats) so quantity is accounted for correctly.
-        product_map = {p["id"]: p["price"] for p in products}
-        total_price = sum(product_map[pid] for pid in body.product_ids)
+        else:
+            product_map = {p["id"]: p["price"] for p in products}
+            total_price = sum(product_map[pid] for pid in body.product_ids)
 
-        # Deduct chip deposit on first issuance (new chip or returned chip).
-        chip_deposit_applied = CHIP_DEPOSIT if is_new else 0.0
-        new_balance = current_balance - total_price - chip_deposit_applied
+            # Deduct chip deposit on first issuance (new chip or returned chip).
+            chip_deposit_applied = CHIP_DEPOSIT if is_new else 0.0
+            new_balance = current_balance - total_price - chip_deposit_applied
 
-        # Negative balances are allowed — the client guards against them with the
-        # "Rest Guthaben" check, but we do not enforce it here so a manager can
-        # override (e.g. vendor accepting cash debt at the stand).
-        db.execute(
-            "UPDATE customer SET balance=? WHERE id=?",
-            (new_balance, customer_id),
-        )
-
-        sale_ids = []
-        for product_id in body.product_ids:
-            cursor = db.execute(
-                """
-                INSERT INTO sale (event_id, customer_id, product_id, price_at_sale, booked_by)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (event_id, customer_id, product_id, product_map[product_id], user_id),
+            # Negative balances are allowed — the client guards against them with the
+            # "Rest Guthaben" check, but we do not enforce it here so a manager can
+            # override (e.g. vendor accepting cash debt at the stand).
+            db.execute(
+                "UPDATE customer SET balance=? WHERE id=?",
+                (new_balance, customer_id),
             )
-            sale_ids.append(cursor.lastrowid)
 
-        return BookingResponse(
-            success=True,
-            new_balance=new_balance,
-            sale_ids=sale_ids,
-            chip_deposit_applied=chip_deposit_applied,
-        )
+            product_points_map = {p["id"]: p["points"] for p in products}
+            sale_ids = []
+            for product_id in body.product_ids:
+                cursor = db.execute(
+                    """
+                    INSERT INTO sale (event_id, customer_id, product_id, price_at_sale, booked_by)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (event_id, customer_id, product_id, product_map[product_id], user_id),
+                )
+                sale_ids.append(cursor.lastrowid)
+
+            if LEADERBOARD_ENABLED:
+                total_pts = sum(product_points_map.get(pid, 0) for pid in body.product_ids)
+                if total_pts != 0:
+                    db.execute("""
+                        INSERT INTO leaderboard_score (customer_id, points, opt_in)
+                        VALUES (?, ?, 0)
+                        ON CONFLICT(customer_id) DO UPDATE SET
+                            points     = points + excluded.points,
+                            updated_at = datetime('now')
+                    """, (customer_id, total_pts))
+
+            _resp = BookingResponse(
+                success=True,
+                new_balance=new_balance,
+                sale_ids=sale_ids,
+                chip_deposit_applied=chip_deposit_applied,
+            )
+
+    if LEADERBOARD_ENABLED:
+        leaderboard.check_and_notify()
+    return _resp
 
 
 # ---------------------------------------------------------------------------
@@ -319,5 +339,18 @@ def cancel_booking(
             "UPDATE customer SET balance = balance + ? WHERE id=?",
             (refunded, sale["customer_id"]),
         )
+        if LEADERBOARD_ENABLED:
+            pts_row = db.execute(
+                "SELECT points FROM product WHERE id=?", (sale["product_id"],)
+            ).fetchone()
+            cancelled_pts = pts_row["points"] if pts_row else 0
+            if cancelled_pts != 0:
+                db.execute("""
+                    UPDATE leaderboard_score
+                    SET points = points - ?, updated_at = datetime('now')
+                    WHERE customer_id = ?
+                """, (cancelled_pts, sale["customer_id"]))
 
+    if LEADERBOARD_ENABLED:
+        leaderboard.check_and_notify()
     return CancelResponse(success=True, refunded_amount=refunded)

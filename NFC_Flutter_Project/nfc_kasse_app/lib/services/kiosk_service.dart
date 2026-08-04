@@ -10,7 +10,10 @@ class KioskService {
     return KioskChipInfo.fromJson(resp.data as Map<String, dynamic>);
   }
 
-  Future<void> setChipName(String nfcUid, String name) async {
-    await _client.dio.put('/api/kiosk/chip/$nfcUid/name', data: {'name': name});
+  Future<void> setChipSettings(String nfcUid, {required String name, required bool leaderboardOptIn}) async {
+    await _client.dio.put('/api/kiosk/chip/$nfcUid/name', data: {
+      'name': name,
+      'leaderboard_opt_in': leaderboardOptIn,
+    });
   }
 }

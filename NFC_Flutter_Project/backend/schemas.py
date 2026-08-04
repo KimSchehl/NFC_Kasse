@@ -54,6 +54,7 @@ class MeResponse(BaseModel):
     display_name: str | None
     permissions: list[str]
     categories: list[CategoryPermissionResponse]
+    leaderboard_enabled: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -103,6 +104,7 @@ class ProductResponse(BaseModel):
     active: bool
     is_payout: bool = False
     exclude_from_stats: bool = False
+    points: int = 0
 
 
 class ProductCreate(BaseModel):
@@ -112,6 +114,7 @@ class ProductCreate(BaseModel):
     sort_order: int = 0
     is_payout: bool = False
     exclude_from_stats: bool = False
+    points: int = 0
 
 
 class ProductUpdate(BaseModel):
@@ -120,6 +123,7 @@ class ProductUpdate(BaseModel):
     sort_order: int | None = None
     is_payout: bool | None = None
     exclude_from_stats: bool | None = None
+    points: int | None = None
 
 
 class ProductActiveUpdate(BaseModel):

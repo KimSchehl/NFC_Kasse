@@ -27,6 +27,7 @@ class ProductService {
     required int categoryId,
     bool isPayout = false,
     bool excludeFromStats = false,
+    int points = 0,
   }) async {
     final resp = await _client.dio.post('/api/products/', data: {
       'name': name,
@@ -34,6 +35,7 @@ class ProductService {
       'category_id': categoryId,
       'is_payout': isPayout,
       'exclude_from_stats': excludeFromStats,
+      'points': points,
     });
     return ProductModel.fromJson(resp.data as Map<String, dynamic>);
   }
@@ -44,12 +46,14 @@ class ProductService {
     double? price,
     bool? isPayout,
     bool? excludeFromStats,
+    int? points,
   }) async {
     final data = <String, dynamic>{};
     if (name != null) data['name'] = name;
     if (price != null) data['price'] = price;
     if (isPayout != null) data['is_payout'] = isPayout;
     if (excludeFromStats != null) data['exclude_from_stats'] = excludeFromStats;
+    if (points != null) data['points'] = points;
     final resp = await _client.dio.put('/api/products/$id', data: data);
     return ProductModel.fromJson(resp.data as Map<String, dynamic>);
   }

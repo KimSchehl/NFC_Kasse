@@ -38,6 +38,8 @@ class KioskChipInfo {
   final double balance;
   final double chipDeposit;
   final String? customerName;
+  final bool leaderboardOptIn;
+  final int totalPoints;
   final bool isNewCustomer;
   final List<KioskTransaction> transactions;
 
@@ -46,6 +48,8 @@ class KioskChipInfo {
     required this.balance,
     required this.chipDeposit,
     this.customerName,
+    required this.leaderboardOptIn,
+    required this.totalPoints,
     required this.isNewCustomer,
     required this.transactions,
   });
@@ -55,6 +59,8 @@ class KioskChipInfo {
         balance: (j['balance'] as num).toDouble(),
         chipDeposit: (j['chip_deposit'] as num).toDouble(),
         customerName: j['customer_name'] as String?,
+        leaderboardOptIn: j['leaderboard_opt_in'] as bool? ?? false,
+        totalPoints: j['total_points'] as int? ?? 0,
         isNewCustomer: j['is_new_customer'] as bool,
         transactions: (j['transactions'] as List)
             .map((t) => KioskTransaction.fromJson(t as Map<String, dynamic>))

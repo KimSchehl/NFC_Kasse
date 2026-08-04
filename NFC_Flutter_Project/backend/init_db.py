@@ -145,6 +145,7 @@ def init_db():
         deleted     INTEGER NOT NULL DEFAULT 0,  -- soft-delete, keeps historical sales valid
         is_payout           INTEGER NOT NULL DEFAULT 0,  -- marks article as full-balance payout
         exclude_from_stats  INTEGER NOT NULL DEFAULT 0,  -- exclude from revenue statistics
+        points              INTEGER NOT NULL DEFAULT 0,  -- leaderboard points per booking
         created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
     )""")
 
@@ -202,6 +203,21 @@ def init_db():
         is_available INTEGER NOT NULL DEFAULT 1,
         created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
         UNIQUE(tenant_id, nfc_uid)
+    )""")
+
+    # ------------------------------------------------------------------
+    # LEADERBOARD SCORE — optional add-on, clean separation from core
+    # One row per chip (customer_id PK).
+    # points: running total, updated atomically with each sale/cancel
+    # opt_in: 1 = customer wants to appear on the leaderboard display
+    # Entire table is ignored when LEADERBOARD=false in config.env.
+    # ------------------------------------------------------------------
+    c.execute("""
+    CREATE TABLE leaderboard_score (
+        customer_id INTEGER PRIMARY KEY REFERENCES customer(id),
+        points      INTEGER NOT NULL DEFAULT 0,
+        opt_in      INTEGER NOT NULL DEFAULT 0,
+        updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
     )""")
 
     # ------------------------------------------------------------------
