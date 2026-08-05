@@ -13,8 +13,9 @@
    → First category is auto-selected; product grid is rendered
 
 2. Guest holds NFC wristband/chip against the reader
-   → Mobile:  nfc_manager fires callback with UID immediately
-   → Desktop: HID reader types UID into text field; vendor presses Enter
+   → Native NFC (Android):  nfc_manager fires callback with UID immediately
+   → USB HID reader (desktop/web): reader types UID into text field; vendor presses Enter
+   → BLE reader (Android + web): paired reader pushes the UID over Bluetooth; submits automatically
    → App calls GET /api/sales/balance/{nfc_uid}
    → Customer balance and (if new) "Neuer Kunde" badge displayed
    → UID stays visible in the input field

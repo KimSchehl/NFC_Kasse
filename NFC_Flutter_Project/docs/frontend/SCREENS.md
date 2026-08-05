@@ -114,8 +114,10 @@ Cart panel is fixed at 300 px wide on the right.
 Cart is always visible in the bottom half — no pop-up or drawer needed.
 
 #### NFC Input Field
+Accepts UIDs from three independent input paths, whichever fires first:
 - **USB HID reader**: Shows USB icon. Reader types UID as keyboard input; pressing Enter (or the `\n`/`\r` terminator the reader appends) triggers the lookup. The UID remains visible in the field after the scan.
-- **Native NFC** (mobile): Shows NFC icon in primary colour. `nfc_manager` fires the callback when a tag is detected; the UID is submitted immediately without pressing Enter.
+- **Native NFC** (Android): Shows NFC icon in primary colour. `nfc_manager` fires the callback when a tag is detected; the UID is submitted immediately without pressing Enter.
+- **BLE reader** (Android + web): Shows a Bluetooth icon once a paired reader is connected (Settings → "NFC-Lesegerät"). The field becomes read-only and shows no on-screen keyboard — there's nothing to type, each scan arrives over BLE and submits automatically.
 
 #### Customer Info Panel
 Appears to the right of the NFC input field.
@@ -156,8 +158,20 @@ Visible only with `users.*` permissions. Allows creating users, editing display 
 ---
 
 ### Settings Screen (`settings_screen.dart`)
+Three tabs:
+
+**Über tab:**
 - Shows the configured backend URL and app version
 - **Abmelden** (logout) button with confirmation dialog
+- QR code linking to the APK download, for installing the app on a new device
+
+**Design tab:**
+- Presets (Klein/Standard/Groß) plus individual sliders for text scale, product-grid column count, cart text scale, and a stepper for max button text lines
+
+**NFC-Lesegerät tab:**
+- Card showing the currently paired BLE reader (name, connected/disconnected status, battery percentage) with a menu to reconnect, disconnect, or forget it
+- "Nach Geräten suchen" button starts a scan; discovered readers are listed below and connect on tap
+- On web, reconnecting always re-opens the browser's native device picker — Web Bluetooth cannot reconnect to a remembered device ID without it (see root `CLAUDE.md` → "BLE NFC reader" for why)
 
 ---
 

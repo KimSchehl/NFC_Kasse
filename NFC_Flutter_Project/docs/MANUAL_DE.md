@@ -106,7 +106,15 @@ Der **Kassieren-Bildschirm (POS)** ist die Hauptansicht nach der Anmeldung.
 2. Armband an die Rückseite des Smartphones halten.
 3. Die App erkennt das Tag und lädt das Guthaben — kein Knopfdruck nötig.
 
+**Mit dem batteriebetriebenen BLE-Lesegerät (Android + Web):**
+1. Einmalig koppeln unter **Einstellungen → NFC-Lesegerät → Nach Geräten suchen**, dann den gefundenen Reader antippen (im Browser bestätigt man zusätzlich den Geräte-Auswahldialog).
+2. Ist ein Reader verbunden, zeigt das Textfeld ein Bluetooth-Symbol und ist schreibgeschützt — es öffnet sich keine Bildschirmtastatur, da nichts einzutippen ist.
+3. Armband an das Lesegerät halten — die UID wird automatisch übermittelt.
+4. Verbindungsstatus und Akkustand des Readers sind jederzeit oben neben dem Server-Verbindungssymbol sichtbar, sowie im Einstellungen-Tab.
+
 Die UID bleibt im Eingabefeld sichtbar. Rechts (oder unten) erscheint das aktuelle Guthaben des Gastes.
+
+> **Hinweis (nur Web-Version):** Der Browser verlangt bei jeder Neuverbindung (z. B. nach einem Seiten-Reload oder wenn der Reader kurz ausgeschaltet war) eine kurze Bestätigung über das native Geräte-Auswahlfenster — eine gespeicherte Kopplung reicht dem Browser aus Sicherheitsgründen allein nicht aus. Das ist normal und keine Fehlfunktion.
 
 ### 4.2 Produkte in den Warenkorb legen
 
@@ -360,6 +368,17 @@ Das Guthaben wird auf 0,00 € gesetzt; die Auszahlung wird im Protokoll vermerk
 
 - Zuerst in das Eingabefeld tippen, damit es den Fokus erhält.
 - Sicherstellen, dass das Lesegerät nach der UID einen Zeilenumbruch (`\n`) sendet. Die meisten HID-Lesegeräte tun dies standardmäßig.
+
+**BLE-Lesegerät lässt sich nicht koppeln**
+
+- Prüfen, ob der Reader eingeschaltet ist (kurzes LED-Blinken beim Scannen ist normal, dauerhaft aus deutet auf leeren Akku hin).
+- Unter **Einstellungen → NFC-Lesegerät** erneut auf "Nach Geräten suchen" tippen — Reader muss in Reichweite sein.
+- Web-Version: Beim ersten Verbinden erscheint ein Browser-eigenes Auswahlfenster ("... möchte sich koppeln") — dort den Reader auswählen und bestätigen, sonst kommt keine Verbindung zustande.
+
+**BLE-Lesegerät zeigt "Verbunden", reagiert aber nicht mehr / Akkustand wirkt veraltet**
+
+- Kurz warten (bis zu ~90 Sekunden) — die App erkennt einen unerwarteten Verbindungsabbruch (z. B. Reader außer Reichweite oder ausgeschaltet) nicht sofort, sondern über das Ausbleiben der regelmäßigen Akkustand-Meldung. Der Status springt danach automatisch auf "Getrennt" und verbindet sich selbstständig neu, sobald der Reader wieder verfügbar ist.
+- Falls das nicht funktioniert: unter Einstellungen → NFC-Lesegerät den gefundenen Reader in der Scan-Liste antippen, um sofort manuell neu zu verbinden.
 
 **"Buchen"-Knopf ist inaktiv, obwohl der Warenkorb gefüllt ist**
 

@@ -13,6 +13,7 @@ Standverkäufer scannen den Chip → Betrag wird vom Guthaben abgezogen.
 **Zielplattformen:**
 - Flutter App: Android + iOS (NFC nativ via `nfc_manager` Package)
 - Flutter Web: Windows/Browser (NFC via USB HID-Reader — Reader tippt UID wie Tastatur)
+- Beide Plattformen zusätzlich: eigenbau batteriebetriebener BLE-NFC-Reader (Repo `nfc-ble-reader/`), gekoppelt über Einstellungen → NFC-Lesegerät
 - Lokaler Server: Fujitsu S920 Thin Client + TP-Link Access Point (eigenes Kassen-WLAN)
 
 **NFC-Tags:** MIFARE Classic — es wird NUR die UID gelesen. Guthaben IMMER server-seitig.
@@ -30,6 +31,7 @@ Standverkäufer scannen den Chip → Betrag wird vom Guthaben abgezogen.
 | Passwort | passlib + bcrypt | Bisher Klartext — MUSS ersetzt werden |
 | NFC Mobile | flutter: nfc_manager | MIFARE Classic UID lesen |
 | NFC Desktop | USB HID Input | Reader = Tastatur-Emulation, kein Extra-Code |
+| NFC BLE-Reader | flutter_blue_plus | Eigenbau-Reader, Android + Web, siehe `nfc-ble-reader/` |
 | Token Storage | flutter_secure_storage | Keychain (iOS) / Keystore (Android) |
 
 ---

@@ -106,7 +106,15 @@ The **POS screen** is the main cash register view. It loads automatically after 
 2. Hold the wristband to the back of the phone.
 3. The app detects the tag and loads the balance automatically — no button press needed.
 
+**With the battery-powered BLE reader (Android + web):**
+1. Pair it once under **Settings → NFC-Lesegerät → Nach Geräten suchen**, then tap the reader once it's found (in the browser you'll also need to confirm the native device picker).
+2. Once a reader is connected, the text field shows a Bluetooth icon and becomes read-only — no on-screen keyboard pops up, since there's nothing to type.
+3. Hold the wristband against the reader — the UID is submitted automatically.
+4. Connection status and battery level are always visible next to the server-connection icon at the top, and on the Settings tab.
+
 After a scan, the UID stays visible in the input field. The customer panel on the right shows the current balance.
+
+> **Note (web version only):** the browser requires a brief confirmation through its native device picker every time a fresh connection is made (e.g. after a page reload, or if the reader was briefly turned off) — a remembered pairing alone isn't enough for the browser's security model. That's expected behavior, not a malfunction.
 
 ### 4.2 Adding Products to the Cart
 
@@ -360,6 +368,17 @@ This zeroes out the balance and records the payout in the audit trail.
 
 - Tap the UID input field first so it has focus.
 - Ensure the reader sends a newline (`\n`) after the UID. Most HID readers do this by default.
+
+**BLE reader won't pair**
+
+- Check the reader is powered on (a brief LED flash while scanning is normal; staying dark usually means the battery is empty).
+- Under **Settings → NFC-Lesegerät**, tap "Nach Geräten suchen" again — the reader needs to be in range.
+- Web version: a native browser picker ("... wants to pair") appears on first connect — select the reader and confirm there, otherwise no connection is made.
+
+**BLE reader shows "Verbunden" but stopped responding / battery level looks stale**
+
+- Wait a little (up to ~90 seconds) — the app doesn't detect an unexpected disconnect (reader out of range or powered off) instantly; it notices the absence of the reader's periodic battery update instead. Status then flips to "Getrennt" automatically and reconnects on its own once the reader is available again.
+- If that doesn't happen: under Settings → NFC-Lesegerät, tap the reader in the scan results list to reconnect manually right away.
 
 **"Buchen" button is disabled even though the cart has items**
 

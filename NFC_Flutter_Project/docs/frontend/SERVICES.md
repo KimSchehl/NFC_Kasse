@@ -11,7 +11,8 @@ frontend/nfc_kasse_app/lib/
 ├── services/
 │   ├── api_service.dart        — HTTP client (dio) + token interceptor
 │   ├── auth_service.dart       — Login, logout, token management
-│   ├── nfc_service.dart        — NFC scan (mobile) + HID input (desktop)
+│   ├── nfc_service.dart        — Native NFC (mobile, nfc_manager)
+│   ├── ble_nfc_service.dart    — GATT UUID constants for the BLE NFC reader
 │   ├── sales_service.dart      — Bookings, balance, cancel
 │   ├── topup_service.dart      — Balance top-up + payout
 │   ├── products_service.dart   — Products + categories
@@ -31,7 +32,7 @@ frontend/nfc_kasse_app/lib/
 └── widgets/
     ├── product_grid.dart       — Reusable product button grid
     ├── cart_panel.dart         — Shopping cart
-    ├── nfc_input.dart          — Unified NFC input (mobile + HID)
+    ├── nfc_input_field.dart    — Unified NFC input (native NFC + HID + BLE)
     └── permission_tree.dart    — Checkbox tree for permission assignment
 ```
 
@@ -88,21 +89,32 @@ class AuthService {
 
 ---
 
-## nfc_service.dart — NFC Input
+## NFC Input — three independent paths
+
+`NfcInputField` (the widget, not a service) is the single entry point all three
+feed into — whichever path fires first calls the same `onSubmit(uid)` callback:
 
 ```dart
-// Mobile: nfc_manager package — native NFC on Android/iOS
-// Desktop/Web: USB HID reader emulates keyboard input — no extra code needed
-//   → TextField with onSubmitted / onChanged debounce handles it
-
+// 1. Native NFC (Android/iOS): nfc_service.dart wraps nfc_manager.
 class NfcService {
-  static Stream<String> startMobileScan() { ... }  // nfc_manager
-
-  // On desktop, HID input is treated as normal keyboard text.
-  // The nfc_input.dart widget decides which path is active.
-  static bool get isHidMode => kIsWeb || Platform.isWindows;
+  static Future<bool> isAvailable() { ... }
+  static Future<void> startSession(void Function(String uid) onUid) { ... }
 }
+
+// 2. USB HID reader (desktop/web): the reader types the UID into the
+//    TextField like a keyboard, followed by \n or \r — no extra code needed,
+//    NfcInputField's onChanged detects the trailing newline and submits.
+
+// 3. BLE reader (Android + web): ble_nfc_service.dart holds the GATT UUID
+//    constants; BleReaderNotifier (providers.dart) owns scanning, connecting,
+//    and the notify subscription. NfcInputField sets itself read-only while
+//    connected (nothing to type — input arrives over BLE) and submits each
+//    scan via `ref.listen(bleReaderProvider, ...)`.
 ```
+
+Note: which path is "active" isn't a single platform switch (there's no
+`isHidMode` flag) — native NFC and BLE are both tried whenever available, and
+manual/HID typing always still works as a fallback in the same field.
 
 ---
 
@@ -134,7 +146,8 @@ dependencies:
     sdk: flutter
   dio: ^5.x                      # HTTP client
   flutter_secure_storage: ^9.x   # Keychain/Keystore for tokens
-  nfc_manager: ^3.x              # NFC on Android/iOS
+  nfc_manager: ^3.x              # Native NFC on Android/iOS
+  flutter_blue_plus: ^2.x        # BLE NFC reader (Android + web)
   provider: ^6.x                 # State management (or riverpod)
   intl: ^0.19.x                  # Number formatting (€ 3,50)
 ```

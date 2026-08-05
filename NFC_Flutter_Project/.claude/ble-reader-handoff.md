@@ -8,7 +8,11 @@ zusätzlich zur nativen Android-App, wo es schon lief.
 Kein einziger der unten genannten Codestände ist bisher committet — alles sind
 Working-Tree-Änderungen in zwei Repos (`nfc-ble-reader`, `NFC_Flutter_Project`).
 
-## Status: BLE-Verbindung funktioniert. Zwei offene Probleme (unten).
+## Status: RESOLVED (2026-08-06). Beide unten genannten Probleme sind behoben, siehe
+## Abschnitt "RESOLVED" am Ende dieser Datei statt "OFFENE PROBLEME".
+## Dauerhafte Architektur-Notizen (Web-Reconnect-Einschränkung, Health-Check-Design)
+## stehen jetzt in der Root-`CLAUDE.md` unter "BLE NFC reader" — diese Datei bleibt
+## als historischer Debugging-Log stehen, ist aber nicht mehr die aktuelle Quelle.
 
 ---
 
@@ -159,68 +163,57 @@ finden, verbinden, bleibt stabil verbunden, UID-Scans kommen im NFC-Eingabefeld 
 
 ---
 
-## OFFENE PROBLEME (nächste Session hier weitermachen)
+## RESOLVED (Folgesession, 2026-08-06)
 
-### A. "Bad state: Cannot use 'ref' after the widget was disposed." — **tritt weiterhin auf**
+### A. "Bad state: Cannot use 'ref' after the widget was disposed."
 
-Ursprünglich diagnostiziert in `NFC_Flutter_Project/nfc_kasse_app/lib/screens/pos_screen.dart`:
-`_handleNfc()` (beide Varianten, `_WidePosLayout` und `_NarrowPosLayoutState`) benutzte
-`ref` nach einem `await svc.getBalance(uid)` — wenn der User währenddessen den
-PosScreen verlässt (Navigation ist ein simples `switch`-Widget-Swap in
-`main_shell.dart`, kein `IndexedStack`, also volles Dispose), ist `ref` beim
-Zurückkommen der Netzwerk-Antwort ungültig.
+Der `pos_screen.dart`-Guard war tatsächlich schon korrekt (verifiziert gegen den
+`flutter_riverpod`-Quellcode). Die vom User erneut gemeldeten Fehler waren **drei
+separate, echte Bugs**, gefunden über einen source-mapped Web-Build
+(`build_and_deploy.bat` jetzt mit `--source-maps`) statt Rätselraten an minifizierten
+Stacktraces:
 
-**Fix wurde bereits angewendet** (`mounted`/`ref.context.mounted`-Guard nach dem
-`await`, siehe aktueller Stand von `pos_screen.dart`) und mit `flutter analyze`
-sauber verifiziert — **aber der User hat danach den exakt gleichen Fehler nochmal
-gemeldet**, mit identischem Stacktrace-Muster.
+1. Dasselbe Anti-Pattern (`ref.read`/`setState` nach `await` ohne `mounted`-Check) an
+   8 weiteren Stellen projektweit, am kritischsten `cart_panel.dart` (`_book`/
+   `_printAndBook`, der Buchen-Button). Bei `cart_panel.dart` und
+   `cancel_booking_dialog.dart` (wo schon Geld serverseitig bewegt wurde, bevor der
+   Fehler auftreten kann) wurden die betroffenen Notifier vor dem `await` eingefangen
+   statt einfach früh zurückzukehren, damit Cart/Customer/Buchungs-State trotzdem
+   konsistent bleibt.
+2. `_BleScanListState.dispose()` in `settings_screen.dart` rief `ref.read(...)` frisch
+   beim Dispose auf — sicher aussehend, aber wenn der komplette Screen in einem Rutsch
+   verschwindet (Navigation via `switch`-Widget-Swap), betrachtet Riverpod `ref` schon
+   vor Ausführung von `dispose()` als ungültig. Fix: Notifier in `initState()` einfangen.
 
-**Nicht restlos geklärt, wahrscheinlichste Erklärungen für die nächste Session:**
-1. Der Fix wurde zwar in den Sourcecode geschrieben, aber **möglicherweise noch nicht
-   neu gebaut/deployed** (`build_and_deploy.bat` Option 3 + Backend-Neustart) bevor
-   der User erneut getestet hat — als Erstes prüfen, ob das der Fall war.
-2. Es gibt vermutlich **eine zweite Stelle mit demselben Anti-Pattern** (`ref.read`/
-   `ref.watch` nach einem `await`, ohne Mounted-Check), die noch nicht gefunden wurde.
-   Noch nicht durchsucht, aber naheliegende Kandidaten: alles, was auf einen BLE-Scan
-   oder eine Provider-Notifier-Methode in `providers.dart` reagiert und danach `ref`
-   verwendet (z. B. in `BleReaderNotifier` selbst — `_connectToDevice()` benutzt
-   `ref.read(storageProvider)` nach mehreren `await`s; das ist ein `Ref` aus einem
-   `Notifier`, nicht `WidgetRef`, daher vermutlich nicht exakt dieselbe Fehlerklasse,
-   aber wert zu prüfen), oder andere Screens/Dialoge, die auf `bleReaderProvider`
-   reagieren.
-   → Empfehlung: projektweit nach `await ` gefolgt von `ref.read(` oder
-   `ref.watch(` in `ConsumerWidget`/`ConsumerStatefulWidget`-Methoden suchen.
-3. Stacktrace-Frame-Nummern zwischen den beiden gemeldeten Vorkommen unterscheiden
-   sich leicht (`main.dart.js:111011` vs. `:111015`, `YI.l (...102695...)` vs.
-   `(...102699...)`) — das spricht eher für "neu gebaut, aber Bug besteht weiter"
-   als für "alter Cache-Stand erneut getestet", ist aber nicht beweisend.
+Alle Details/Muster jetzt in der Root-`CLAUDE.md` unter "BLE NFC reader" bzw. bei den
+jeweiligen Commit-Diffs — nicht hier dupliziert.
 
-### B. Akkustand wird in der Webapp nicht angezeigt
+### B. Akkustand wurde in der Webapp nicht angezeigt
 
-Reader funktioniert (Scan kommt an), aber `_BleTab` in `settings_screen.dart` zeigt
-keinen Batterie-Prozentwert an, obwohl:
-- die Firmware den Wert über die Standard-BLE-Battery-Service (`180f`/`2a19`) sendet
-  und beim Pairing-Test über Windows-Settings der Akkustand kurz erfolgreich gelesen
-  wurde (siehe Chronologie-Punkt 4 — das war aber ein OS-Pairing-Connect, kein
-  App-Connect über `flutter_blue_plus_web`)
-- `BleReaderNotifier._connectToDevice()` in `providers.dart` nach Service-Discovery
-  explizit `batteryChar.setNotifyValue(true)` und einen initialen `batteryChar.read()`
-  macht und `state.batteryPercent` setzt
+Ursache: Web Bluetooth erlaubt `discoverServices()` nur Zugriff auf Services, die beim
+`requestDevice()`-Aufruf explizit erlaubt wurden. Der Custom-NFC-Service war über den
+Scan-Filter automatisch erlaubt, der Battery Service nie — `discoverServices()` gab ihn
+auf Web kommentarlos leer zurück (kein Error). Fix: `webOptionalServices:
+[BleNfcService.batteryServiceUuid]` bei `FlutterBluePlus.startScan(...)` ergänzt.
 
-**Noch nicht untersucht.** Naheliegende Verdächtige für die nächste Session:
-- Fehler beim `batteryChar.read()`/`setNotifyValue()` auf dem Web-Backend, der still
-  verschluckt wird (kein try/catch um diesen Teil in `_connectToDevice()` — ein Fehler
-  dort würde aktuell den ganzen `connect()`-Versuch in den generischen `catch (_)`-Block
-  am Ende der Methode werfen, was fälschlich als kompletter Connect-Fehler erscheinen
-  würde, nicht als "nur Battery fehlt" — das passt aber nicht ganz dazu, dass der
-  Reader laut User "weiterhin funktioniert", also der Connect insgesamt klappt).
-- Möglich, dass `flutter_blue_plus_web`s Web-Bluetooth-Implementierung Descriptor-
-  basiertes Notify für Standard-Services wie Battery Service anders/nicht behandelt.
-- Erster Debug-Schritt: Browser-Konsole beim Verbinden beobachten (gleiche Methode wie
-  in diesem Thread für die anderen Fehler benutzt — `window.addEventListener('error', ...)`
-  und `unhandledrejection`), speziell ob beim Connect ein Fehler rund um
-  `0000180f-...`/`00002a19-...` auftaucht. Ggf. testweise `batteryChar.read()` isoliert
-  in der Browser-Konsole gegen das schon verbundene GATT-Device aufrufen.
+**Danach aufgetretene Folgeprobleme** (gleicher Test-Fix-Zyklus, alle behoben):
+- Reconnect über gespeicherte Geräte-ID (`BluetoothDevice.fromId(id)`) funktioniert auf
+  Web grundsätzlich nie — Web Bluetooth kann eine reine ID nie zu einem verbindbaren
+  Handle auflösen, nur `requestDevice()` selbst tut das. Cold-Start-Restore und der
+  ⋮-Menü-"Verbinden"-Button verzweigen jetzt auf `kIsWeb` (zeigen nur Status / lösen
+  einen Scan statt Direct-Connect aus).
+- `flutter_blue_plus_web` meldet nie einen *externen* Disconnect (Reader ausgeschaltet)
+  — nur einen, den die App selbst auslöst. Ein aktiver Health-Check-Workaround
+  (periodisches `read()`) verursachte dabei zwei neue Bugs: (a) `read()` und `notify`
+  teilen sich denselben `onValueReceived`-Stream, wodurch der periodische Read den
+  zwischengespeicherten letzten UID-Wert als Phantom-Scan erneut ins Eingabefeld lud;
+  (b) ein extern hängender Browser-Call gibt den pro-Gerät-Mutex von
+  `flutter_blue_plus` nie frei, wodurch ein externes `.timeout()` zwar den eigenen Code
+  aufgeben lässt, aber alle folgenden Operationen (inkl. Reconnect) auf diesem Gerät für
+  den Rest der Seiten-Session dauerhaft blockiert. Finale Lösung: rein passiver
+  Health-Check, der nur vergleicht, wie lange das letzte (ohnehin alle ~60s von der
+  Firmware gesendete) Battery-Notify her ist — keine eigene GATT-Operation, kein
+  Mutex-Risiko.
 
 ---
 

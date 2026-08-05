@@ -7,20 +7,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **NFC-Kasse** is a cashless POS system for events. Guests receive NFC wristbands with a pre-loaded balance; staff scan wristbands on a tablet to deduct purchases. The system runs on a local LAN (no internet required at runtime).
 
 - **Backend:** FastAPI + SQLite, running on a Windows thin client
-- **Frontend:** Flutter tablet app (Android), deployed to up to 4 tablets via ADB Wi-Fi
-- **NFC Input:** Native `nfc_manager` on Android; USB HID keyboard emulation on desktop/web
+- **Frontend:** Flutter tablet app (Android) + Flutter web build, deployed via ADB Wi-Fi / served by the backend
+- **NFC Input:** Native `nfc_manager` on Android; USB HID keyboard emulation on desktop/web; battery-powered BLE reader (`nfc-ble-reader/`) on both Android and web
 - **Language convention:** Code and DB identifiers in English; all user-facing text in German
 
-All files live under `NFC_Flutter_Project/`:
+Most files live under `NFC_Flutter_Project/`, with one sibling hardware repo:
 
 ```
-NFC_Flutter_Project/
-├── backend/              # Python FastAPI backend
-├── nfc_kasse_app/        # Flutter app
-├── docs/                 # Architecture docs, use-case walkthroughs, API overview
-├── start_backend.bat     # Windows one-click launcher (installs Python if missing)
-├── start_backend.sh      # Linux/macOS launcher
-└── build_and_deploy.bat  # Build APK + ADB deploy to tablets
+NFC_Kasse/
+├── NFC_Flutter_Project/
+│   ├── backend/              # Python FastAPI backend
+│   ├── nfc_kasse_app/        # Flutter app (Android + web)
+│   ├── docs/                 # Architecture docs, use-case walkthroughs, API overview
+│   ├── start_backend.bat     # Windows one-click launcher (installs Python if missing)
+│   ├── start_backend.sh      # Linux/macOS launcher
+│   └── build_and_deploy.bat  # Build APK + web app, deploy to tablets / copy into backend/webapp
+└── nfc-ble-reader/            # nRF52840 + PN532 firmware for the BLE NFC reader (PlatformIO)
 ```
 
 ---
@@ -64,7 +66,7 @@ flutter test                                   # unit tests, no device needed
 flutter test test/providers/cart_notifier_test.dart   # single file
 ```
 
-The server URL is entered on the login screen and stored in `FlutterSecureStorage`; the constant in `lib/config/api_config.dart` is only the UI default.
+The server URL is entered on the login screen and stored via `AppStorage` (`lib/services/app_storage.dart`, SharedPreferences-backed); the constant in `lib/config/api_config.dart` is only the UI default. This also holds auth tokens and every other piece of local app state — `FlutterSecureStorage` was deliberately dropped project-wide because its Web Crypto backing only works in secure contexts (HTTPS/localhost), and this app runs over plain HTTP on the LAN.
 
 ---
 
@@ -118,6 +120,7 @@ The server URL is entered on the login screen and stored in `FlutterSecureStorag
 - `cartProvider` (`NotifierProvider<CartNotifier, List<CartItem>>`) — in-memory cart; `addProduct` merges quantities
 - `categoriesProvider` / `productsProvider` — `FutureProvider(.family)`; invalidated via `categoriesRefreshProvider` / `productsRefreshProvider` integer bump
 - `currentScreenProvider` / `selectedCategoryProvider` / `editModeProvider` — navigation and POS UI state
+- `bleReaderProvider` (`NotifierProvider<BleReaderNotifier, BleReaderState>`) — BLE NFC reader connection lifecycle; not `.autoDispose`, lives for the whole app session
 
 All providers are defined in `lib/providers/providers.dart`.
 
@@ -134,6 +137,14 @@ Dio instance with a request interceptor that injects the Bearer token and a resp
 - `edit_user_dialog.dart` — the most complex widget; renders a tri-state checkbox tree for both global permissions (`_PermissionGroup`) and per-category permissions (`_CategoryTreeTile`). The storno section uses a real `Radio` widget pair wrapped in `RadioGroup` (Flutter ≥ 3.32 API).
 - `edit_product_dialog.dart` — includes `isPayout` switch (marks article as payout-type; full payout behavior is Phase 2).
 - `edit_category_dialog.dart` — rename + optional delete (requires `categories.delete` global permission).
+
+**BLE NFC reader:**
+
+Third UID input path alongside native NFC and USB HID (all three feed into `lib/widgets/nfc_input_field.dart`, which sets the field read-only while a BLE reader is connected so tapping it doesn't pop the on-screen keyboard). `BleReaderNotifier` (`lib/providers/providers.dart`) owns scanning, GATT connect, and the two characteristics exposed by `nfc-ble-reader/` firmware: a custom UID characteristic and the standard BLE Battery Service. The paired device is persisted via `AppStorage` (`storageProvider`) so it reconnects automatically on next app start — except on web, see below. Settings → "NFC-Lesegerät" tab (`_BleTab`/`_BleScanList` in `settings_screen.dart`) handles pairing/forgetting and shows live connection + battery status; the same status also appears as a small icon next to the server-connection indicator in `main_shell.dart`.
+
+Two web-specific (`kIsWeb`) constraints, both browser limitations rather than app bugs:
+- **No reconnect-by-ID.** Web Bluetooth only ever grants a connectable device handle through its own `requestDevice()` picker UI, freshly per page load — a remembered device ID alone can never resolve. `_restoreSavedDevice()` and the Settings "Verbinden" action branch on `kIsWeb` accordingly: show "paired but disconnected" / trigger a new scan (which re-opens the browser's picker) instead of attempting a doomed direct connect.
+- **No external-disconnect notification.** `flutter_blue_plus_web` only reports a disconnect the app itself triggers, never one caused by the peripheral (powered off, out of range) — so the UI would otherwise show "connected" forever. Worked around with a *passive* liveness check (`_startWebHealthCheck`): compares time since the firmware's last Battery Service notify (sent every ~60s) against a threshold, rather than actively probing the GATT link. This is deliberate — every flutter_blue_plus operation (read/write/connect/discoverServices) shares one mutex per device that's only released once the underlying browser call actually settles; an active probe that hangs instead of rejecting (which is exactly what happens when the link dies quietly) would permanently deadlock all further operations on that device, including the reconnect attempt itself.
 
 ---
 

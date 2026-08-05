@@ -33,7 +33,10 @@ Aktuelle Phase: **Lokal / Single-Event / SQLite**
 - [ ] **Sicherheit**: Guthaben darf NIEMALS auf dem Tag selbst liegen (manipulierbar).
       Guthaben bleibt immer server-seitig in der DB. Tag = nur Identifikator.
       Verschlüsselte Zusatzdaten (Name etc.) mit Server-Key signieren, sodass Manipulation erkennbar ist.
-- [ ] **USB NFC Reader**: HID-Keyboard-Input als Fallback für Windows/Desktop bereits berücksichtigt.
+- [x] **USB NFC Reader**: HID-Keyboard-Input als Fallback für Windows/Desktop bereits berücksichtigt.
+- [x] **BLE NFC Reader**: Batteriebetriebener eigenbau-Reader (nRF52840 + PN532, Repo `nfc-ble-reader/`)
+      koppelt über Einstellungen, funktioniert auf Android-App und Web-Version, inkl.
+      Verbindungs- und Akkustatusanzeige. Siehe Root-`CLAUDE.md` → "BLE NFC reader".
 
 ---
 

@@ -21,7 +21,8 @@
       "Read(//c/Users/KimSc/AppData/Local/Pub/Cache/hosted/pub.dev/flutter_blue_plus_web-9.0.3/lib/**)"
     ],
     "additionalDirectories": [
-      "c:\\Users\\KimSc\\Desktop\\NFC_Kasse\\nfc-ble-reader"
+      "c:\\Users\\KimSc\\Desktop\\NFC_Kasse\\nfc-ble-reader",
+      "c:\\Users\\KimSc\\Desktop\\NFC_Kasse"
     ]
   }
 }
