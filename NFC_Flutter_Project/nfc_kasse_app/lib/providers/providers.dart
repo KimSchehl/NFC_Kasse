@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -5,7 +6,9 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../config/api_config.dart';
@@ -19,6 +22,7 @@ import '../models/user_model.dart';
 import '../models/user_preferences_model.dart';
 import '../services/api_client.dart';
 import '../services/auth_service.dart';
+import '../services/ble_nfc_service.dart';
 import '../services/customer_service.dart';
 import '../services/help_service.dart';
 import '../services/notification_service.dart';
@@ -31,6 +35,7 @@ import '../services/sales_service.dart';
 import '../services/stats_service.dart';
 import '../services/update_service.dart';
 import '../services/users_service.dart';
+import '../utils/formatters.dart';
 
 // ---------------------------------------------------------------------------
 // Infrastructure
@@ -444,6 +449,323 @@ class HelpNotifier extends Notifier<HelpState> {
 
 final helpProvider = NotifierProvider<HelpNotifier, HelpState>(
   HelpNotifier.new,
+);
+
+// ---------------------------------------------------------------------------
+// BLE NFC Reader
+// ---------------------------------------------------------------------------
+
+enum BleReaderStatus { disconnected, connecting, connected }
+
+const _bleDeviceIdKey = 'ble_reader_device_id';
+const _bleDeviceNameKey = 'ble_reader_device_name';
+
+@immutable
+class BleReaderState {
+  final BleReaderStatus status;
+  final String? deviceId;
+  final String? deviceName;
+  final int? batteryPercent;
+  // UID of the last scan + a monotonic counter so NfcInputField's ref.listen
+  // fires even if the same wristband is tapped twice in a row.
+  final String? lastUid;
+  final int lastUidSeq;
+
+  const BleReaderState({
+    this.status = BleReaderStatus.disconnected,
+    this.deviceId,
+    this.deviceName,
+    this.batteryPercent,
+    this.lastUid,
+    this.lastUidSeq = 0,
+  });
+
+  bool get isConnected => status == BleReaderStatus.connected;
+  bool get isPaired => deviceId != null;
+
+  BleReaderState copyWith({
+    BleReaderStatus? status,
+    String? Function()? deviceId,
+    String? Function()? deviceName,
+    int? Function()? batteryPercent,
+    String? lastUid,
+    int? lastUidSeq,
+  }) =>
+      BleReaderState(
+        status: status ?? this.status,
+        deviceId: deviceId != null ? deviceId() : this.deviceId,
+        deviceName: deviceName != null ? deviceName() : this.deviceName,
+        batteryPercent:
+            batteryPercent != null ? batteryPercent() : this.batteryPercent,
+        lastUid: lastUid ?? this.lastUid,
+        lastUidSeq: lastUidSeq ?? this.lastUidSeq,
+      );
+}
+
+BluetoothService? _findService(List<BluetoothService> services, Guid uuid) {
+  for (final s in services) {
+    if (s.uuid == uuid) return s;
+  }
+  return null;
+}
+
+BluetoothCharacteristic? _findCharacteristic(
+    List<BluetoothCharacteristic> chars, Guid uuid) {
+  for (final c in chars) {
+    if (c.uuid == uuid) return c;
+  }
+  return null;
+}
+
+/// Manages the paired nfc-ble-reader: scanning, connect/reconnect, GATT
+/// subscriptions (UID notify, battery notify), and persisting the last
+/// paired device so it's restored automatically on app start.
+class BleReaderNotifier extends Notifier<BleReaderState> {
+  BluetoothDevice? _device;
+  BluetoothCharacteristic? _batteryChar;
+  StreamSubscription<BluetoothConnectionState>? _connSub;
+  StreamSubscription<List<int>>? _uidSub;
+  StreamSubscription<List<int>>? _batterySub;
+  Timer? _healthCheckTimer;
+  DateTime? _lastLivenessSignal;
+  bool _shouldReconnect = false;
+  bool _reconnectPending = false;
+
+  @override
+  BleReaderState build() {
+    ref.onDispose(() {
+      _connSub?.cancel();
+      _uidSub?.cancel();
+      _batterySub?.cancel();
+      _healthCheckTimer?.cancel();
+    });
+    Future.microtask(_restoreSavedDevice);
+    return const BleReaderState();
+  }
+
+  /// Web Bluetooth never reports an *external* disconnect (device powered
+  /// off, out of range) - flutter_blue_plus_web only pushes a
+  /// connectionState event for disconnects this app itself triggers (see
+  /// _connectToDevice's comment). Without this, the UI would show "Verbunden"
+  /// forever and the 5s auto-reconnect would never even fire, since both
+  /// depend on that event.
+  ///
+  /// This is a *passive* check, not an active GATT probe: every
+  /// flutter_blue_plus operation (read/write/connect/discoverServices)
+  /// shares one per-device mutex that's only released once the underlying
+  /// browser call actually settles. If that browser call hangs instead of
+  /// rejecting promptly - which happens on web when the link dies quietly -
+  /// an active probe here would hold that mutex forever and permanently
+  /// deadlock every future operation on this device, including the
+  /// auto-reconnect's own connect() call (this happened - a wrapping
+  /// `.timeout()` only makes *this* code stop waiting, it doesn't cancel the
+  /// stuck browser call or free the mutex it's still holding).
+  ///
+  /// Instead: the firmware already pushes a battery notify every ~60s while
+  /// connected (see nfc-ble-reader/src/main.cpp), tracked in
+  /// [_lastLivenessSignal]. If none arrived recently, the link is dead.
+  void _startWebHealthCheck() {
+    if (_batteryChar == null) return;
+    _lastLivenessSignal = DateTime.now();
+    _healthCheckTimer?.cancel();
+    _healthCheckTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+      final signal = _lastLivenessSignal;
+      if (signal == null || DateTime.now().difference(signal) > const Duration(seconds: 90)) {
+        _healthCheckTimer?.cancel();
+        _handleDisconnected();
+      }
+    });
+  }
+
+  Future<void> _restoreSavedDevice() async {
+    final storage = ref.read(storageProvider);
+    final id = await storage.read(key: _bleDeviceIdKey);
+    final name = await storage.read(key: _bleDeviceNameKey);
+    if (id == null) return;
+    state = state.copyWith(deviceId: () => id, deviceName: () => name);
+
+    // Web Bluetooth only ever hands out a usable device handle through its
+    // own requestDevice() picker - a remoteId alone (BluetoothDevice.fromId)
+    // can never resolve on web, in this page load or any other, so
+    // connecting here would just fail forever on a 5s retry loop. Show the
+    // pairing as "disconnected" instead and let the user reconnect via the
+    // picker (Settings -> NFC-Lesegerät -> Verbinden/Scan).
+    if (kIsWeb) return;
+
+    _shouldReconnect = true;
+    await _connectToDevice(BluetoothDevice.fromId(id));
+  }
+
+  /// Requests the runtime BLE permissions Android needs before scanning.
+  Future<void> _ensurePermissions() async {
+    await [
+      Permission.bluetoothScan,
+      Permission.bluetoothConnect,
+      Permission.locationWhenInUse,
+    ].request();
+  }
+
+  /// Kicks off a scan; results arrive on the always-available
+  /// [FlutterBluePlus.scanResults] stream. Caller stops it via [stopScan]
+  /// (e.g. once the user picks a device, or leaves the screen).
+  Future<void> startScan() async {
+    // permission_handler has no web implementation for these Android runtime
+    // permissions - it throws there. On web, the browser's own
+    // navigator.bluetooth.requestDevice() prompt handles permissioning.
+    if (!kIsWeb) {
+      await _ensurePermissions();
+    }
+    await FlutterBluePlus.startScan(
+      withServices: [BleNfcService.nfcServiceUuid],
+      // Web Bluetooth only allows discoverServices() to see services
+      // declared at requestDevice() time. The custom NFC service is covered
+      // via the scan filter (withServices) above; the standard Battery
+      // Service isn't part of that filter, so it needs to be listed here
+      // explicitly or it's silently invisible post-connect (no error, just
+      // an empty result - cost real debugging time to track down).
+      webOptionalServices: [BleNfcService.batteryServiceUuid],
+      timeout: const Duration(seconds: 15),
+    );
+  }
+
+  Future<void> stopScan() => FlutterBluePlus.stopScan();
+
+  Future<void> connect(BluetoothDevice device) async {
+    await stopScan();
+    _shouldReconnect = true;
+    await _connectToDevice(device);
+  }
+
+  Future<void> _connectToDevice(BluetoothDevice device) async {
+    state = state.copyWith(status: BleReaderStatus.connecting);
+    _device = device;
+
+    try {
+      // Nonprofit/personal use per FlutterBluePlus License v1.5 - see LICENSE.md
+      // in the flutter_blue_plus package if this ever needs revisiting.
+      await device.connect(
+        license: License.nonprofit,
+        timeout: const Duration(seconds: 10),
+      );
+
+      await _connSub?.cancel();
+      _connSub = device.connectionState.listen((s) {
+        if (s == BluetoothConnectionState.disconnected) {
+          _handleDisconnected();
+        }
+      });
+
+      final services = await device.discoverServices();
+
+      final nfcService = _findService(services, BleNfcService.nfcServiceUuid);
+      final uidChar = nfcService == null
+          ? null
+          : _findCharacteristic(
+              nfcService.characteristics, BleNfcService.uidCharUuid);
+      if (uidChar != null) {
+        await _uidSub?.cancel();
+        _uidSub = uidChar.onValueReceived.listen((bytes) {
+          if (bytes.isEmpty) return;
+          state = state.copyWith(
+            lastUid: bytesToUidHex(bytes),
+            lastUidSeq: state.lastUidSeq + 1,
+          );
+        });
+        await uidChar.setNotifyValue(true);
+      }
+
+      // Isolated from the outer try/catch on purpose: battery is a nice-to-have.
+      // A failure here (e.g. a real read() error) must not undo the UID
+      // notify subscription that's already working, or misreport the whole
+      // connection as failed.
+      try {
+        final batteryService =
+            _findService(services, BleNfcService.batteryServiceUuid);
+        final batteryChar = batteryService == null
+            ? null
+            : _findCharacteristic(
+                batteryService.characteristics, BleNfcService.batteryLevelCharUuid);
+        _batteryChar = batteryChar;
+        if (batteryChar != null) {
+          await _batterySub?.cancel();
+          _batterySub = batteryChar.onValueReceived.listen((bytes) {
+            _lastLivenessSignal = DateTime.now();
+            if (bytes.isNotEmpty) {
+              state = state.copyWith(batteryPercent: () => bytes[0]);
+            }
+          });
+          await batteryChar.setNotifyValue(true);
+          final initial = await batteryChar.read();
+          if (initial.isNotEmpty) {
+            state = state.copyWith(batteryPercent: () => initial[0]);
+          }
+        }
+      } catch (_) {
+        // Battery is optional - leave batteryPercent unset, keep connecting.
+      }
+
+      final storage = ref.read(storageProvider);
+      await storage.write(key: _bleDeviceIdKey, value: device.remoteId.str);
+      await storage.write(key: _bleDeviceNameKey, value: device.platformName);
+
+      state = state.copyWith(
+        status: BleReaderStatus.connected,
+        deviceId: () => device.remoteId.str,
+        deviceName: () => device.platformName,
+      );
+
+      if (kIsWeb) _startWebHealthCheck();
+    } catch (_) {
+      state = state.copyWith(status: BleReaderStatus.disconnected);
+      _scheduleReconnect();
+    }
+  }
+
+  void _handleDisconnected() {
+    _uidSub?.cancel();
+    _batterySub?.cancel();
+    _healthCheckTimer?.cancel();
+    state = state.copyWith(
+      status: BleReaderStatus.disconnected,
+      batteryPercent: () => null,
+    );
+    _scheduleReconnect();
+  }
+
+  void _scheduleReconnect() {
+    if (_reconnectPending || !_shouldReconnect || _device == null) return;
+    _reconnectPending = true;
+    Future.delayed(const Duration(seconds: 5), () {
+      _reconnectPending = false;
+      if (_shouldReconnect && _device != null) _connectToDevice(_device!);
+    });
+  }
+
+  Future<void> disconnect() async {
+    _shouldReconnect = false;
+    await _connSub?.cancel();
+    await _uidSub?.cancel();
+    await _batterySub?.cancel();
+    _healthCheckTimer?.cancel();
+    await _device?.disconnect();
+    state = state.copyWith(
+      status: BleReaderStatus.disconnected,
+      batteryPercent: () => null,
+    );
+  }
+
+  Future<void> forget() async {
+    await disconnect();
+    _device = null;
+    final storage = ref.read(storageProvider);
+    await storage.delete(key: _bleDeviceIdKey);
+    await storage.delete(key: _bleDeviceNameKey);
+    state = const BleReaderState();
+  }
+}
+
+final bleReaderProvider = NotifierProvider<BleReaderNotifier, BleReaderState>(
+  BleReaderNotifier.new,
 );
 
 // ---------------------------------------------------------------------------

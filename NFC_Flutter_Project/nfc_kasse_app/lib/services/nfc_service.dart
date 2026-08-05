@@ -2,6 +2,8 @@ import 'dart:typed_data';
 import 'package:nfc_manager/nfc_manager.dart';
 import 'package:nfc_manager/platform_tags.dart';
 
+import '../utils/formatters.dart';
+
 class NfcService {
   static Future<bool> isAvailable() async {
     try {
@@ -53,6 +55,6 @@ class NfcService {
     }
 
     if (bytes == null) return null;
-    return bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join(':').toUpperCase();
+    return bytesToUidHex(bytes);
   }
 }

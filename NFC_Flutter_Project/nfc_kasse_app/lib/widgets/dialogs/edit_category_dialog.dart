@@ -58,8 +58,9 @@ class _EditCategoryDialogState extends ConsumerState<EditCategoryDialog> {
 
     try {
       await ref.read(productServiceProvider).updateCategory(widget.category.id, name);
+      if (!mounted) return;
       ref.read(categoriesRefreshProvider.notifier).state++;
-      if (mounted) Navigator.of(context).pop(true);
+      Navigator.of(context).pop(true);
     } catch (e) {
       setState(() {
         _loading = false;
@@ -94,8 +95,9 @@ class _EditCategoryDialogState extends ConsumerState<EditCategoryDialog> {
     setState(() => _loading = true);
     try {
       await ref.read(productServiceProvider).deleteCategory(widget.category.id);
+      if (!mounted) return;
       ref.read(categoriesRefreshProvider.notifier).state++;
-      if (mounted) Navigator.of(context).pop(true);
+      Navigator.of(context).pop(true);
     } catch (e) {
       setState(() {
         _loading = false;

@@ -109,7 +109,7 @@ class UsersScreen extends ConsumerWidget {
       context: context,
       builder: (_) => EditUserDialog(user: user),
     );
-    if (result == true) {
+    if (result == true && context.mounted) {
       ref.invalidate(_usersListProvider);
     }
   }

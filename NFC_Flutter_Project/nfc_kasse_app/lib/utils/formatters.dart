@@ -1,6 +1,12 @@
 import 'package:dio/dio.dart';
 import 'package:intl/intl.dart';
 
+/// Formats raw UID bytes as uppercase colon-separated hex, e.g. `04:A1:B2:C3`.
+/// Shared by every NFC input path (native NFC, BLE reader) that receives the
+/// UID as bytes rather than as reader-typed text.
+String bytesToUidHex(List<int> bytes) =>
+    bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join(':').toUpperCase();
+
 /// Normalises any NFC UID format to uppercase colon-separated hex bytes.
 ///
 /// Accepts three scanner output formats for the same physical tag:

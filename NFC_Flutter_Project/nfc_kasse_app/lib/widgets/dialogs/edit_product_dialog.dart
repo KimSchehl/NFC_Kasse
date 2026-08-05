@@ -135,11 +135,12 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
           await svc.setActive(widget.product!.id, _active);
         }
       }
+      if (!mounted) return;
       if (!isNew) {
         ref.read(userPrefsProvider.notifier).setProductColor(widget.product!.id, _color);
       }
       ref.read(productsRefreshProvider.notifier).state++;
-      if (mounted) Navigator.of(context).pop(true);
+      Navigator.of(context).pop(true);
     } catch (e) {
       setState(() {
         _loading = false;
@@ -169,8 +170,9 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
     setState(() => _loading = true);
     try {
       await ref.read(productServiceProvider).deleteProduct(widget.product!.id);
+      if (!mounted) return;
       ref.read(productsRefreshProvider.notifier).state++;
-      if (mounted) Navigator.of(context).pop(true);
+      Navigator.of(context).pop(true);
     } catch (e) {
       setState(() {
         _loading = false;

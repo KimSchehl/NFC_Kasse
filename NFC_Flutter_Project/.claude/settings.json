@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd \"c:\\\\Users\\\\KimSc\\\\Desktop\\\\NFC_Kasse\" && ls && echo \"---\" && ls NFC_Flutter_Project)",
+      "Read(//c/Users/KimSc/Desktop/NFC_Kasse/**)",
+      "Bash(cd \"c:\\\\Users\\\\KimSc\\\\Desktop\\\\NFC_Kasse\\\\nfc-ble-reader\" && find . -maxdepth 3 -not -path '*/.git*' | head -100)",
+      "Read(//c/Users/KimSc/Desktop/NFC_Kasse/nfc-ble-reader/**)",
+      "Read(//c/Users/KimSc/Desktop/NFC_Kasse/nfc-ble-reader/src/**)",
+      "Read(//c/Users/KimSc/Downloads/**)",
+      "WebFetch(domain:docs.zephyrproject.org)",
+      "Bash(flutter --version)",
+      "Bash(flutter pub *)",
+      "Read(//c/Users/KimSc/AppData/Local/Pub/Cache/hosted/pub.dev/**)",
+      "Read(//c/Users/KimSc/AppData/Local/Pub/Cache/hosted/pub.dev/flutter_blue_plus-2.3.11/lib/src/**)",
+      "Bash(cd \"C:\\\\Users\\\\KimSc\\\\AppData\\\\Local\\\\Pub\\\\Cache\\\\hosted\\\\pub.dev\\\\flutter_blue_plus-2.3.11\\\\lib\\\\src\" && grep -n \"class DeviceIdentifier\" -A 10 utils.dart 2>/dev/null || grep -rn \"class DeviceIdentifier\" -A 10 .)",
+      "Read(//c/Users/KimSc/AppData/Local/Pub/Cache/hosted/pub.dev/flutter_blue_plus-2.3.11/lib/**)",
+      "Bash(flutter analyze *)",
+      "Bash(flutter test *)",
+      "Bash(git stash *)",
+      "Read(//c/Users/KimSc/AppData/Local/Pub/Cache/hosted/pub.dev/flutter_blue_plus_web-9.0.3/lib/src/**)",
+      "Read(//c/Users/KimSc/AppData/Local/Pub/Cache/hosted/pub.dev/flutter_blue_plus_web-9.0.3/lib/**)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\KimSc\\Desktop\\NFC_Kasse\\nfc-ble-reader"
+    ]
+  }
+}

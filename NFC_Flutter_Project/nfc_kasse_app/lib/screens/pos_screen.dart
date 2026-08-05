@@ -96,8 +96,12 @@ class _WidePosLayout extends ConsumerWidget {
     try {
       final svc = ref.read(salesServiceProvider);
       final customer = await svc.getBalance(uid);
+      // The user may have navigated away from PosScreen while this request
+      // was in flight (e.g. a late BLE scan response) - ref is invalid then.
+      if (!ref.context.mounted) return;
       ref.read(customerProvider.notifier).state = customer;
     } catch (e) {
+      if (!ref.context.mounted) return;
       // Customer not found or network error — clear customer so the UI shows
       // the "Bitte NFC-Chip scannen" placeholder.
       ref.read(customerProvider.notifier).state = null;
@@ -125,8 +129,10 @@ class _NarrowPosLayoutState extends ConsumerState<_NarrowPosLayout> {
     try {
       final svc = ref.read(salesServiceProvider);
       final customer = await svc.getBalance(uid);
+      if (!mounted) return;
       ref.read(customerProvider.notifier).state = customer;
     } catch (_) {
+      if (!mounted) return;
       ref.read(customerProvider.notifier).state = null;
     }
   }

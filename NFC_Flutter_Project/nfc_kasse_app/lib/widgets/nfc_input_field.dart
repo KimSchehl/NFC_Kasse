@@ -6,14 +6,18 @@ import '../providers/providers.dart';
 import '../services/nfc_service.dart';
 import '../utils/formatters.dart';
 
-/// Text field that accepts NFC UIDs from two input paths:
+/// Text field that accepts NFC UIDs from three input paths:
 ///
 /// 1. **USB HID reader**: the reader emulates a keyboard and types the UID
 ///    followed by `\n` or `\r`. [_onChanged] detects the newline and submits.
 /// 2. **Native NFC** (Android): [NfcService.startSession] notifies us via
 ///    callback when a tag is detected, and we call [_submit] directly.
+/// 3. **BLE reader**: [bleReaderProvider] pushes each scan via GATT notify;
+///    a `ref.listen` on its `lastUidSeq` counter submits it. While connected,
+///    the field is set read-only so tapping it doesn't pop up the Android
+///    soft keyboard (there's nothing to type - input comes over BLE).
 ///
-/// In both cases the UID is normalised to uppercase hex and kept visible in the
+/// In all cases the UID is normalised to uppercase hex and kept visible in the
 /// field so staff can see which wristband is loaded. The next scan overwrites it.
 class NfcInputField extends ConsumerStatefulWidget {
   final void Function(String uid) onSubmit;
@@ -87,20 +91,43 @@ class _NfcInputFieldState extends ConsumerState<NfcInputField> {
       }
     });
 
+    // Submit each BLE scan as it arrives (lastUidSeq increments per scan, so
+    // this fires even if the same wristband is tapped twice in a row).
+    ref.listen(bleReaderProvider, (prev, next) {
+      if (next.lastUid != null && next.lastUidSeq != prev?.lastUidSeq) {
+        _submit(next.lastUid!);
+      }
+    });
+
+    final bleConnected = ref.watch(
+      bleReaderProvider.select((s) => s.isConnected),
+    );
+
     return TextField(
       controller: _controller,
       focusNode: _focusNode,
       autofocus: true,
-      keyboardType: TextInputType.visiblePassword,
+      readOnly: bleConnected,
+      showCursor: !bleConnected,
+      keyboardType:
+          bleConnected ? TextInputType.none : TextInputType.visiblePassword,
       textInputAction: TextInputAction.done,
       textCapitalization: TextCapitalization.characters,
       decoration: InputDecoration(
-        hintText: _nfcAvailable
-            ? 'NFC scannen oder UID eingeben...'
-            : 'UID eingeben oder USB-Lesegerät verwenden...',
+        hintText: bleConnected
+            ? 'BLE-Lesegerät verbunden - warte auf Scan...'
+            : _nfcAvailable
+                ? 'NFC scannen oder UID eingeben...'
+                : 'UID eingeben oder USB-Lesegerät verwenden...',
         prefixIcon: Icon(
-          _nfcAvailable ? Icons.nfc : Icons.usb,
-          color: _nfcAvailable ? Theme.of(context).colorScheme.primary : null,
+          bleConnected
+              ? Icons.bluetooth_connected
+              : _nfcAvailable
+                  ? Icons.nfc
+                  : Icons.usb,
+          color: (bleConnected || _nfcAvailable)
+              ? Theme.of(context).colorScheme.primary
+              : null,
         ),
         suffixIcon: Row(
           mainAxisSize: MainAxisSize.min,

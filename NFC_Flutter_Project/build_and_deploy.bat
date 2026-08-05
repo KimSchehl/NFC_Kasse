@@ -82,6 +82,20 @@ if errorlevel 1 (
     pause & exit /b 1
 )
 
+:: ---- 2b. Clean --------------------------------------------
+:: Flutter caches the web plugin registrant (which plugins get registered
+:: in the browser) in .dart_tool/ keyed by build config, and does not
+:: reliably detect newly added plugins across builds -- a stale cache here
+:: silently ships a build missing a plugin's registration with no build
+:: error, only a runtime crash. `flutter clean` forces it to regenerate.
+:: `flutter pub get` afterwards resolves from the local pub cache and only
+:: needs network if a locked package version isn't cached yet.
+echo  [CLEAN] Bereinige alten Build-Cache ...
+cd nfc_kasse_app
+call flutter clean >nul
+call flutter pub get >nul
+cd ..
+
 :: ---- 3. APK Build (optional) --------------------------------
 set "APK_OK=0"
 if "!BUILD_APK!"=="1" (
@@ -109,7 +123,7 @@ if "!BUILD_WEB!"=="1" (
         echo  [SETUP] Web-Plattform noch nicht aktiviert -- wird einmalig konfiguriert ...
         call flutter create . --platforms web >nul
     )
-    call flutter build web --release --no-web-resources-cdn --no-tree-shake-icons --base-href "!BASE_HREF!"
+    call flutter build web --release --no-web-resources-cdn --no-tree-shake-icons --source-maps --base-href "!BASE_HREF!"
     set "WEB_EC=!errorlevel!"
     cd ..
 

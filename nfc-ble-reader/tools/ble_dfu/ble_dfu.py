@@ -21,9 +21,22 @@ from pathlib import Path
 
 from bleak import BleakClient, BleakScanner
 
+def find_default_package() -> Path:
+    root = Path(__file__).resolve().parents[2] / ".pio" / "build"
+    direct = root / "nicenano" / "firmware.zip"
+    if direct.exists():
+        return direct
+
+    candidates = sorted(root.glob("*/firmware.zip"), key=lambda path: path.stat().st_mtime, reverse=True)
+    if candidates:
+        return candidates[0]
+
+    return direct
+
+
 # Default location produced by `pio run` for this project, so the script can
 # just be double-clicked in Explorer without passing a path on the command line.
-DEFAULT_PACKAGE = Path(__file__).resolve().parents[2] / ".pio" / "build" / "nicenano" / "firmware.zip"
+DEFAULT_PACKAGE = find_default_package()
 
 # Legacy Nordic DFU service - used BOTH by BLEDfu in the running app (just to
 # trigger a reboot into the bootloader) AND by the bootloader itself (to
@@ -271,7 +284,7 @@ def main():
         default=DEFAULT_PACKAGE,
         help=f"Path to the DFU .zip package (default: {DEFAULT_PACKAGE})",
     )
-    parser.add_argument("--name", default="nfc-ble-reader", help="BLE advertising name of the running app")
+    parser.add_argument("--name", default="NFC-Reader_0001", help="BLE advertising name of the running app (must match the target's READER_SERIAL)")
     parser.add_argument("--timeout", type=float, default=20.0, help="BLE scan timeout in seconds")
     args = parser.parse_args()
 

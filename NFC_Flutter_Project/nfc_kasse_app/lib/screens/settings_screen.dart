@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
@@ -18,7 +20,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 2, vsync: this);
+    _tab = TabController(length: 3, vsync: this);
   }
 
   @override
@@ -39,6 +41,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
             tabs: const [
               Tab(icon: Icon(Icons.info_outline), text: 'Über'),
               Tab(icon: Icon(Icons.palette_outlined), text: 'Design'),
+              Tab(icon: Icon(Icons.bluetooth), text: 'NFC-Lesegerät'),
             ],
           ),
         ),
@@ -48,6 +51,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
             children: const [
               _UeberTab(),
               _DesignTab(),
+              _BleTab(),
             ],
           ),
         ),
@@ -321,6 +325,196 @@ class _DesignTab extends ConsumerWidget {
               ref.read(cartTextScaleProvider.notifier).state = v,
           onChangeEnd: (v) => _saveDouble(
               ref, cartTextScaleProvider, 'display_cartTextScale', v),
+        ),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tab 3 — NFC-Lesegerät (BLE)
+// ---------------------------------------------------------------------------
+
+class _BleTab extends ConsumerWidget {
+  const _BleTab();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ble = ref.watch(bleReaderProvider);
+    final notifier = ref.read(bleReaderProvider.notifier);
+    final theme = Theme.of(context);
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _SectionHeader('Gekoppeltes Lesegerät'),
+        const SizedBox(height: 10),
+        if (ble.isPaired)
+          Card(
+            child: ListTile(
+              leading: Icon(
+                ble.isConnected
+                    ? Icons.bluetooth_connected
+                    : Icons.bluetooth_disabled,
+                color: ble.isConnected
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.error,
+              ),
+              title: Text(ble.deviceName?.isNotEmpty == true
+                  ? ble.deviceName!
+                  : ble.deviceId ?? 'Unbekanntes Gerät'),
+              subtitle: Text(switch (ble.status) {
+                BleReaderStatus.connecting => 'Verbinde…',
+                BleReaderStatus.connected =>
+                  'Verbunden${ble.batteryPercent != null ? ' · Akku ${ble.batteryPercent}%' : ''}',
+                BleReaderStatus.disconnected => 'Getrennt',
+              }),
+              trailing: PopupMenuButton<String>(
+                onSelected: (v) {
+                  switch (v) {
+                    case 'reconnect':
+                      // Web Bluetooth can't resolve a bare remoteId back to a
+                      // connectable device outside of its own requestDevice()
+                      // picker (see _restoreSavedDevice in providers.dart) -
+                      // kick off a scan instead, which re-triggers that
+                      // picker; Android can reconnect by id directly.
+                      if (kIsWeb) {
+                        notifier.startScan();
+                      } else {
+                        notifier.connect(BluetoothDevice.fromId(ble.deviceId!));
+                      }
+                    case 'disconnect':
+                      notifier.disconnect();
+                    case 'forget':
+                      notifier.forget();
+                  }
+                },
+                itemBuilder: (_) => [
+                  if (!ble.isConnected)
+                    const PopupMenuItem(
+                        value: 'reconnect', child: Text('Verbinden')),
+                  if (ble.isConnected)
+                    const PopupMenuItem(
+                        value: 'disconnect', child: Text('Trennen')),
+                  const PopupMenuItem(
+                      value: 'forget', child: Text('Entkoppeln')),
+                ],
+              ),
+            ),
+          )
+        else
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'Kein Lesegerät gekoppelt.',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ),
+        const SizedBox(height: 24),
+        _SectionHeader('Neues Gerät suchen'),
+        const SizedBox(height: 10),
+        const _BleScanList(),
+      ],
+    );
+  }
+}
+
+/// Owns the scan lifecycle (start on demand, stop on leaving the tab) and
+/// renders live results from the always-on FlutterBluePlus streams.
+class _BleScanList extends ConsumerStatefulWidget {
+  const _BleScanList();
+
+  @override
+  ConsumerState<_BleScanList> createState() => _BleScanListState();
+}
+
+class _BleScanListState extends ConsumerState<_BleScanList> {
+  // Captured in initState rather than read fresh in dispose(): when the
+  // whole SettingsScreen is torn down in one go (e.g. navigating to a
+  // different screen swaps it out via main_shell.dart's switch, not an
+  // IndexedStack), Riverpod may already consider `ref` invalid by the time
+  // this widget's own dispose() runs - ref.read() at that point throws
+  // "Cannot use ref after widget was disposed". Calling a method on an
+  // already-held Notifier instance needs no `ref` at all, so it stays safe.
+  late final BleReaderNotifier _bleNotifier;
+
+  @override
+  void initState() {
+    super.initState();
+    _bleNotifier = ref.read(bleReaderProvider.notifier);
+  }
+
+  @override
+  void dispose() {
+    _bleNotifier.stopScan();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        StreamBuilder<bool>(
+          stream: FlutterBluePlus.isScanning,
+          initialData: false,
+          builder: (context, snap) {
+            final scanning = snap.data ?? false;
+            return OutlinedButton.icon(
+              onPressed: scanning
+                  ? () => ref.read(bleReaderProvider.notifier).stopScan()
+                  : () => ref.read(bleReaderProvider.notifier).startScan(),
+              icon: scanning
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.bluetooth_searching),
+              label: Text(scanning ? 'Suche läuft…' : 'Nach Geräten suchen'),
+            );
+          },
+        ),
+        const SizedBox(height: 12),
+        StreamBuilder<List<ScanResult>>(
+          stream: FlutterBluePlus.scanResults,
+          initialData: const [],
+          builder: (context, snap) {
+            final results = snap.data ?? const [];
+            if (results.isEmpty) {
+              return Text(
+                'Keine Geräte gefunden. Reader muss eingeschaltet und in Reichweite sein.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              );
+            }
+            return Column(
+              children: [
+                for (final r in results)
+                  Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.nfc),
+                      title: Text(
+                        r.device.platformName.isNotEmpty
+                            ? r.device.platformName
+                            : r.advertisementData.advName.isNotEmpty
+                                ? r.advertisementData.advName
+                                : r.device.remoteId.str,
+                      ),
+                      subtitle: Text('Signal: ${r.rssi} dBm'),
+                      onTap: () =>
+                          ref.read(bleReaderProvider.notifier).connect(r.device),
+                    ),
+                  ),
+              ],
+            );
+          },
         ),
       ],
     );

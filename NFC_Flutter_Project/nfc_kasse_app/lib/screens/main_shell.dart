@@ -84,6 +84,8 @@ class _MainShellState extends ConsumerState<MainShell> {
                       automaticallyImplyLeading: false,
                       actions: [
                         const HelpButton(),
+                        _BleReaderIndicator(),
+                        const SizedBox(width: 8),
                         _ConnectionIndicator(),
                         const SizedBox(width: 8),
                       ],
@@ -106,6 +108,8 @@ class _MainShellState extends ConsumerState<MainShell> {
               centerTitle: false,
               actions: [
                 const HelpButton(),
+                _BleReaderIndicator(),
+                const SizedBox(width: 8),
                 _ConnectionIndicator(),
                 const SizedBox(width: 8),
               ],
@@ -120,6 +124,74 @@ class _MainShellState extends ConsumerState<MainShell> {
           );
         }
       },
+    );
+  }
+}
+
+/// Shows the BLE NFC reader's connection + battery status. Hidden entirely
+/// if no reader has ever been paired (Settings → NFC-Lesegerät).
+class _BleReaderIndicator extends ConsumerWidget {
+  static IconData _batteryIcon(int pct) {
+    if (pct >= 95) return Icons.battery_full;
+    if (pct >= 80) return Icons.battery_6_bar;
+    if (pct >= 65) return Icons.battery_5_bar;
+    if (pct >= 50) return Icons.battery_4_bar;
+    if (pct >= 35) return Icons.battery_3_bar;
+    if (pct >= 20) return Icons.battery_2_bar;
+    if (pct >= 10) return Icons.battery_1_bar;
+    return Icons.battery_alert;
+  }
+
+  static Color _batteryColor(int pct, ColorScheme cs) {
+    if (pct <= 10) return cs.error;
+    if (pct <= 25) return Colors.orange;
+    return cs.onSurface.withValues(alpha: 0.55);
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ble = ref.watch(bleReaderProvider);
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
+    if (!ble.isPaired) return const SizedBox.shrink();
+
+    final connected = ble.isConnected;
+    final battery = ble.batteryPercent;
+
+    return Tooltip(
+      message: connected
+          ? '${ble.deviceName ?? 'BLE-Lesegerät'} verbunden'
+              '${battery != null ? ' · Akku $battery%' : ''}'
+          : '${ble.deviceName ?? 'BLE-Lesegerät'} getrennt',
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            connected ? Icons.bluetooth_connected : Icons.bluetooth_disabled,
+            size: 20,
+            color: connected
+                ? cs.onSurface.withValues(alpha: 0.4)
+                : cs.error,
+          ),
+          if (connected && battery != null) ...[
+            const SizedBox(width: 3),
+            Icon(
+              _batteryIcon(battery),
+              size: 18,
+              color: _batteryColor(battery, cs),
+            ),
+            const SizedBox(width: 1),
+            Text(
+              '$battery%',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: _batteryColor(battery, cs),
+                fontWeight: battery <= 25 ? FontWeight.bold : null,
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

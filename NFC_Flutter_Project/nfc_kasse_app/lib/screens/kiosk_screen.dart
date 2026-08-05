@@ -462,6 +462,7 @@ class _ResultViewState extends ConsumerState<_ResultView>
         name: result.name,
         leaderboardOptIn: result.optIn,
       );
+      if (!mounted) return;
       setState(() {
         _customerName = result.name.isEmpty ? null : result.name;
         _leaderboardOptIn = result.optIn;

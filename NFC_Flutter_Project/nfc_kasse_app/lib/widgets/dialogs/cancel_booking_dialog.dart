@@ -30,6 +30,16 @@ class _CancelBookingDialogState extends ConsumerState<CancelBookingDialog> {
       _error = null;
     });
 
+    // Captured before the awaits below: each cancelSale() call refunds
+    // server-side immediately, so this state must still get applied even if
+    // this dialog is disposed mid-loop (e.g. a logout tears down the tree) -
+    // a plain captured value/Notifier needs no `ref`, so it's safe
+    // regardless of dispose status (unlike calling `ref.read(...)` again
+    // after the loop's awaits).
+    final customer = ref.read(customerProvider);
+    final customerNotifier = ref.read(customerProvider.notifier);
+    final lastBookingNotifier = ref.read(lastBookingProvider.notifier);
+
     try {
       final svc = ref.read(salesServiceProvider);
       final saleIds = (booking['sale_ids'] as List).cast<int>();
@@ -42,13 +52,11 @@ class _CancelBookingDialogState extends ConsumerState<CancelBookingDialog> {
       }
 
       // Update customer balance
-      final customer = ref.read(customerProvider);
       if (customer != null) {
-        ref.read(customerProvider.notifier).state =
-            customer.withBalance(customer.balance + refunded);
+        customerNotifier.state = customer.withBalance(customer.balance + refunded);
       }
 
-      ref.read(lastBookingProvider.notifier).state = null;
+      lastBookingNotifier.state = null;
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
       setState(() {

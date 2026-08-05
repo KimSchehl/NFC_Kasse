@@ -1,0 +1,50 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/KimSc/Desktop/NFC_Kasse/NFC_Flutter_Project/nfc_kasse_app/lib/services/**)",
+      "Bash(cd \"c:/Users/KimSc/Desktop/NFC_Kasse/NFC_Flutter_Project/nfc_kasse_app\" && grep -A 15 \"flutter_blue_plus\" pubspec.lock)",
+      "Read(//c/Users/KimSc/Desktop/NFC_Kasse/NFC_Flutter_Project/nfc_kasse_app/**)",
+      "Bash(cd \"c:/Users/KimSc/Desktop/NFC_Kasse/NFC_Flutter_Project/nfc_kasse_app\" && ls windows 2>/dev/null; cat pubspec.yaml | grep -i -A2 \"^flutter:\"; grep -rn \"flutter_blue_plus\\\\|BleNfcService\" lib --include=*.dart -l)",
+      "Bash(cd \"c:/Users/KimSc/Desktop/NFC_Kasse/NFC_Flutter_Project/nfc_kasse_app\" && ls -la | grep -i windows; echo \"---\"; grep -n \"ALLOWED_ORIGINS\\\\|https\\\\|ssl\\\\|uvicorn\" -ri ../backend/main.py ../backend/config.env 2>/dev/null | head -30; echo \"---start_backend---\"; grep -n \"https\\\\|ssl\\\\|--host\\\\|--port\" ../start_backend.bat 2>/dev/null)",
+      "Read(//c/Users/KimSc/Desktop/NFC_Kasse/backend/**)",
+      "Read(//c/Users/KimSc/Desktop/NFC_Kasse/**)",
+      "Read(//c/Users/KimSc/Desktop/NFC_Kasse/NFC_Flutter_Project/nfc_kasse_app/lib/providers/**)",
+      "Bash(cd \"c:/Users/KimSc/Desktop/NFC_Kasse/NFC_Flutter_Project\" && ls *.bat *.sh 2>/dev/null; grep -rln \"flutter build web\" --include=*.bat --include=*.sh --include=*.md . 2>/dev/null | grep -v node_modules)",
+      "Read(//c/Users/KimSc/Desktop/NFC_Kasse/NFC_Flutter_Project/**)",
+      "Read(//c/Users/KimSc/.platformio/**)",
+      "Read(//c/Users/KimSc/.platformio/packages/framework-arduinoadafruitnrf52/libraries/Bluefruit52Lib/src/**)",
+      "Bash(\"/c/Users/KimSc/.platformio/penv/Scripts/pio.exe\" run *)",
+      "Read(//c/Users/KimSc/AppData/Local/Pub/Cache/hosted/pub.dev/flutter_blue_plus_web-9.0.3/lib/**)",
+      "Read(//c/Users/KimSc/AppData/Local/Pub/Cache/hosted/pub.dev/flutter_blue_plus-2.3.11/lib/**)",
+      "Read(//c/Users/KimSc/AppData/Local/Pub/Cache/hosted/pub.dev/flutter_blue_plus-2.3.11/lib/src/**)",
+      "Read(//c/Users/KimSc/AppData/Local/Pub/Cache/hosted/pub.dev/**)",
+      "Read(//c/Users/KimSc/AppData/Local/Pub/Cache/hosted/pub.dev/flutter_blue_plus_platform_interface-9.0.3/lib/**)",
+      "Read(//c/Users/KimSc/AppData/Local/Pub/Cache/hosted/pub.dev/flutter_blue_plus-2.3.11/**)",
+      "Read(//c/Users/KimSc/AppData/Local/Pub/Cache/hosted/pub.dev/flutter_blue_plus_web-9.0.3/**)",
+      "Bash(cd \"c:/Users/KimSc/Desktop/NFC_Kasse/NFC_Flutter_Project/nfc_kasse_app\" && find . -iname \"*plugin_registrant*\" -not -path \"*/build/*\" 2>/dev/null; echo \"---\"; find .dart_tool -maxdepth 2 -iname \"*.json\" 2>/dev/null; echo \"---flutter-plugins-dependencies---\"; cat .flutter-plugins-dependencies 2>/dev/null | head -c 2000)",
+      "Read(//c/Users/KimSc/Desktop/NFC_Kasse/NFC_Flutter_Project/nfc_kasse_app/.dart_tool/flutter_build/e607be89fcab0a20ad781724e15a2ce4/**)",
+      "Bash(cd \"c:/Users/KimSc/Desktop/NFC_Kasse/NFC_Flutter_Project/nfc_kasse_app\" && cat .dart_tool/flutter_build/ca10d201a3f03efe7903ddc8569f5a87/web_plugin_registrant.dart)",
+      "Bash(flutter clean *)",
+      "Bash(flutter pub *)",
+      "Bash(flutter build *)",
+      "Bash(MSYS2_ARG_CONV_EXCL=\"*\" flutter build web --release --no-web-resources-cdn --no-tree-shake-icons --base-href \"/webapp/\")",
+      "Read(//c/Users/KimSc/Desktop/NFC_Kasse/nfc-ble-reader/.dart_tool/flutter_build/\\\\*/**)",
+      "Bash(xargs -I{} sh -c 'echo == {} ==; cat {}')",
+      "Bash(rm -rf backend/webapp)",
+      "Bash(cp -r nfc_kasse_app/build/web backend/webapp)",
+      "Read(//c/Users/KimSc/Desktop/NFC_Kasse/NFC_Flutter_Project/nfc_kasse_app/lib/widgets/**)",
+      "Read(//c/Users/KimSc/Desktop/NFC_Kasse/NFC_Flutter_Project/nfc_kasse_app/lib/screens/**)",
+      "Read(//c/Users/KimSc/Desktop/NFC_Kasse/NFC_Flutter_Project/nfc_kasse_app/lib/**)",
+      "Read(//c/Users/KimSc/AppData/Local/Pub/Cache/hosted/pub.dev/flutter_riverpod-2.6.1/**)",
+      "Bash(xargs grep -l \"bool get mounted\")",
+      "Read(//c/Users/KimSc/AppData/Local/Pub/Cache/hosted/pub.dev/flutter_riverpod-2.6.1/lib/**)",
+      "Bash(flutter analyze *)",
+      "Bash(cd \"c:/Users/KimSc/Desktop/NFC_Kasse\" && find .claude -type f 2>/dev/null; echo \"---\"; find NFC_Flutter_Project/.claude -type f 2>/dev/null; echo \"---nfc-ble-reader---\"; find nfc-ble-reader/.claude -type f 2>/dev/null)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\KimSc\\Desktop\\NFC_Kasse\\NFC_Flutter_Project\\nfc_kasse_app\\lib\\providers",
+      "c:\\Users\\KimSc\\Desktop\\NFC_Kasse\\NFC_Flutter_Project\\nfc_kasse_app\\lib\\screens",
+      "c:\\Users\\KimSc\\Desktop\\NFC_Kasse\\NFC_Flutter_Project\\.claude"
+    ]
+  }
+}

@@ -65,26 +65,38 @@ class _CartPanelState extends ConsumerState<CartPanel> {
     }
 
     final isPayout = ref.read(cartProvider).any((i) => i.product.isPayout);
+    // All captured before the await: the sale is already booked server-side
+    // once svc.book() resolves, so this state must still get applied even if
+    // this widget is disposed by then (e.g. user navigated away) - leaving it
+    // unapplied would desync the app from a purchase that already happened.
+    // Calling `.state =` on an already-held StateController, or reusing a
+    // plain captured value, needs no `ref` at all, so it stays safe
+    // regardless of dispose status (unlike `ref.read(cartProvider)`, and
+    // unlike `cart.state`, which is protected - CartNotifier is a real
+    // Notifier subclass, not a StateProvider).
+    final cartItems = ref.read(cartProvider);
+    final customerNotifier = ref.read(customerProvider.notifier);
+    final lastBookingNotifier = ref.read(lastBookingProvider.notifier);
 
     try {
       final svc = ref.read(salesServiceProvider);
       final result = await svc.book(customer.nfcUid, cart.productIds);
 
       if (isPayout) {
-        ref.read(customerProvider.notifier).state = null;
-        ref.read(lastBookingProvider.notifier).state = null;
+        customerNotifier.state = null;
+        lastBookingNotifier.state = null;
       } else {
-        final items = ref.read(cartProvider)
+        final items = cartItems
             .map((i) => {'name': i.product.name, 'price': i.subtotal})
             .toList();
-        ref.read(lastBookingProvider.notifier).state = {
+        lastBookingNotifier.state = {
           'sale_ids': result['sale_ids'],
           'items': items,
           'total': cart.total,
           'nfc_uid': customer.nfcUid,
           'booked_at': DateTime.now().toIso8601String(),
         };
-        ref.read(customerProvider.notifier).state = null;
+        customerNotifier.state = null;
       }
 
       cart.clear();
@@ -137,13 +149,15 @@ class _CartPanelState extends ConsumerState<CartPanel> {
       setState(() => _isBooking = false);
       return;
     }
+    // Captured before the await - see the comment in _book() for why.
+    final lastBookingNotifier = ref.read(lastBookingProvider.notifier);
 
     try {
       final svc = ref.read(printServiceProvider);
       final printed = await svc.printBons(items);
 
       cart.clear();
-      ref.read(lastBookingProvider.notifier).state = null;
+      lastBookingNotifier.state = null;
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

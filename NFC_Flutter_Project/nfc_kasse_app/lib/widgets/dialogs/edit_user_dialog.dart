@@ -53,6 +53,7 @@ class _EditUserDialogState extends ConsumerState<EditUserDialog> {
   Future<void> _loadData() async {
     final svc = ref.read(usersServiceProvider);
     final permTree = await svc.getPermissionTree();
+    if (!mounted) return;
     final cats = await ref.read(productServiceProvider).getCategories();
 
     Map<int, CategoryModel> catAccess = {};
