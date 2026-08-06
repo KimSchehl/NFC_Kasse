@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/providers.dart';
+import '../services/app_logger.dart';
 import '../utils/formatters.dart';
 import 'dialogs/cancel_booking_dialog.dart';
 
@@ -65,6 +66,10 @@ class _CartPanelState extends ConsumerState<CartPanel> {
     }
 
     final isPayout = ref.read(cartProvider).any((i) => i.product.isPayout);
+    AppLogger.trace(
+      '${isPayout ? "Auszahlen" : "Buchen"} geklickt: ${cart.productIds.length} Artikel, ${cart.total.toStringAsFixed(2)}€',
+      logger: 'ui.pos',
+    );
     // All captured before the await: the sale is already booked server-side
     // once svc.book() resolves, so this state must still get applied even if
     // this widget is disposed by then (e.g. user navigated away) - leaving it
@@ -133,6 +138,7 @@ class _CartPanelState extends ConsumerState<CartPanel> {
   }
 
   Future<void> _storno(BuildContext context) async {
+    AppLogger.trace('Storno-Dialog geöffnet', logger: 'ui.pos');
     await showDialog(
       context: context,
       builder: (_) => const CancelBookingDialog(),
@@ -149,6 +155,7 @@ class _CartPanelState extends ConsumerState<CartPanel> {
       setState(() => _isBooking = false);
       return;
     }
+    AppLogger.trace('Drucken geklickt: ${items.length} Artikel', logger: 'ui.pos');
     // Captured before the await - see the comment in _book() for why.
     final lastBookingNotifier = ref.read(lastBookingProvider.notifier);
 
@@ -258,7 +265,10 @@ class _CartPanelState extends ConsumerState<CartPanel> {
                 const Spacer(),
                 if (items.isNotEmpty)
                   TextButton(
-                    onPressed: () => ref.read(cartProvider.notifier).clear(),
+                    onPressed: () {
+                      AppLogger.trace('Warenkorb geleert', logger: 'ui.pos');
+                      ref.read(cartProvider.notifier).clear();
+                    },
                     style: TextButton.styleFrom(
                       textStyle: theme.textTheme.titleMedium,
                     ),
@@ -325,8 +335,13 @@ class _CartPanelState extends ConsumerState<CartPanel> {
                               ),
                               const SizedBox(width: 8),
                               InkWell(
-                                onTap: () =>
-                                    ref.read(cartProvider.notifier).removeItem(item.product.id),
+                                onTap: () {
+                                  AppLogger.trace(
+                                    'Artikel aus Warenkorb entfernt: ${item.product.name}',
+                                    logger: 'ui.pos',
+                                  );
+                                  ref.read(cartProvider.notifier).removeItem(item.product.id);
+                                },
                                 child: const Icon(Icons.close, size: 22),
                               ),
                             ],

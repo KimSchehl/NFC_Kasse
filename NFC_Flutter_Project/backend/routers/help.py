@@ -9,6 +9,7 @@ so they know if someone is already handling it.
 """
 
 import json
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from jose import JWTError, jwt
@@ -18,6 +19,7 @@ from dependencies import ALGORITHM, SECRET_KEY, get_active_event, get_current_us
 from schemas import HelpRespondBody
 
 router = APIRouter(prefix="/api/help", tags=["help"])
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------

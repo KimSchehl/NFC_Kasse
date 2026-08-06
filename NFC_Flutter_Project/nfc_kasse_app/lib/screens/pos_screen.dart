@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/category_model.dart';
 import '../providers/providers.dart';
+import '../services/app_logger.dart';
 import '../widgets/cart_panel.dart';
 import '../widgets/customer_info_panel.dart';
 import '../widgets/nfc_input_field.dart';
@@ -93,6 +94,7 @@ class _WidePosLayout extends ConsumerWidget {
   /// Fetches the customer's balance. The cart is intentionally NOT cleared here
   /// so staff can pre-fill the cart before scanning.
   Future<void> _handleNfc(String uid, WidgetRef ref) async {
+    AppLogger.trace('NFC-UID gescannt: $uid', logger: 'ui.pos');
     try {
       final svc = ref.read(salesServiceProvider);
       final customer = await svc.getBalance(uid);
@@ -102,6 +104,7 @@ class _WidePosLayout extends ConsumerWidget {
       ref.read(customerProvider.notifier).state = customer;
     } catch (e) {
       if (!ref.context.mounted) return;
+      AppLogger.trace('NFC-UID nicht gefunden/Fehler: $uid', logger: 'ui.pos');
       // Customer not found or network error — clear customer so the UI shows
       // the "Bitte NFC-Chip scannen" placeholder.
       ref.read(customerProvider.notifier).state = null;
@@ -126,6 +129,7 @@ class _NarrowPosLayoutState extends ConsumerState<_NarrowPosLayout> {
   static const _handleHeight = 32.0;
 
   Future<void> _handleNfc(String uid) async {
+    AppLogger.trace('NFC-UID gescannt: $uid', logger: 'ui.pos');
     try {
       final svc = ref.read(salesServiceProvider);
       final customer = await svc.getBalance(uid);
@@ -133,6 +137,7 @@ class _NarrowPosLayoutState extends ConsumerState<_NarrowPosLayout> {
       ref.read(customerProvider.notifier).state = customer;
     } catch (_) {
       if (!mounted) return;
+      AppLogger.trace('NFC-UID nicht gefunden/Fehler: $uid', logger: 'ui.pos');
       ref.read(customerProvider.notifier).state = null;
     }
   }

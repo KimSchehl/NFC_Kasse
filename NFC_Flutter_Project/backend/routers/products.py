@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from database import get_db
@@ -14,6 +16,7 @@ from schemas import (
 )
 
 router = APIRouter(prefix="/api/products", tags=["products"])
+logger = logging.getLogger(__name__)
 
 # Manager permissions — any of these grants full access to all categories.
 _MANAGER_PERMS = ('categories.create', 'categories.edit', 'categories.deactivate', 'categories.delete')
@@ -53,6 +56,10 @@ def _require_category_flag(db, user_id: int, event_id: int, category_id: int, fl
         return  # managers always have full access
     access = _get_category_access(db, user_id, event_id, category_id)
     if not access or not access[flag]:
+        logger.warning(
+            "Article action denied: user_id=%s missing '%s' for category_id=%s",
+            user_id, flag, category_id,
+        )
         raise HTTPException(
             status_code=403,
             detail=f"No '{flag}' permission for category {category_id}",
@@ -144,6 +151,10 @@ def create_category(
             """,
             (user_id, event_id, new_id),
         )
+    logger.info(
+        "Category created: category_id=%s name=%s by=%s",
+        new_id, body.name, ctx["user"]["username"],
+    )
     return CategoryWithPermissionsResponse(
         id=new_id, name=body.name, sort_order=body.sort_order,
         can_book=True, can_storno_5min=True, can_storno_unlimited=True,
@@ -174,6 +185,10 @@ def update_category(
             "UPDATE category SET name=?, sort_order=? WHERE id=?",
             (new_name, new_sort, category_id),
         )
+    logger.info(
+        "Category updated: category_id=%s name=%s by=%s",
+        category_id, new_name, ctx["user"]["username"],
+    )
     return CategoryWithPermissionsResponse(
         id=category_id, name=new_name, sort_order=new_sort,
         can_book=True, can_storno_5min=True, can_storno_unlimited=True,
@@ -196,6 +211,10 @@ def delete_category(
         if not row:
             raise HTTPException(status_code=404, detail="Category not found")
         db.execute("UPDATE category SET deleted=1 WHERE id=?", (category_id,))
+
+    logger.warning(
+        "Category deleted: category_id=%s by=%s", category_id, ctx["user"]["username"],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -277,6 +296,10 @@ def create_product(
         )
         new_id = cursor.lastrowid
 
+    logger.info(
+        "Product created: product_id=%s name=%s price=%s category_id=%s by=%s",
+        new_id, body.name, body.price, body.category_id, current_user["username"],
+    )
     return ProductResponse(
         id=new_id, name=body.name, price=body.price,
         category_id=body.category_id, sort_order=next_sort, active=True,
@@ -321,6 +344,10 @@ def update_product(
              1 if new_is_payout else 0, 1 if new_exclude else 0, new_points, product_id),
         )
 
+    logger.info(
+        "Product updated: product_id=%s name=%s price=%s by=%s",
+        product_id, new_name, new_price, current_user["username"],
+    )
     return ProductResponse(
         id=product_id, name=new_name, price=new_price,
         category_id=row["category_id"], sort_order=new_sort, active=bool(row["active"]),
@@ -355,6 +382,10 @@ def set_product_active(
 
         db.execute("UPDATE product SET active=? WHERE id=?", (1 if body.active else 0, product_id))
 
+    logger.info(
+        "Product %s: product_id=%s by=%s",
+        "activated" if body.active else "deactivated", product_id, current_user["username"],
+    )
     return ProductResponse(
         id=product_id, name=row["name"], price=row["price"],
         category_id=row["category_id"], sort_order=row["sort_order"], active=body.active,
@@ -388,3 +419,7 @@ def delete_product(
         _require_category_flag(db, user_id, event_id, row["category_id"], "can_delete_article")
 
         db.execute("UPDATE product SET deleted=1 WHERE id=?", (product_id,))
+
+    logger.warning(
+        "Product deleted: product_id=%s by=%s", product_id, current_user["username"],
+    )

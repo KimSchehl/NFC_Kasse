@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/help_model.dart';
 import '../providers/providers.dart';
+import '../services/app_logger.dart';
 
 class HelpButton extends ConsumerWidget {
   const HelpButton({super.key});
@@ -72,6 +73,7 @@ class HelpButton extends ConsumerWidget {
     final user = ref.read(authProvider).valueOrNull;
     if (user == null) return;
 
+    AppLogger.trace('HILFE-Button geklickt', logger: 'ui.help');
     if (helpState.myRequest != null) {
       showDialog(
         context: context,
@@ -134,6 +136,7 @@ class _SendHelpDialogState extends ConsumerState<_SendHelpDialog> {
   }
 
   Future<void> _send() async {
+    AppLogger.trace('Hilfe-Anfrage bestätigt', logger: 'ui.help');
     setState(() => _sending = true);
     try {
       await ref.read(helpProvider.notifier).requestHelp();
@@ -264,6 +267,7 @@ class _ActiveRequestDialogState extends ConsumerState<_ActiveRequestDialog> {
         ),
         OutlinedButton.icon(
           onPressed: () async {
+            AppLogger.trace('Hilfe-Anfrage als erledigt markiert: ${widget.requestId}', logger: 'ui.help');
             await ref
                 .read(helpProvider.notifier)
                 .resolve(widget.requestId);
@@ -330,6 +334,10 @@ class _ResponderCardState extends ConsumerState<_ResponderCard> {
   bool _responding = false;
 
   Future<void> _respond(String response) async {
+    AppLogger.trace(
+      'Hilfe-Antwort geklickt: request=${widget.request.id} response=$response',
+      logger: 'ui.help',
+    );
     setState(() => _responding = true);
     try {
       await ref.read(helpProvider.notifier).respond(widget.request.id, response);

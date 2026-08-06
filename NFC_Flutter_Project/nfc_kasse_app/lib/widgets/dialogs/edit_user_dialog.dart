@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/category_model.dart';
 import '../../models/user_model.dart';
 import '../../providers/providers.dart';
+import '../../services/app_logger.dart';
 
 enum _CatFlag {
   book, storno5min, stornoUnlimited,
@@ -95,6 +96,11 @@ class _EditUserDialogState extends ConsumerState<EditUserDialog> {
     final username = _username.text.trim();
     final displayName = _displayName.text.trim();
     final password = _password.text;
+
+    AppLogger.trace(
+      '${isNew ? "Benutzer erstellen" : "Benutzer speichern"} geklickt: username=$username permissions=${_selectedPerms.length} categories=${_catAccess.length}',
+      logger: 'ui.users',
+    );
 
     if (username.isEmpty) {
       setState(() => _error = 'Benutzername darf nicht leer sein');

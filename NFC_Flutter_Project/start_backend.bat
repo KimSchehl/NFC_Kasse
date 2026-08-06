@@ -167,7 +167,7 @@ echo.
 :: ---- 7. Start server ----------------------------------------
 cd backend
 set SECRET_KEY=%SECRET_KEY%
-"!PYTHON!" -m uvicorn main:app --host %HOST% --port %PORT% --reload
+"!PYTHON!" -m uvicorn main:app --host %HOST% --port %PORT% --reload --reload-exclude "logs/*"
 
 echo.
 echo  Server stopped.

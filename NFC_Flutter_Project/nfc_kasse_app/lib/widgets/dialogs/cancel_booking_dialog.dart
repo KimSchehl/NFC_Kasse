@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/providers.dart';
+import '../../services/app_logger.dart';
 import '../../utils/formatters.dart';
 
 /// Dialog that cancels the most recent booking stored in [lastBookingProvider].
@@ -24,6 +25,7 @@ class _CancelBookingDialogState extends ConsumerState<CancelBookingDialog> {
   Future<void> _cancel() async {
     final booking = ref.read(lastBookingProvider);
     if (booking == null) return;
+    AppLogger.trace('Storno bestätigt: sale_ids=${booking['sale_ids']}', logger: 'ui.pos');
 
     setState(() {
       _loading = true;
@@ -129,7 +131,12 @@ class _CancelBookingDialogState extends ConsumerState<CancelBookingDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: _loading ? null : () => Navigator.of(context).pop(false),
+          onPressed: _loading
+              ? null
+              : () {
+                  AppLogger.trace('Storno-Dialog abgebrochen', logger: 'ui.pos');
+                  Navigator.of(context).pop(false);
+                },
           child: const Text('Abbrechen'),
         ),
         FilledButton(

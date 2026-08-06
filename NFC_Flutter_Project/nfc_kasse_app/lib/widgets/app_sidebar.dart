@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/category_model.dart';
 import '../providers/providers.dart';
+import '../services/app_logger.dart';
 import 'dialogs/edit_category_dialog.dart';
 
 /// Navigation sidebar shown on the left of the screen (tablet) or inside a
@@ -79,6 +80,7 @@ class AppSidebar extends ConsumerWidget {
                               currentScreen == AppScreen.pos,
                           editMode: editMode,
                           onTap: () {
+                            AppLogger.trace('Kategorie angeklickt: ${cat.name}', logger: 'ui.sidebar');
                             ref.read(selectedCategoryProvider.notifier).state = cat;
                             ref.read(currentScreenProvider.notifier).state = AppScreen.pos;
                             _closeDrawer(context);
@@ -119,6 +121,13 @@ class AppSidebar extends ConsumerWidget {
                 selected: currentScreen == AppScreen.users,
                 onTap: () => _navigate(context, ref, AppScreen.users),
               ),
+            if (user?.canViewLogs == true)
+              _NavTile(
+                icon: Icons.article_outlined,
+                label: 'Protokolle',
+                selected: currentScreen == AppScreen.logs,
+                onTap: () => _navigate(context, ref, AppScreen.logs),
+              ),
             _NavTile(
               icon: Icons.settings_outlined,
               label: 'Einstellungen',
@@ -133,7 +142,13 @@ class AppSidebar extends ConsumerWidget {
                 label: 'Bearbeitungsmodus',
                 selected: editMode,
                 selectedColor: theme.colorScheme.tertiary,
-                onTap: () => ref.read(editModeProvider.notifier).state = !editMode,
+                onTap: () {
+                  AppLogger.trace(
+                    'Bearbeitungsmodus ${!editMode ? "aktiviert" : "deaktiviert"}',
+                    logger: 'ui.sidebar',
+                  );
+                  ref.read(editModeProvider.notifier).state = !editMode;
+                },
               ),
 
             const Divider(height: 1),
@@ -154,6 +169,7 @@ class AppSidebar extends ConsumerWidget {
   }
 
   void _editCategory(BuildContext context, CategoryModel category, bool canDelete) {
+    AppLogger.trace('Kategorie-Dialog geöffnet: ${category.name}', logger: 'ui.sidebar');
     showDialog(
       context: context,
       builder: (_) => EditCategoryDialog(
@@ -168,11 +184,13 @@ class AppSidebar extends ConsumerWidget {
   }
 
   void _navigate(BuildContext context, WidgetRef ref, AppScreen screen) {
+    AppLogger.trace('Navigation: ${screen.name}', logger: 'ui.sidebar');
     ref.read(currentScreenProvider.notifier).state = screen;
     _closeDrawer(context);
   }
 
   Future<void> _createCategory(BuildContext context, WidgetRef ref) async {
+    AppLogger.trace('Neue-Kategorie-Dialog geöffnet', logger: 'ui.sidebar');
     _closeDrawer(context);
 
     // Capture everything from ref NOW — synchronous, before any await.
@@ -246,6 +264,7 @@ class AppSidebar extends ConsumerWidget {
     if (name.isEmpty) return;
 
     try {
+      AppLogger.trace('Neue Kategorie erstellt: $name', logger: 'ui.sidebar');
       final cat = await productSvc.createCategory(name);
       categoriesRefreshNotifier.state++;
       // Auto-select the new category

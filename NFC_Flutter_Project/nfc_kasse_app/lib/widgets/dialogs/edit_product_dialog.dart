@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/product_model.dart';
 import '../../providers/providers.dart';
+import '../../services/app_logger.dart';
 import '../product_color_picker.dart';
 
 /// Dialog for creating a new product or editing an existing one.
@@ -73,6 +74,10 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
   }
 
   Future<void> _save() async {
+    AppLogger.trace(
+      '${isNew ? "Artikel erstellen" : "Artikel speichern"} geklickt: ${_name.text.trim()}',
+      logger: 'ui.pos',
+    );
     // No edit rights — only save the color preference.
     if (!widget.canEditDetails) {
       if (!isNew) {
@@ -150,6 +155,7 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
   }
 
   Future<void> _delete() async {
+    AppLogger.trace('Löschen-Dialog geöffnet: ${widget.product!.name}', logger: 'ui.pos');
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -166,6 +172,7 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
       ),
     );
     if (confirm != true) return;
+    AppLogger.trace('Löschen bestätigt: ${widget.product!.name}', logger: 'ui.pos');
 
     setState(() => _loading = true);
     try {

@@ -5,6 +5,7 @@ import '../models/category_model.dart';
 import '../models/product_model.dart';
 import '../models/user_preferences_model.dart';
 import '../providers/providers.dart';
+import '../services/app_logger.dart';
 import '../utils/formatters.dart';
 import 'dialogs/edit_product_dialog.dart';
 
@@ -91,6 +92,7 @@ class _GridState extends ConsumerState<_Grid> {
 
   void _swap(int from, int to) {
     if (from == to) return;
+    AppLogger.trace('Artikel-Layout: Position $from <-> $to getauscht', logger: 'ui.pos');
     final slots = _buildSlots();
     final tmp = slots[from];
     slots[from] = slots[to];
@@ -100,6 +102,7 @@ class _GridState extends ConsumerState<_Grid> {
   }
 
   void _addEmptySlot() {
+    AppLogger.trace('Artikel-Layout: leere Position eingefügt', logger: 'ui.pos');
     ref.read(userPrefsProvider.notifier).setLayout(
           widget.category.id, widget.profile, [..._buildSlots(), null]);
   }
@@ -108,12 +111,17 @@ class _GridState extends ConsumerState<_Grid> {
     final slots = _buildSlots();
     final idx = slots.lastIndexOf(null);
     if (idx < 0) return;
+    AppLogger.trace('Artikel-Layout: leere Position entfernt', logger: 'ui.pos');
     slots.removeAt(idx);
     ref.read(userPrefsProvider.notifier).setLayout(
           widget.category.id, widget.profile, slots);
   }
 
   Future<void> _openEdit(BuildContext context, ProductModel? product) async {
+    AppLogger.trace(
+      'Artikel-Dialog geöffnet: ${product?.name ?? "Neuer Artikel"}',
+      logger: 'ui.pos',
+    );
     await showDialog(
       context: context,
       builder: (_) => EditProductDialog(
@@ -199,6 +207,7 @@ class _GridState extends ConsumerState<_Grid> {
               color: widget.prefs.getProductColor(product.id),
               onTap: () {
                 if (!product.active) return;
+                AppLogger.trace('Artikel zu Warenkorb: ${product.name}', logger: 'ui.pos');
                 ref.read(cartProvider.notifier).addProduct(product);
               },
             );

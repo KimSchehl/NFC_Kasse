@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -11,6 +12,7 @@ if LEADERBOARD_ENABLED:
     from routers import leaderboard
 
 router = APIRouter(prefix="/api/sales", tags=["sales"])
+logger = logging.getLogger(__name__)
 
 CANCEL_WINDOW_MINUTES = 5
 
@@ -126,6 +128,10 @@ def create_booking(
             if last_at.tzinfo is None:
                 last_at = last_at.replace(tzinfo=timezone.utc)
             if (datetime.now(timezone.utc) - last_at).total_seconds() < 2.0:
+                logger.warning(
+                    "Duplicate booking blocked: customer_id=%s user_id=%s",
+                    customer_id, user_id,
+                )
                 raise HTTPException(
                     status_code=429,
                     detail="Doppelbuchung verhindert — bitte 2 Sekunden warten",
@@ -176,6 +182,10 @@ def create_booking(
             ).fetchone()["cnt"]
 
             if authorized < len(unique_cat_ids):
+                logger.warning(
+                    "Booking denied: user_id=%s missing can_book for category_ids=%s",
+                    user_id, unique_cat_ids,
+                )
                 raise HTTPException(
                     status_code=403,
                     detail="No booking permission for one or more product categories",
@@ -259,6 +269,17 @@ def create_booking(
                 chip_deposit_applied=chip_deposit_applied,
             )
 
+    if is_payout_booking:
+        logger.info(
+            "Payout booked: customer_id=%s amount=%.2f by=%s",
+            customer_id, payout_amount, current_user["username"],
+        )
+    else:
+        logger.info(
+            "Booking created: customer_id=%s sale_ids=%s new_balance=%.2f by=%s",
+            customer_id, _resp.sale_ids, _resp.new_balance, current_user["username"],
+        )
+
     if LEADERBOARD_ENABLED:
         leaderboard.check_and_notify()
     return _resp
@@ -312,6 +333,10 @@ def cancel_booking(
             has_5min = access and bool(access["can_storno_5min"])
 
             if not has_unlimited and not has_5min:
+                logger.warning(
+                    "Cancel denied: user_id=%s no storno permission for category_id=%s sale_id=%s",
+                    user_id, sale["category_id"], sale_id,
+                )
                 raise HTTPException(status_code=403, detail="No cancel permission for this category")
 
             if not has_unlimited:
@@ -321,6 +346,10 @@ def cancel_booking(
                     booked_at = booked_at.replace(tzinfo=timezone.utc)
                 elapsed = datetime.now(timezone.utc) - booked_at
                 if elapsed > timedelta(minutes=CANCEL_WINDOW_MINUTES):
+                    logger.warning(
+                        "Cancel denied: user_id=%s sale_id=%s outside %s-minute window (elapsed=%.1fmin)",
+                        user_id, sale_id, CANCEL_WINDOW_MINUTES, elapsed.total_seconds() / 60,
+                    )
                     raise HTTPException(
                         status_code=403,
                         detail=f"Cancel window of {CANCEL_WINDOW_MINUTES} minutes has expired",
@@ -350,6 +379,11 @@ def cancel_booking(
                     SET points = points - ?, updated_at = datetime('now')
                     WHERE customer_id = ?
                 """, (cancelled_pts, sale["customer_id"]))
+
+    logger.info(
+        "Booking cancelled: sale_id=%s customer_id=%s refunded=%.2f by=%s",
+        sale_id, sale["customer_id"], refunded, current_user["username"],
+    )
 
     if LEADERBOARD_ENABLED:
         leaderboard.check_and_notify()

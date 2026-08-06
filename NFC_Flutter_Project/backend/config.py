@@ -39,3 +39,10 @@ PRINTER_PORT: str = os.getenv("PRINTER_PORT", "COM4")
 PRINTER_BAUDRATE: int = int(os.getenv("PRINTER_BAUDRATE", "9600"))
 PRINTER_HOST: str = os.getenv("PRINTER_HOST", "192.168.1.100")
 PRINTER_LINE_WIDTH: int = int(os.getenv("PRINTER_LINE_WIDTH", "42"))
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+# Startup default for the server's own log verbosity (TRACE|DEBUG|INFO|WARNING|ERROR|FATAL).
+# Can be changed at runtime without a restart via PUT /api/logs/devices/__server__/level.
+LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()

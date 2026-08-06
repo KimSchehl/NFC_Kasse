@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/providers.dart';
+import '../services/app_logger.dart';
 import '../utils/formatters.dart';
 
 /// Unauthenticated entry point. Submits credentials to [authProvider.login].
@@ -40,8 +41,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final url = _serverUrl.text.trim();
     if (u.isEmpty || p.isEmpty) return;
 
+    AppLogger.trace('Anmelden geklickt: username=$u', logger: 'ui.login');
+
     // Persist and apply the server URL before attempting login.
-    if (url.isNotEmpty) {
+    if (url.isNotEmpty && url != ref.read(serverUrlProvider)) {
+      AppLogger.trace('Server-URL geändert: $url', logger: 'ui.login');
       await ref.read(storageProvider).write(key: 'server_url', value: url);
       ref.read(serverUrlProvider.notifier).state = url;
     }

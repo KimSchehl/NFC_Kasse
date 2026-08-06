@@ -1,10 +1,11 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart' hide LogLevel;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../providers/providers.dart';
+import '../services/app_logger.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -20,7 +21,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 3, vsync: this);
+    _tab = TabController(length: 4, vsync: this);
   }
 
   @override
@@ -42,6 +43,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
               Tab(icon: Icon(Icons.info_outline), text: 'Über'),
               Tab(icon: Icon(Icons.palette_outlined), text: 'Design'),
               Tab(icon: Icon(Icons.bluetooth), text: 'NFC-Lesegerät'),
+              Tab(icon: Icon(Icons.article_outlined), text: 'Protokoll'),
             ],
           ),
         ),
@@ -52,6 +54,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
               _UeberTab(),
               _DesignTab(),
               _BleTab(),
+              _LoggingTab(),
             ],
           ),
         ),
@@ -104,6 +107,7 @@ class _UeberTab extends ConsumerWidget {
               style: TextStyle(color: theme.colorScheme.error),
             ),
             onTap: () async {
+              AppLogger.trace('Abmelden-Dialog geöffnet', logger: 'ui.settings');
               final confirm = await showDialog<bool>(
                 context: context,
                 builder: (_) => AlertDialog(
@@ -121,6 +125,7 @@ class _UeberTab extends ConsumerWidget {
                 ),
               );
               if (confirm == true) {
+                AppLogger.trace('Abmelden bestätigt', logger: 'ui.settings');
                 await ref.read(authProvider.notifier).logout();
               }
             },
@@ -198,6 +203,7 @@ class _DesignTab extends ConsumerWidget {
 
   Future<void> _applyPreset(
       WidgetRef ref, double ts, int gc, double cts, int bml) async {
+    AppLogger.trace('Design-Voreinstellung gewählt: ts=$ts gc=$gc cts=$cts bml=$bml', logger: 'ui.settings');
     ref.read(textScaleProvider.notifier).state = ts;
     ref.read(gridColumnsProvider.notifier).state = gc;
     ref.read(cartTextScaleProvider.notifier).state = cts;
@@ -211,12 +217,14 @@ class _DesignTab extends ConsumerWidget {
 
   Future<void> _saveDouble(
       WidgetRef ref, StateProvider<double> p, String key, double v) async {
+    AppLogger.trace('Design-Einstellung geändert: $key=$v', logger: 'ui.settings');
     ref.read(p.notifier).state = v;
     await ref.read(storageProvider).write(key: key, value: v.toString());
   }
 
   Future<void> _saveInt(
       WidgetRef ref, StateProvider<int> p, String key, int v) async {
+    AppLogger.trace('Design-Einstellung geändert: $key=$v', logger: 'ui.settings');
     ref.read(p.notifier).state = v;
     await ref.read(storageProvider).write(key: key, value: v.toString());
   }
@@ -517,6 +525,171 @@ class _BleScanListState extends ConsumerState<_BleScanList> {
           },
         ),
       ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tab 4 — Protokoll (Logging)
+// ---------------------------------------------------------------------------
+
+class _LoggingTab extends ConsumerWidget {
+  const _LoggingTab();
+
+  String _formatTime(DateTime t) =>
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:${t.second.toString().padLeft(2, '0')}';
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final localLevel = ref.watch(localLogLevelProvider);
+    final logging = ref.watch(loggingProvider);
+    final theme = Theme.of(context);
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _SectionHeader('Lokales Log-Level'),
+        const SizedBox(height: 10),
+        if (logging.remoteOverride != null) ...[
+          Card(
+            color: theme.colorScheme.secondaryContainer,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Icon(Icons.admin_panel_settings_outlined,
+                      color: theme.colorScheme.onSecondaryContainer),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Vom Server auf ${logging.remoteOverride!.label} gesetzt — '
+                      'überschreibt die lokale Auswahl, solange aktiv.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSecondaryContainer,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+        ],
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final level in LogLevel.values)
+              ChoiceChip(
+                label: Text(level.label),
+                selected: localLevel == level,
+                onSelected: (_) async {
+                  AppLogger.trace('Log-Level gewählt: ${level.label}', logger: 'ui.settings');
+                  ref.read(localLogLevelProvider.notifier).state = level;
+                  await ref
+                      .read(storageProvider)
+                      .write(key: 'log_local_level', value: level.label);
+                },
+              ),
+          ],
+        ),
+        const SizedBox(height: 24),
+        _SectionHeader('Gerätename'),
+        const SizedBox(height: 10),
+        const _DeviceLabelField(),
+        const SizedBox(height: 24),
+        _SectionHeader('Versand'),
+        const SizedBox(height: 10),
+        Card(
+          child: Column(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.pending_outlined),
+                title: const Text('Ungesendete Einträge'),
+                trailing: Text('${logging.pendingCount}'),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: Icon(
+                  logging.lastShipFailed
+                      ? Icons.error_outline
+                      : Icons.check_circle_outline,
+                  color: logging.lastShipFailed
+                      ? theme.colorScheme.error
+                      : theme.colorScheme.primary,
+                ),
+                title: const Text('Letzter Versand'),
+                subtitle: Text(
+                  logging.lastShipAt == null
+                      ? 'Noch nicht gesendet'
+                      : logging.lastShipFailed
+                          ? 'Fehlgeschlagen (wird automatisch erneut versucht)'
+                          : _formatTime(logging.lastShipAt!),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: () {
+            AppLogger.trace('"Jetzt senden" geklickt', logger: 'ui.settings');
+            ref.read(loggingProvider.notifier).ship();
+          },
+          icon: const Icon(Icons.send_outlined),
+          label: const Text('Jetzt senden'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Free-text label for this device, shown in the server's device list
+/// (Admins > Log-Viewer > Geräte). Debounced to save-on-submit/blur rather
+/// than on every keystroke.
+class _DeviceLabelField extends ConsumerStatefulWidget {
+  const _DeviceLabelField();
+
+  @override
+  ConsumerState<_DeviceLabelField> createState() => _DeviceLabelFieldState();
+}
+
+class _DeviceLabelFieldState extends ConsumerState<_DeviceLabelField> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller =
+        TextEditingController(text: ref.read(deviceLabelProvider) ?? '');
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save(String value) async {
+    final label = value.trim().isEmpty ? null : value.trim();
+    if (label == ref.read(deviceLabelProvider)) return;
+    AppLogger.trace('Gerätename geändert: $label', logger: 'ui.settings');
+    ref.read(deviceLabelProvider.notifier).state = label;
+    await ref.read(storageProvider).write(key: 'log_device_label', value: label);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: _controller,
+      decoration: const InputDecoration(
+        border: OutlineInputBorder(),
+        hintText: 'z. B. Kasse 1',
+        helperText: 'Wird in der Geräteliste auf dem Server angezeigt.',
+      ),
+      textInputAction: TextInputAction.done,
+      onSubmitted: _save,
+      onTapOutside: (_) => _save(_controller.text),
     );
   }
 }

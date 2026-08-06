@@ -6,7 +6,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart' hide LogLevel;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -21,10 +21,12 @@ import '../models/product_model.dart';
 import '../models/user_model.dart';
 import '../models/user_preferences_model.dart';
 import '../services/api_client.dart';
+import '../services/app_logger.dart';
 import '../services/auth_service.dart';
 import '../services/ble_nfc_service.dart';
 import '../services/customer_service.dart';
 import '../services/help_service.dart';
+import '../services/logs_service.dart';
 import '../services/notification_service.dart';
 import '../services/preferences_service.dart';
 import '../services/display_service.dart';
@@ -101,12 +103,21 @@ final preferencesServiceProvider = Provider(
 final helpServiceProvider = Provider(
   (ref) => HelpService(ref.watch(apiClientProvider)),
 );
+final logsServiceProvider = Provider(
+  (ref) => LogsService(ref.watch(apiClientProvider)),
+);
 final notificationServiceProvider = Provider<NotificationService>(
   (ref) => NotificationService(),
 );
 
 /// Polls /health every 10 seconds and emits true/false.
 /// Restarts automatically when the server URL changes.
+///
+/// Piggybacks the device's log-level pickup on the same poll: every response
+/// carries the server's current forced level for this device_id (or null),
+/// which is handed to [LoggingNotifier.applyRemoteLevel]. No separate polling
+/// mechanism needed — this one was already running every 10s for every
+/// logged-in and logged-out client alike.
 final connectionStatusProvider = StreamProvider<bool>((ref) {
   final client = ref.watch(apiClientProvider);
   final controller = StreamController<bool>.broadcast();
@@ -115,13 +126,21 @@ final connectionStatusProvider = StreamProvider<bool>((ref) {
     while (!controller.isClosed) {
       bool ok;
       try {
-        await client.dio.get(
+        final response = await client.dio.get(
           '/health',
+          queryParameters: {
+            'device_id': ref.read(deviceIdProvider),
+            'platform': kIsWeb ? 'web' : defaultTargetPlatform.name,
+            'label': ?ref.read(deviceLabelProvider),
+          },
           options: Options(
             sendTimeout: const Duration(seconds: 3),
             receiveTimeout: const Duration(seconds: 3),
           ),
         );
+        ref
+            .read(loggingProvider.notifier)
+            .applyRemoteLevel(response.data['log_level'] as String?);
         ok = true;
       } catch (_) {
         ok = false;
@@ -294,6 +313,12 @@ class HelpNotifier extends Notifier<HelpState> {
 
     try {
       _channel = WebSocketChannel.connect(Uri.parse(wsUrl));
+      // WebSocketChannel.connect() returns synchronously before the
+      // connection is actually established; a failure only ever surfaces
+      // via this `ready` future. Without awaiting it here, a failed
+      // connection attempt becomes an unhandled Future rejection instead of
+      // being caught by this try/catch.
+      await _channel!.ready;
       state = state.copyWith(wsConnected: true);
 
       _sub = _channel!.stream.listen(
@@ -566,11 +591,16 @@ class BleReaderNotifier extends Notifier<BleReaderState> {
   /// [_lastLivenessSignal]. If none arrived recently, the link is dead.
   void _startWebHealthCheck() {
     if (_batteryChar == null) return;
+    AppLogger.trace('Web-Healthcheck gestartet', logger: 'ble');
     _lastLivenessSignal = DateTime.now();
     _healthCheckTimer?.cancel();
     _healthCheckTimer = Timer.periodic(const Duration(seconds: 20), (_) {
       final signal = _lastLivenessSignal;
       if (signal == null || DateTime.now().difference(signal) > const Duration(seconds: 90)) {
+        AppLogger.warning(
+          'Web-Healthcheck: keine Lebenszeichen seit ${signal == null ? '?' : DateTime.now().difference(signal).inSeconds}s — gilt als getrennt',
+          logger: 'ble',
+        );
         _healthCheckTimer?.cancel();
         _handleDisconnected();
       }
@@ -581,7 +611,11 @@ class BleReaderNotifier extends Notifier<BleReaderState> {
     final storage = ref.read(storageProvider);
     final id = await storage.read(key: _bleDeviceIdKey);
     final name = await storage.read(key: _bleDeviceNameKey);
-    if (id == null) return;
+    if (id == null) {
+      AppLogger.trace('Kein gespeichertes BLE-Gerät gefunden', logger: 'ble');
+      return;
+    }
+    AppLogger.trace('Gespeichertes BLE-Gerät gefunden: $id ($name)', logger: 'ble');
     state = state.copyWith(deviceId: () => id, deviceName: () => name);
 
     // Web Bluetooth only ever hands out a usable device handle through its
@@ -590,7 +624,10 @@ class BleReaderNotifier extends Notifier<BleReaderState> {
     // connecting here would just fail forever on a 5s retry loop. Show the
     // pairing as "disconnected" instead and let the user reconnect via the
     // picker (Settings -> NFC-Lesegerät -> Verbinden/Scan).
-    if (kIsWeb) return;
+    if (kIsWeb) {
+      AppLogger.trace('Web: Auto-Reconnect übersprungen (kein direkter Reconnect möglich)', logger: 'ble');
+      return;
+    }
 
     _shouldReconnect = true;
     await _connectToDevice(BluetoothDevice.fromId(id));
@@ -609,6 +646,7 @@ class BleReaderNotifier extends Notifier<BleReaderState> {
   /// [FlutterBluePlus.scanResults] stream. Caller stops it via [stopScan]
   /// (e.g. once the user picks a device, or leaves the screen).
   Future<void> startScan() async {
+    AppLogger.info('BLE-Scan gestartet', logger: 'ble');
     // permission_handler has no web implementation for these Android runtime
     // permissions - it throws there. On web, the browser's own
     // navigator.bluetooth.requestDevice() prompt handles permissioning.
@@ -628,15 +666,23 @@ class BleReaderNotifier extends Notifier<BleReaderState> {
     );
   }
 
-  Future<void> stopScan() => FlutterBluePlus.stopScan();
+  Future<void> stopScan() {
+    AppLogger.trace('BLE-Scan gestoppt', logger: 'ble');
+    return FlutterBluePlus.stopScan();
+  }
 
   Future<void> connect(BluetoothDevice device) async {
+    AppLogger.trace(
+      'Verbindung angefordert von UI: ${device.remoteId.str} (${device.platformName})',
+      logger: 'ble',
+    );
     await stopScan();
     _shouldReconnect = true;
     await _connectToDevice(device);
   }
 
   Future<void> _connectToDevice(BluetoothDevice device) async {
+    AppLogger.info('BLE-Verbindungsversuch: ${device.remoteId.str} (${device.platformName})', logger: 'ble');
     state = state.copyWith(status: BleReaderStatus.connecting);
     _device = device;
 
@@ -647,15 +693,18 @@ class BleReaderNotifier extends Notifier<BleReaderState> {
         license: License.nonprofit,
         timeout: const Duration(seconds: 10),
       );
+      AppLogger.trace('GATT verbunden: ${device.remoteId.str}', logger: 'ble');
 
       await _connSub?.cancel();
       _connSub = device.connectionState.listen((s) {
         if (s == BluetoothConnectionState.disconnected) {
+          AppLogger.warning('BLE: connectionState-Stream meldet Disconnect', logger: 'ble');
           _handleDisconnected();
         }
       });
 
       final services = await device.discoverServices();
+      AppLogger.trace('Services entdeckt: ${services.length}', logger: 'ble');
 
       final nfcService = _findService(services, BleNfcService.nfcServiceUuid);
       final uidChar = nfcService == null
@@ -666,12 +715,17 @@ class BleReaderNotifier extends Notifier<BleReaderState> {
         await _uidSub?.cancel();
         _uidSub = uidChar.onValueReceived.listen((bytes) {
           if (bytes.isEmpty) return;
+          final uid = bytesToUidHex(bytes);
+          AppLogger.trace('UID empfangen: $uid', logger: 'ble');
           state = state.copyWith(
-            lastUid: bytesToUidHex(bytes),
+            lastUid: uid,
             lastUidSeq: state.lastUidSeq + 1,
           );
         });
         await uidChar.setNotifyValue(true);
+        AppLogger.trace('UID-Characteristic abonniert', logger: 'ble');
+      } else {
+        AppLogger.warning('BLE: keine UID-Characteristic gefunden', logger: 'ble');
       }
 
       // Isolated from the outer try/catch on purpose: battery is a nice-to-have.
@@ -691,17 +745,22 @@ class BleReaderNotifier extends Notifier<BleReaderState> {
           _batterySub = batteryChar.onValueReceived.listen((bytes) {
             _lastLivenessSignal = DateTime.now();
             if (bytes.isNotEmpty) {
+              AppLogger.trace('Akku-Update: ${bytes[0]}%', logger: 'ble');
               state = state.copyWith(batteryPercent: () => bytes[0]);
             }
           });
           await batteryChar.setNotifyValue(true);
+          AppLogger.trace('Battery-Characteristic abonniert', logger: 'ble');
           final initial = await batteryChar.read();
           if (initial.isNotEmpty) {
             state = state.copyWith(batteryPercent: () => initial[0]);
           }
+        } else {
+          AppLogger.trace('BLE: keine Battery-Characteristic gefunden', logger: 'ble');
         }
-      } catch (_) {
+      } catch (e) {
         // Battery is optional - leave batteryPercent unset, keep connecting.
+        AppLogger.trace('BLE: Battery-Setup fehlgeschlagen (nicht kritisch): $e', logger: 'ble');
       }
 
       final storage = ref.read(storageProvider);
@@ -713,15 +772,23 @@ class BleReaderNotifier extends Notifier<BleReaderState> {
         deviceId: () => device.remoteId.str,
         deviceName: () => device.platformName,
       );
+      AppLogger.info('BLE verbunden: ${device.remoteId.str} (${device.platformName})', logger: 'ble');
 
       if (kIsWeb) _startWebHealthCheck();
-    } catch (_) {
+    } catch (e, st) {
+      AppLogger.warning(
+        'BLE-Verbindungsversuch fehlgeschlagen: ${device.remoteId.str}',
+        logger: 'ble',
+        error: e,
+        stackTrace: st,
+      );
       state = state.copyWith(status: BleReaderStatus.disconnected);
       _scheduleReconnect();
     }
   }
 
   void _handleDisconnected() {
+    AppLogger.warning('BLE-Verbindung getrennt: ${_device?.remoteId.str}', logger: 'ble');
     _uidSub?.cancel();
     _batterySub?.cancel();
     _healthCheckTimer?.cancel();
@@ -734,6 +801,7 @@ class BleReaderNotifier extends Notifier<BleReaderState> {
 
   void _scheduleReconnect() {
     if (_reconnectPending || !_shouldReconnect || _device == null) return;
+    AppLogger.trace('BLE-Reconnect in 5s geplant: ${_device?.remoteId.str}', logger: 'ble');
     _reconnectPending = true;
     Future.delayed(const Duration(seconds: 5), () {
       _reconnectPending = false;
@@ -742,6 +810,7 @@ class BleReaderNotifier extends Notifier<BleReaderState> {
   }
 
   Future<void> disconnect() async {
+    AppLogger.info('BLE: manuell getrennt: ${_device?.remoteId.str}', logger: 'ble');
     _shouldReconnect = false;
     await _connSub?.cancel();
     await _uidSub?.cancel();
@@ -755,6 +824,7 @@ class BleReaderNotifier extends Notifier<BleReaderState> {
   }
 
   Future<void> forget() async {
+    AppLogger.info('BLE: Gerät entkoppelt: ${_device?.remoteId.str ?? state.deviceId}', logger: 'ble');
     await disconnect();
     _device = null;
     final storage = ref.read(storageProvider);
@@ -766,6 +836,136 @@ class BleReaderNotifier extends Notifier<BleReaderState> {
 
 final bleReaderProvider = NotifierProvider<BleReaderNotifier, BleReaderState>(
   BleReaderNotifier.new,
+);
+
+// ---------------------------------------------------------------------------
+// Logging
+// ---------------------------------------------------------------------------
+
+/// This device's stable ID for log correlation and remote level targeting.
+/// Restored (or generated once and persisted) in main().
+final deviceIdProvider = StateProvider<String>(
+  (ref) => throw StateError('deviceIdProvider must be overridden in main()'),
+);
+
+/// The user's own locally-chosen log level. A remote override (set via
+/// [LoggingNotifier.applyRemoteLevel]) takes priority over this while active
+/// — this stays the fallback for once that override is lifted.
+final localLogLevelProvider = StateProvider<LogLevel>((ref) => LogLevel.info);
+
+/// Optional human-readable label for this device (e.g. "Kasse 1"), shown in
+/// the server's device list. Purely cosmetic.
+final deviceLabelProvider = StateProvider<String?>((ref) => null);
+
+@immutable
+class LoggingState {
+  final LogLevel? remoteOverride;
+  final int pendingCount;
+  final DateTime? lastShipAt;
+  final bool lastShipFailed;
+
+  const LoggingState({
+    this.remoteOverride,
+    this.pendingCount = 0,
+    this.lastShipAt,
+    this.lastShipFailed = false,
+  });
+
+  LoggingState copyWith({
+    LogLevel? Function()? remoteOverride,
+    int? pendingCount,
+    DateTime? Function()? lastShipAt,
+    bool? lastShipFailed,
+  }) =>
+      LoggingState(
+        remoteOverride: remoteOverride != null ? remoteOverride() : this.remoteOverride,
+        pendingCount: pendingCount ?? this.pendingCount,
+        lastShipAt: lastShipAt != null ? lastShipAt() : this.lastShipAt,
+        lastShipFailed: lastShipFailed ?? this.lastShipFailed,
+      );
+}
+
+/// Owns the local->server log shipping pipeline: a periodic rotation timer
+/// (hourly native / 45s web — a browser tab can vanish without warning, so
+/// unshipped logs are kept to a small time window instead of relying on an
+/// unload event), a debounced eager flush on severe (ERROR/FATAL) entries,
+/// and the effective level (`remoteOverride ?? localLevel`) that
+/// [AppLogger.currentLevel] is kept in sync with.
+class LoggingNotifier extends Notifier<LoggingState> {
+  Timer? _shipTimer;
+  Timer? _severeDebounce;
+
+  @override
+  LoggingState build() {
+    AppLogger.onSevereLog = _onSevereLog;
+    // Can't call _syncEffectiveLevel() here: `state` isn't assigned yet until
+    // build() returns, and reading it early throws ("Bad state: Tried to read
+    // the state of an uninitialized provider"). remoteOverride is always null
+    // at construction time anyway, so just use the local level directly.
+    AppLogger.currentLevel = ref.read(localLogLevelProvider);
+    ref.listen(localLogLevelProvider, (_, _) => _syncEffectiveLevel());
+    _restartShipTimer();
+    ref.onDispose(() {
+      _shipTimer?.cancel();
+      _severeDebounce?.cancel();
+      AppLogger.onSevereLog = null;
+    });
+    return const LoggingState();
+  }
+
+  void _syncEffectiveLevel() {
+    AppLogger.currentLevel = state.remoteOverride ?? ref.read(localLogLevelProvider);
+  }
+
+  void _restartShipTimer() {
+    _shipTimer?.cancel();
+    _shipTimer = Timer.periodic(
+      kIsWeb ? const Duration(seconds: 45) : const Duration(hours: 1),
+      (_) => ship(),
+    );
+  }
+
+  void _onSevereLog() {
+    _severeDebounce?.cancel();
+    _severeDebounce = Timer(const Duration(seconds: 2), ship);
+  }
+
+  /// Sends up to one batch (server caps at 200/request) of buffered entries.
+  /// Safe to call anytime — a no-op when nothing is pending, and a failed
+  /// attempt simply leaves the buffer intact for the next scheduled try.
+  Future<void> ship() async {
+    if (AppLogger.pendingCount == 0) return;
+    final deviceId = ref.read(deviceIdProvider);
+    final batch = AppLogger.pendingBatch(200);
+    try {
+      final accepted =
+          await ref.read(logsServiceProvider).ingest(deviceId, batch);
+      AppLogger.clearShipped(accepted);
+      state = state.copyWith(
+        pendingCount: AppLogger.pendingCount,
+        lastShipAt: () => DateTime.now(),
+        lastShipFailed: false,
+      );
+    } catch (_) {
+      state = state.copyWith(
+        pendingCount: AppLogger.pendingCount,
+        lastShipFailed: true,
+      );
+    }
+  }
+
+  /// Called by [connectionStatusProvider]'s health poll whenever the server
+  /// reports a forced level for this device (or null to clear it).
+  void applyRemoteLevel(String? levelName) {
+    final next = levelName == null ? null : LogLevel.fromLabel(levelName);
+    if (next?.value == state.remoteOverride?.value) return;
+    state = state.copyWith(remoteOverride: () => next);
+    _syncEffectiveLevel();
+  }
+}
+
+final loggingProvider = NotifierProvider<LoggingNotifier, LoggingState>(
+  LoggingNotifier.new,
 );
 
 // ---------------------------------------------------------------------------
@@ -836,7 +1036,7 @@ final gridColumnsProvider = StateProvider<int>((ref) => 3);
 final cartTextScaleProvider = StateProvider<double>((ref) => 1.0);
 final buttonMaxLinesProvider = StateProvider<int>((ref) => 2);
 
-enum AppScreen { pos, stats, users, settings, account }
+enum AppScreen { pos, stats, users, settings, account, logs }
 
 final currentScreenProvider = StateProvider<AppScreen>((ref) => AppScreen.pos);
 

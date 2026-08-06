@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from database import get_db
@@ -15,6 +17,7 @@ from schemas import (
 )
 
 router = APIRouter(prefix="/api/users", tags=["users"])
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -52,6 +55,10 @@ def create_user(
         )
         new_id = cursor.lastrowid
 
+    logger.info(
+        "User created: user_id=%s username=%s by=%s",
+        new_id, body.username, ctx["user"]["username"],
+    )
     return UserResponse(
         id=new_id,
         username=body.username,
@@ -93,6 +100,10 @@ def update_user(
             (new_username, new_hash, new_display, user_id),
         )
 
+    logger.info(
+        "User updated: user_id=%s username=%s password_changed=%s by=%s",
+        user_id, new_username, bool(body.password), ctx["user"]["username"],
+    )
     return UserResponse(
         id=user_id,
         username=new_username,
@@ -120,6 +131,10 @@ def deactivate_user(
         if not row:
             raise HTTPException(status_code=404, detail="User not found")
         db.execute("UPDATE user SET active=0 WHERE id=?", (user_id,))
+
+    logger.warning(
+        "User deactivated: user_id=%s by=%s", user_id, ctx["user"]["username"],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -223,6 +238,11 @@ def set_user_permissions(
                 (user_id, event_id, perm_id, granter_id),
             )
 
+    logger.info(
+        "Permissions changed: user_id=%s permissions=%s by=%s",
+        user_id, body.permission_ids, ctx["user"]["username"],
+    )
+
 
 @router.put("/{user_id}/categories", status_code=204)
 def set_user_category_access(
@@ -280,6 +300,11 @@ def set_user_category_access(
                     granter_id,
                 ),
             )
+
+    logger.info(
+        "Category access changed: user_id=%s category_ids=%s by=%s",
+        user_id, [item.category_id for item in body.categories], ctx["user"]["username"],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -383,3 +408,8 @@ def apply_role_template(
                 """,
                 (user_id, event_id, row["permission_id"], granter_id),
             )
+
+    logger.info(
+        "Role template applied: user_id=%s template_id=%s by=%s",
+        user_id, template_id, ctx["user"]["username"],
+    )

@@ -7,93 +7,23 @@ without a code change.  In development (e.g. Android emulator) the default
 covers localhost only.
 """
 
-import logging
-import logging.handlers
 import os
 from pathlib import Path
 
 from fastapi import FastAPI
 
+from logging_config import setup_logging
 
-import time as _time
-from datetime import datetime as _datetime
+setup_logging()
 
-
-class _TopOfHourHandler(logging.handlers.TimedRotatingFileHandler):
-    """
-    Schreibt in kasse_YYYY-MM-DD_HH.log und rotiert exakt zur vollen Stunde.
-    Beim Rotieren wird eine neue Datei für die aktuelle Stunde geöffnet.
-    Alte Dateien werden gelöscht, sobald mehr als backupCount vorhanden sind.
-    """
-
-    def __init__(self, log_dir: Path, backup_count: int = 168, encoding: str = "utf-8"):
-        self._log_dir = log_dir
-        super().__init__(
-            filename=str(log_dir / self._filename_for_now()),
-            when="h",
-            interval=1,
-            backupCount=backup_count,
-            encoding=encoding,
-        )
-        self.rolloverAt = self._next_full_hour()
-
-    @staticmethod
-    def _filename_for_now() -> str:
-        return _datetime.now().strftime("kasse_%Y-%m-%d_%H.log")
-
-    @staticmethod
-    def _next_full_hour() -> int:
-        t = int(_time.time())
-        return (t // 3600 + 1) * 3600
-
-    def doRollover(self) -> None:
-        if self.stream:
-            self.stream.close()
-            self.stream = None
-        self.baseFilename = str(self._log_dir / self._filename_for_now())
-        self.stream = self._open()
-        self.rolloverAt = self._next_full_hour()
-        self._delete_old_files()
-
-    def _delete_old_files(self) -> None:
-        files = sorted(
-            self._log_dir.glob("kasse_*.log"),
-            key=lambda p: p.stat().st_mtime,
-        )
-        for old in files[: max(0, len(files) - self.backupCount)]:
-            try:
-                old.unlink()
-            except OSError:
-                pass
-
-
-def _setup_logging() -> None:
-    log_dir = Path(__file__).parent / "logs"
-    log_dir.mkdir(exist_ok=True)
-
-    file_handler = _TopOfHourHandler(log_dir=log_dir, backup_count=168)
-    file_handler.setFormatter(logging.Formatter(
-        fmt="%(asctime)s %(levelname)-8s %(name)-24s %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    ))
-
-    # /health wird alle 10 s gepollt — aus dem Log herausfiltern
-    class _SuppressHealth(logging.Filter):
-        def filter(self, record: logging.LogRecord) -> bool:
-            return '"/health"' not in record.getMessage()
-
-    file_handler.addFilter(_SuppressHealth())
-    logging.getLogger().addHandler(file_handler)
-
-
-_setup_logging()
-
+import device_registry
 from database import get_db
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from config import BAR_CHIP_UID, EVENT_NAME, LEADERBOARD_ENABLED
-from routers import auth, customers, display, download, help, kiosk, preferences, printer, products, sales, stats, topup, update, users
+from middleware import TraceIdMiddleware
+from routers import auth, customers, display, download, help, kiosk, logs as logs_router, preferences, printer, products, sales, stats, topup, update, users
 if LEADERBOARD_ENABLED:
     from routers import leaderboard
 
@@ -155,6 +85,29 @@ def _migrate() -> None:
         db.execute("""
             INSERT OR IGNORE INTO permission_node (id, parent_id, label, node_type, sort_order)
             VALUES ('kiosk.access', 'kiosk', 'Kiosk-Modus', 'w', 1)
+        """)
+        # Insert 'logs.*' permission nodes if not yet seeded
+        db.execute("""
+            INSERT OR IGNORE INTO permission_node (id, parent_id, label, node_type, sort_order)
+            VALUES ('logs', NULL, 'Protokolle', 'group', 8)
+        """)
+        db.execute("""
+            INSERT OR IGNORE INTO permission_node (id, parent_id, label, node_type, sort_order)
+            VALUES ('logs.view', 'logs', 'Protokolle einsehen', 'r', 1)
+        """)
+        db.execute("""
+            INSERT OR IGNORE INTO permission_node (id, parent_id, label, node_type, sort_order)
+            VALUES ('logs.configure', 'logs', 'Protokoll-Level verwalten', 'w', 2)
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS device_log_level (
+                device_id     TEXT PRIMARY KEY,
+                label         TEXT,
+                platform      TEXT,
+                forced_level  TEXT,
+                updated_by    INTEGER REFERENCES user(id),
+                updated_at    TEXT
+            )
         """)
         # customer_name column — added for kiosk self-service naming
         try:
@@ -245,6 +198,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Added after CORS so it becomes the outermost layer (Starlette wraps
+# middleware in reverse-add order) — sees the full request/response
+# lifecycle, including CORS preflight handling, for accurate timing/logging.
+app.add_middleware(TraceIdMiddleware)
+
 # ---------------------------------------------------------------------------
 # Routers
 # ---------------------------------------------------------------------------
@@ -266,17 +224,26 @@ app.include_router(preferences.router)
 app.include_router(help.router)
 app.include_router(update.router)
 app.include_router(download.router)
+app.include_router(logs_router.router)
 
 # Start the background print-queue worker (daemon thread — stops with the server).
 printer.start_worker()
+
+# Restores any admin-forced log levels (incl. the server's own) across restarts.
+device_registry.load_from_db()
 
 
 # ---------------------------------------------------------------------------
 # Health check
 # ---------------------------------------------------------------------------
 @app.get("/health", tags=["system"])
-def health():
-    return {"status": "ok"}
+def health(
+    device_id: str | None = None,
+    platform: str | None = None,
+    label: str | None = None,
+):
+    log_level = device_registry.touch(device_id, platform, label) if device_id else None
+    return {"status": "ok", "log_level": log_level}
 
 
 # ---------------------------------------------------------------------------

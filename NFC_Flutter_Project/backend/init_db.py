@@ -368,6 +368,23 @@ def init_db():
     )""")
 
     # ------------------------------------------------------------------
+    # DEVICE LOG LEVEL — one row per client device (+ '__server__') that has
+    # ever polled /health or had its log level explicitly set by an admin.
+    # forced_level=NULL means "no remote override, device uses its own local
+    # preference". last_seen is NOT persisted here (see device_registry.py —
+    # it's rebuilt purely from the live /health poll cadence, in-memory only).
+    # ------------------------------------------------------------------
+    c.execute("""
+    CREATE TABLE device_log_level (
+        device_id     TEXT PRIMARY KEY,
+        label         TEXT,
+        platform      TEXT,
+        forced_level  TEXT,
+        updated_by    INTEGER REFERENCES user(id),
+        updated_at    TEXT
+    )""")
+
+    # ------------------------------------------------------------------
     # INDEXES — for frequent query patterns
     # ------------------------------------------------------------------
     c.execute("CREATE INDEX idx_print_job_status       ON print_job(status, created_at)")
@@ -444,6 +461,11 @@ def seed_permissions(conn):
         # --- Kundenterminal / Kiosk ---
         ("kiosk",                   None,               "Kundenterminal",           "group", 7),
         ("kiosk.access",            "kiosk",            "Kiosk-Modus",              "w",     1),
+
+        # --- Protokolle / Logging ---
+        ("logs",                    None,               "Protokolle",               "group", 8),
+        ("logs.view",               "logs",             "Protokolle einsehen",      "r",     1),
+        ("logs.configure",          "logs",             "Protokoll-Level verwalten","w",     2),
     ]
 
     c.executemany(

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/category_model.dart';
 import '../../providers/providers.dart';
+import '../../services/app_logger.dart';
 
 /// Dialog for renaming a category or (when [canDelete] is true) deleting it.
 ///
@@ -50,6 +51,7 @@ class _EditCategoryDialogState extends ConsumerState<EditCategoryDialog> {
       Navigator.of(context).pop();
       return;
     }
+    AppLogger.trace('Kategorie umbenannt: ${widget.category.name} -> $name', logger: 'ui.sidebar');
 
     setState(() {
       _loading = true;
@@ -91,6 +93,7 @@ class _EditCategoryDialogState extends ConsumerState<EditCategoryDialog> {
       ),
     );
     if (confirm != true) return;
+    AppLogger.trace('Kategorie-Löschen bestätigt: ${widget.category.name}', logger: 'ui.sidebar');
 
     setState(() => _loading = true);
     try {

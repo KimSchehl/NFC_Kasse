@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -16,6 +17,7 @@ from dependencies import (
 from schemas import CategoryPermissionResponse, LoginRequest, MeResponse, RefreshRequest, TokenResponse
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+logger = logging.getLogger(__name__)
 
 
 def _build_token_response(user_id: int) -> tuple[str, str]:
@@ -52,8 +54,10 @@ def login(body: LoginRequest):
         ).fetchone()
 
     if not user or not verify_password(body.password, user["password_hash"]):
+        logger.warning("Login failed: username=%s", body.username)
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
+    logger.info("Login success: username=%s user_id=%s", body.username, user["id"])
     access_token, refresh_token = _build_token_response(user["id"])
     return TokenResponse(
         access_token=access_token,
@@ -98,8 +102,15 @@ def refresh(body: RefreshRequest):
         ).fetchone()
 
         if not row:
+            logger.warning("Refresh failed: token not found (possibly forged/garbage)")
             raise HTTPException(status_code=401, detail="Refresh token not found")
         if row["revoked"]:
+            # A revoked token being reused is exactly the signal token rotation
+            # exists to surface — could mean a stolen token is in play.
+            logger.warning(
+                "Refresh token reuse detected: already-revoked token for user_id=%s",
+                row["user_id"],
+            )
             raise HTTPException(status_code=401, detail="Refresh token has been revoked")
         if not row["user_active"]:
             raise HTTPException(status_code=401, detail="User is inactive")
@@ -134,6 +145,7 @@ def logout(body: RefreshRequest):
             (token_hash,),
         )
     # No error if token wasn't found — idempotent logout
+    logger.info("Logout")
 
 
 @router.get("/me", response_model=MeResponse)

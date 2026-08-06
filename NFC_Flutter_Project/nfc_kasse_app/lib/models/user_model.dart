@@ -67,6 +67,10 @@ class UserModel {
   /// shown as soon as the user has at least one of the three stats permissions.
   bool get canViewStats => permissions.any((p) => p.startsWith('statistics.'));
 
+  bool get canViewLogs => hasPermission('logs.view');
+
+  bool get canConfigureLogs => hasPermission('logs.configure');
+
   String get displayLabel => displayName ?? username;
 }
 

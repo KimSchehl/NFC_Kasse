@@ -9,6 +9,7 @@ Time filters use ISO-8601 strings compared directly against the SQLite
 
 import csv
 import io
+import logging
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
@@ -28,6 +29,7 @@ from schemas import (
 )
 
 router = APIRouter(prefix="/api/stats", tags=["statistics"])
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -183,6 +185,10 @@ def close_period(
             (new_id,),
         ).fetchone()
 
+    logger.info(
+        "Period closed: new_period_id=%s label=%s by=%s",
+        new_id, body.label, ctx["user"]["username"],
+    )
     return PeriodCloseResponse(new_period=StatsPeriodResponse(**dict(new_row)))
 
 
@@ -205,6 +211,11 @@ def event_reset(
     event_id = ctx["event"]["id"]
     tenant_id = ctx["user"]["tenant_id"]
 
+    logger.warning(
+        "Event reset starting: tenant_id=%s event_id=%s by=%s",
+        tenant_id, event_id, ctx["user"]["username"],
+    )
+
     with get_db(exclusive=True) as db:
         # Tagesabschluss
         db.execute(
@@ -224,11 +235,16 @@ def event_reset(
         # Alle Kunden zurücksetzen: Guthaben = 0, als neu markieren.
         # is_available=1 bewirkt beim nächsten Scan: neuer Kunde + Pfand wird erneut erhoben.
         # BAR-Chip wird ausgenommen — er ist kein echter Gast-Chip.
-        db.execute(
+        cursor = db.execute(
             "UPDATE customer SET balance = 0.0, is_available = 1 WHERE tenant_id = ? AND nfc_uid != ?",
             (tenant_id, BAR_CHIP_UID),
         )
+        reset_count = cursor.rowcount
 
+    logger.warning(
+        "Event reset complete: tenant_id=%s customers_reset=%s new_period_id=%s by=%s",
+        tenant_id, reset_count, new_id, ctx["user"]["username"],
+    )
     return PeriodCloseResponse(new_period=StatsPeriodResponse(**dict(new_row)))
 
 
@@ -460,6 +476,9 @@ def export_transactions(
             r["cancelled"], r["cancelled_at"] or "",
         ])
 
+    logger.info(
+        "Transactions exported: rows=%s by=%s", len(rows), ctx["user"]["username"],
+    )
     output.seek(0)
     return StreamingResponse(
         iter([output.getvalue()]),

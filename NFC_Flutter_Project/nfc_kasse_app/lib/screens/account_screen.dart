@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/providers.dart';
+import '../services/app_logger.dart';
 
 /// Shows the logged-in user's avatar, display name, and username, with a
 /// logout button. Tapping the user's name in the sidebar navigates here.
@@ -50,6 +51,7 @@ class AccountScreen extends ConsumerWidget {
           width: double.infinity,
           child: OutlinedButton.icon(
             onPressed: () async {
+              AppLogger.trace('Abmelden geklickt (Konto-Screen)', logger: 'ui.account');
               await ref.read(authProvider.notifier).logout();
             },
             icon: Icon(Icons.logout, color: theme.colorScheme.error),

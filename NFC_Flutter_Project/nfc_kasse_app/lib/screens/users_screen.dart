@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/user_model.dart';
 import '../providers/providers.dart';
+import '../services/app_logger.dart';
 import '../utils/formatters.dart';
 import '../widgets/dialogs/edit_user_dialog.dart';
 
@@ -105,6 +106,10 @@ class UsersScreen extends ConsumerWidget {
 
   Future<void> _openDialog(
       BuildContext context, WidgetRef ref, UserListItem? user) async {
+    AppLogger.trace(
+      'Benutzer-Dialog geöffnet: ${user?.username ?? "Neuer Benutzer"}',
+      logger: 'ui.users',
+    );
     final result = await showDialog<bool>(
       context: context,
       builder: (_) => EditUserDialog(user: user),

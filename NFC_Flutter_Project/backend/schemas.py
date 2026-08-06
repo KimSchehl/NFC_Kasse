@@ -415,3 +415,66 @@ class PreferenceItem(BaseModel):
 class PreferenceUpsert(BaseModel):
     profile: str
     value: Any
+
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+
+class LogIngestEntry(BaseModel):
+    ts: str
+    level: str
+    logger: str = "app"
+    message: str
+    trace_id: str | None = None
+    exception: str | None = None
+
+
+class LogIngestRequest(BaseModel):
+    device_id: str
+    entries: list[LogIngestEntry]
+
+    @field_validator("entries")
+    @classmethod
+    def cap_batch_size(cls, v: list[LogIngestEntry]) -> list[LogIngestEntry]:
+        if len(v) > 200:
+            raise ValueError("Batch too large (max 200 entries per request)")
+        return v
+
+
+class LogIngestResponse(BaseModel):
+    accepted: int
+
+
+class LogEntryOut(BaseModel):
+    ts: str
+    level: str
+    logger: str
+    message: str
+    trace_id: str | None
+    origin: str
+    device_id: str | None
+    user_id: int | None
+    username: str | None
+    path: str | None
+    method: str | None
+    status_code: int | None
+    exception: str | None
+
+
+class LogQueryResponse(BaseModel):
+    items: list[LogEntryOut]
+    has_more: bool
+
+
+class DeviceInfo(BaseModel):
+    device_id: str
+    label: str | None
+    platform: str | None
+    last_seen_at: str | None
+    forced_level: str | None
+    online: bool
+
+
+class SetDeviceLevelRequest(BaseModel):
+    level: str | None  # null clears the override

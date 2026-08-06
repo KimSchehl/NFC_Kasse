@@ -5,11 +5,12 @@ from datetime import datetime, timedelta, timezone
 from typing import TypedDict
 
 import bcrypt
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 
 from database import get_db
+from logging_config import user_ctx
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -87,7 +88,23 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
         ).fetchone()
     if not user:
         raise HTTPException(status_code=401, detail="User not found or inactive")
-    return dict(user)
+    user_dict = dict(user)
+    user_ctx.set({"id": user_dict["id"], "username": user_dict["username"]})
+    return user_dict
+
+
+def get_current_user_optional(request: Request) -> dict | None:
+    """Like get_current_user, but returns None instead of raising when no/invalid
+    token is present. Used only by endpoints that must also work for
+    unauthenticated/pre-login clients (e.g. POST /api/logs/ingest — a client
+    should be able to ship a login-failure log even though it isn't logged in)."""
+    auth = request.headers.get("authorization", "")
+    if not auth.lower().startswith("bearer "):
+        return None
+    try:
+        return get_current_user(auth[7:])
+    except HTTPException:
+        return None
 
 
 def get_active_event(current_user: dict = Depends(get_current_user)) -> dict:

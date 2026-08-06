@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/chip_models.dart';
 import '../models/stats_models.dart';
 import '../providers/providers.dart';
+import '../services/app_logger.dart';
 import '../utils/formatters.dart';
 
 // ---------------------------------------------------------------------------
@@ -79,10 +80,17 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
     return sorted.join(',');
   }
 
+  static const _tabNames = ['Übersicht', 'Transaktionen', 'Chips'];
+
   @override
   void initState() {
     super.initState();
     _tab = TabController(length: 3, vsync: this);
+    _tab.addListener(() {
+      if (_tab.indexIsChanging) {
+        AppLogger.trace('Statistik-Tab gewechselt: ${_tabNames[_tab.index]}', logger: 'ui.stats');
+      }
+    });
     _loadPeriods(autoSelect: true);
   }
 
@@ -124,6 +132,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
   }
 
   Future<void> _executePeriodClose(String label) async {
+    AppLogger.trace('Tagesabschluss bestätigt: label=$label', logger: 'ui.stats');
     try {
       final newPeriod = await ref.read(statsServiceProvider).closePeriod(label);
       await _loadPeriods();
@@ -142,6 +151,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
   }
 
   Future<void> _showCloseDialog() async {
+    AppLogger.trace('Tagesabschluss-Dialog geöffnet', logger: 'ui.stats');
     final defaultLabel = _defaultLabel();
     final labelCtrl = TextEditingController(text: defaultLabel);
 
@@ -185,6 +195,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
   }
 
   Future<void> _showEventResetDialog() async {
+    AppLogger.trace('Event-Reset-Dialog geöffnet', logger: 'ui.stats');
     final theme = Theme.of(context);
     final defaultLabel = 'Neues Event ${_defaultLabel()}';
     final labelCtrl = TextEditingController(text: defaultLabel);
@@ -254,6 +265,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
 
     if (confirmed != true || !mounted) return;
     final label = labelCtrl.text.trim().isEmpty ? defaultLabel : labelCtrl.text.trim();
+    AppLogger.trace('Event-Reset bestätigt: label=$label', logger: 'ui.stats');
 
     try {
       final newPeriod = await ref.read(statsServiceProvider).eventReset(label);
@@ -290,6 +302,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
   }
 
   Future<void> _openPeriodSelector() async {
+    AppLogger.trace('Perioden-Auswahl geöffnet', logger: 'ui.stats');
     final result = await showDialog<Set<int>>(
       context: context,
       builder: (ctx) => _PeriodSelectorDialog(
@@ -299,6 +312,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
       ),
     );
     if (result == null || !mounted) return;
+    AppLogger.trace('Zeitraum übernommen: period_ids=$result', logger: 'ui.stats');
     setState(() => _selectedPeriodIds = result);
     ref.invalidate(_statsProvider(_periodKey));
     ref.invalidate(_txProvider);
