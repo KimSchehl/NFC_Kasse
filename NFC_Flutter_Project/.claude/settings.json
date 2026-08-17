@@ -57,7 +57,21 @@
       "Bash(python -m py_compile logging_config.py)",
       "Bash(find / -path \"*/web_socket_channel-*/lib/src/channel.dart\" 2>/dev/null | head -3)",
       "Read(//c//**)",
-      "Read(//c/Users/KimSc/AppData/Local/Pub/Cache/hosted/pub.dev/web_socket_channel-3.0.3/lib/src/**)"
+      "Read(//c/Users/KimSc/AppData/Local/Pub/Cache/hosted/pub.dev/web_socket_channel-3.0.3/lib/src/**)",
+      "Bash(python -m uvicorn main:app --host 127.0.0.1 --port 8199 --reload --reload-exclude \"logs/*\")",
+      "Bash(kill %1)",
+      "Bash(wait)",
+      "Bash(python -m uvicorn --version)",
+      "Bash(python -c \"import uvicorn; print\\(uvicorn.__file__\\)\")",
+      "Read(//c/Users/KimSc/AppData/Local/Python/pythoncore-3.14-64/Lib/site-packages/uvicorn/**)",
+      "Bash(cat)",
+      "Bash(cp /tmp/argv_test.py .)",
+      "Read(//c/Users/KimSc/AppData/Local/Python/pythoncore-3.14-64/Lib/site-packages/click/**)",
+      "Bash(cmd //c \"python -m uvicorn main:app --host 127.0.0.1 --port 8199 --reload --reload-exclude \\\\\"logs/*\\\\\"\")",
+      "Bash(tasklist //fi \"imagename eq python.exe\")",
+      "Bash(taskkill //F //IM python.exe //FI \"WINDOWTITLE eq *\")",
+      "Bash(cmd //c \"C:\\\\Users\\\\KimSc\\\\Desktop\\\\NFC_Kasse\\\\NFC_Flutter_Project\\\\backend\\\\_repro_test.bat\")",
+      "Bash(rm -f \"c:/Users/KimSc/Desktop/NFC_Kasse/NFC_Flutter_Project/backend/argv_test.py\" \"c:/Users/KimSc/Desktop/NFC_Kasse/NFC_Flutter_Project/backend/_repro_test.bat\" *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\KimSc\\Desktop\\NFC_Kasse\\nfc-ble-reader",

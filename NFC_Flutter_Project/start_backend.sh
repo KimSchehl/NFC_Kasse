@@ -76,4 +76,4 @@ echo ""
 # ---- Start server -------------------------------------------
 cd backend
 export SECRET_KEY
-python3 -m uvicorn main:app --host "$HOST" --port "$PORT" --reload --reload-exclude "logs/*"
+python3 -m uvicorn main:app --host "$HOST" --port "$PORT" --reload
