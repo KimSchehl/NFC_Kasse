@@ -142,7 +142,7 @@ class BookingRequest(BaseModel):
     @classmethod
     def must_not_be_empty(cls, v: list[int]) -> list[int]:
         if not v:
-            raise ValueError("product_ids must not be empty")
+            raise ValueError("Artikel-Liste darf nicht leer sein")
         return v
 
 
@@ -179,7 +179,7 @@ class TopupRequest(BaseModel):
     @classmethod
     def amount_must_be_positive(cls, v: float) -> float:
         if v <= 0:
-            raise ValueError("Amount must be > 0")
+            raise ValueError("Betrag muss größer als 0 sein")
         return v
 
 
@@ -214,7 +214,7 @@ class UserCreate(BaseModel):
     @classmethod
     def password_min_length(cls, v: str) -> str:
         if len(v) < 6:
-            raise ValueError("Password must be at least 6 characters")
+            raise ValueError("Passwort muss mindestens 6 Zeichen lang sein")
         return v
 
 
@@ -227,7 +227,7 @@ class UserUpdate(BaseModel):
     @classmethod
     def password_min_length(cls, v: str | None) -> str | None:
         if v is not None and len(v) < 6:
-            raise ValueError("Password must be at least 6 characters")
+            raise ValueError("Passwort muss mindestens 6 Zeichen lang sein")
         return v
 
 
@@ -363,7 +363,7 @@ class PrintBonRequest(BaseModel):
     @classmethod
     def must_not_be_empty(cls, v: list) -> list:
         if not v:
-            raise ValueError("items must not be empty")
+            raise ValueError("Artikel-Liste darf nicht leer sein")
         return v
 
 

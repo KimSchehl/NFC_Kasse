@@ -55,7 +55,7 @@ def login(body: LoginRequest):
 
     if not user or not verify_password(body.password, user["password_hash"]):
         logger.warning("Login failed: username=%s", body.username)
-        raise HTTPException(status_code=401, detail="Invalid username or password")
+        raise HTTPException(status_code=401, detail="Benutzername oder Passwort ungültig")
 
     logger.info("Login success: username=%s user_id=%s", body.username, user["id"])
     access_token, refresh_token = _build_token_response(user["id"])
@@ -76,7 +76,7 @@ def login_form(form_data: OAuth2PasswordRequestForm = Depends()):
         ).fetchone()
 
     if not user or not verify_password(form_data.password, user["password_hash"]):
-        raise HTTPException(status_code=401, detail="Invalid username or password")
+        raise HTTPException(status_code=401, detail="Benutzername oder Passwort ungültig")
 
     access_token, refresh_token = _build_token_response(user["id"])
     return TokenResponse(
@@ -103,7 +103,7 @@ def refresh(body: RefreshRequest):
 
         if not row:
             logger.warning("Refresh failed: token not found (possibly forged/garbage)")
-            raise HTTPException(status_code=401, detail="Refresh token not found")
+            raise HTTPException(status_code=401, detail="Refresh-Token nicht gefunden")
         if row["revoked"]:
             # A revoked token being reused is exactly the signal token rotation
             # exists to surface — could mean a stolen token is in play.
@@ -111,13 +111,13 @@ def refresh(body: RefreshRequest):
                 "Refresh token reuse detected: already-revoked token for user_id=%s",
                 row["user_id"],
             )
-            raise HTTPException(status_code=401, detail="Refresh token has been revoked")
+            raise HTTPException(status_code=401, detail="Refresh-Token wurde widerrufen")
         if not row["user_active"]:
-            raise HTTPException(status_code=401, detail="User is inactive")
+            raise HTTPException(status_code=401, detail="Benutzer ist inaktiv")
 
         expires_at = datetime.fromisoformat(row["expires_at"])
         if datetime.now(timezone.utc) > expires_at.replace(tzinfo=timezone.utc):
-            raise HTTPException(status_code=401, detail="Refresh token expired")
+            raise HTTPException(status_code=401, detail="Refresh-Token abgelaufen")
 
         # Token rotation: revoke the consumed token before issuing a new one.
         # This limits a stolen refresh token to a single extra use — the

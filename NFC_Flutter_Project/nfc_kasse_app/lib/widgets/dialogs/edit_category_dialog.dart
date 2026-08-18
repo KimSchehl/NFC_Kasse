@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/category_model.dart';
 import '../../providers/providers.dart';
 import '../../services/app_logger.dart';
+import '../../utils/formatters.dart';
 
 /// Dialog for renaming a category or (when [canDelete] is true) deleting it.
 ///
@@ -66,7 +67,7 @@ class _EditCategoryDialogState extends ConsumerState<EditCategoryDialog> {
     } catch (e) {
       setState(() {
         _loading = false;
-        _error = e.toString();
+        _error = formatApiError(e);
       });
     }
   }
@@ -104,7 +105,7 @@ class _EditCategoryDialogState extends ConsumerState<EditCategoryDialog> {
     } catch (e) {
       setState(() {
         _loading = false;
-        _error = e.toString();
+        _error = formatApiError(e);
       });
     }
   }

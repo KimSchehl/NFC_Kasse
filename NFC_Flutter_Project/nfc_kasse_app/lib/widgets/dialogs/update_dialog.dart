@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../services/update_service.dart';
+import '../../utils/formatters.dart';
 
 class UpdateDialog extends StatefulWidget {
   final UpdateInfo info;
@@ -45,7 +46,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
                 'Android-Einstellungen öffnen:\n'
                 'Apps → NFC Kasse → Unbekannte Apps installieren → Erlauben\n\n'
                 'Danach hier erneut tippen.'
-              : 'Fehler: $e';
+              : 'Fehler: ${formatApiError(e)}';
         });
       }
     }

@@ -128,7 +128,7 @@ class _CartPanelState extends ConsumerState<CartPanel> {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(e.toString()),
+          content: Text(formatApiError(e)),
           backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
@@ -187,7 +187,7 @@ class _CartPanelState extends ConsumerState<CartPanel> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(e.toString()),
+          content: Text(formatApiError(e)),
           backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );

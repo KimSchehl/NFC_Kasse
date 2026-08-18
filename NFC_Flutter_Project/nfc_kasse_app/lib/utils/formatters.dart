@@ -127,10 +127,24 @@ String formatApiError(dynamic e) {
       case DioExceptionType.badResponse:
         final detail = e.response?.data?['detail'];
         if (detail is String && detail.isNotEmpty) return detail;
+        // FastAPI/Pydantic validation errors (422) shape `detail` as a list
+        // of {msg, loc, ...} objects rather than a plain string.
+        if (detail is List && detail.isNotEmpty) {
+          final messages = detail
+              .map((d) => d is Map ? d['msg']?.toString() : d.toString())
+              .whereType<String>()
+              // @field_validator ValueErrors get a "Value error, " prefix from Pydantic.
+              .map((m) => m.replaceFirst('Value error, ', ''))
+              .toList();
+          if (messages.isNotEmpty) return messages.join('\n');
+        }
         return 'Serverfehler (${e.response?.statusCode})';
       default:
         return 'Verbindungsfehler';
     }
   }
-  return e.toString();
+  // Plain `Exception('message')` objects stringify as "Exception: message" —
+  // strip that prefix so callers throwing a bare Exception with an
+  // already-user-facing message (e.g. UpdateService) don't leak it verbatim.
+  return e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
 }

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/product_model.dart';
 import '../../providers/providers.dart';
 import '../../services/app_logger.dart';
+import '../../utils/formatters.dart';
 import '../product_color_picker.dart';
 
 /// Dialog for creating a new product or editing an existing one.
@@ -149,7 +150,7 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
     } catch (e) {
       setState(() {
         _loading = false;
-        _error = e.toString();
+        _error = formatApiError(e);
       });
     }
   }
@@ -183,7 +184,7 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
     } catch (e) {
       setState(() {
         _loading = false;
-        _error = e.toString();
+        _error = formatApiError(e);
       });
     }
   }

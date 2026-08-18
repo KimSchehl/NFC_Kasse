@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/category_model.dart';
 import '../providers/providers.dart';
 import '../services/app_logger.dart';
+import '../utils/formatters.dart';
 import 'dialogs/edit_category_dialog.dart';
 
 /// Navigation sidebar shown on the left of the screen (tablet) or inside a
@@ -276,7 +277,7 @@ class AppSidebar extends ConsumerWidget {
           context: context,
           builder: (_) => AlertDialog(
             title: const Text('Fehler'),
-            content: Text(e.toString()),
+            content: Text(formatApiError(e)),
             actions: [
               FilledButton(
                 onPressed: () => Navigator.pop(context),

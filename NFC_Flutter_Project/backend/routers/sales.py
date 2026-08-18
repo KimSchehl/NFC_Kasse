@@ -153,19 +153,19 @@ def create_booking(
         ).fetchall()
 
         if len(products) != len(unique_ids):
-            raise HTTPException(status_code=404, detail="One or more products not found")
+            raise HTTPException(status_code=404, detail="Ein oder mehrere Artikel nicht gefunden")
 
         for p in products:
             if p["event_id"] != event_id:
-                raise HTTPException(status_code=400, detail="Product does not belong to this event")
+                raise HTTPException(status_code=400, detail="Artikel gehört nicht zu diesem Event")
             if not p["active"]:
-                raise HTTPException(status_code=400, detail=f"Product {p['id']} is not available")
+                raise HTTPException(status_code=400, detail=f"Artikel {p['id']} ist nicht verfügbar")
 
         is_payout_booking = any(p["is_payout"] for p in products)
         if is_payout_booking and len(body.product_ids) > 1:
             raise HTTPException(
                 status_code=400,
-                detail="A payout booking must contain exactly one product",
+                detail="Eine Auszahlungsbuchung darf nur genau einen Artikel enthalten",
             )
 
         # Per-category booking permission check.
@@ -188,7 +188,7 @@ def create_booking(
                 )
                 raise HTTPException(
                     status_code=403,
-                    detail="No booking permission for one or more product categories",
+                    detail="Keine Buchungsberechtigung für eine oder mehrere Warengruppen",
                 )
 
         balance_row = db.execute(
@@ -309,9 +309,9 @@ def cancel_booking(
             (sale_id, event_id),
         ).fetchone()
         if not sale:
-            raise HTTPException(status_code=404, detail="Sale not found")
+            raise HTTPException(status_code=404, detail="Buchung nicht gefunden")
         if sale["cancelled"]:
-            raise HTTPException(status_code=400, detail="Sale is already cancelled")
+            raise HTTPException(status_code=400, detail="Buchung wurde bereits storniert")
 
         manager = _is_manager(db, user_id, event_id)
 
@@ -337,7 +337,7 @@ def cancel_booking(
                     "Cancel denied: user_id=%s no storno permission for category_id=%s sale_id=%s",
                     user_id, sale["category_id"], sale_id,
                 )
-                raise HTTPException(status_code=403, detail="No cancel permission for this category")
+                raise HTTPException(status_code=403, detail="Keine Stornoberechtigung für diese Kategorie")
 
             if not has_unlimited:
                 booked_at = datetime.fromisoformat(sale["booked_at"])
@@ -352,7 +352,7 @@ def cancel_booking(
                     )
                     raise HTTPException(
                         status_code=403,
-                        detail=f"Cancel window of {CANCEL_WINDOW_MINUTES} minutes has expired",
+                        detail=f"Storno-Zeitfenster von {CANCEL_WINDOW_MINUTES} Minuten abgelaufen",
                     )
 
         refunded = sale["price_at_sale"]

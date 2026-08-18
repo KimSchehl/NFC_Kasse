@@ -144,7 +144,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Fehler: $e'),
+        content: Text('Fehler: ${formatApiError(e)}'),
         backgroundColor: Theme.of(context).colorScheme.error,
       ));
     }
@@ -281,7 +281,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Fehler: $e'),
+        content: Text('Fehler: ${formatApiError(e)}'),
         backgroundColor: Theme.of(context).colorScheme.error,
       ));
     }

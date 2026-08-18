@@ -18,6 +18,19 @@ from schemas import (
 router = APIRouter(prefix="/api/products", tags=["products"])
 logger = logging.getLogger(__name__)
 
+# Mirrors the German labels the Flutter edit_user_dialog checkbox tree uses
+# for these same columns, so a 403 names the actual missing right instead of
+# a raw DB column name like "can_create_article".
+_FLAG_LABELS = {
+    "can_book": "Buchen",
+    "can_storno_5min": "Storno (5 Min.)",
+    "can_storno_unlimited": "Storno (unbegrenzt)",
+    "can_create_article": "Erstellen",
+    "can_edit_article": "Bearbeiten",
+    "can_deactivate_article": "Deaktivieren",
+    "can_delete_article": "Löschen",
+}
+
 # Manager permissions — any of these grants full access to all categories.
 _MANAGER_PERMS = ('categories.create', 'categories.edit', 'categories.deactivate', 'categories.delete')
 
@@ -62,7 +75,7 @@ def _require_category_flag(db, user_id: int, event_id: int, category_id: int, fl
         )
         raise HTTPException(
             status_code=403,
-            detail=f"No '{flag}' permission for category {category_id}",
+            detail=f"Keine Berechtigung '{_FLAG_LABELS.get(flag, flag)}' für diese Kategorie",
         )
 
 
@@ -176,7 +189,7 @@ def update_category(
             (category_id, event_id),
         ).fetchone()
         if not row:
-            raise HTTPException(status_code=404, detail="Category not found")
+            raise HTTPException(status_code=404, detail="Kategorie nicht gefunden")
 
         new_name = body.name if body.name is not None else row["name"]
         new_sort = body.sort_order if body.sort_order is not None else row["sort_order"]
@@ -209,7 +222,7 @@ def delete_category(
             (category_id, event_id),
         ).fetchone()
         if not row:
-            raise HTTPException(status_code=404, detail="Category not found")
+            raise HTTPException(status_code=404, detail="Kategorie nicht gefunden")
         db.execute("UPDATE category SET deleted=1 WHERE id=?", (category_id,))
 
     logger.warning(
@@ -236,14 +249,14 @@ def list_products(
             (category_id, event_id),
         ).fetchone()
         if not cat:
-            raise HTTPException(status_code=404, detail="Category not found")
+            raise HTTPException(status_code=404, detail="Kategorie nicht gefunden")
 
         is_manager = _user_can_manage_categories(db, user_id, event_id)
 
         if not is_manager:
             access = _get_category_access(db, user_id, event_id, category_id)
             if not access:
-                raise HTTPException(status_code=403, detail="No access to this category")
+                raise HTTPException(status_code=403, detail="Kein Zugriff auf diese Kategorie")
 
         # Users with can_deactivate_article see inactive products so they can re-enable them
         show_inactive = is_manager or bool((access or {}).get("can_deactivate_article", False))
@@ -279,7 +292,7 @@ def create_product(
             (body.category_id, event_id),
         ).fetchone()
         if not cat:
-            raise HTTPException(status_code=404, detail="Category not found")
+            raise HTTPException(status_code=404, detail="Kategorie nicht gefunden")
 
         _require_category_flag(db, user_id, event_id, body.category_id, "can_create_article")
 
@@ -327,7 +340,7 @@ def update_product(
             (product_id, event_id),
         ).fetchone()
         if not row:
-            raise HTTPException(status_code=404, detail="Product not found")
+            raise HTTPException(status_code=404, detail="Artikel nicht gefunden")
 
         _require_category_flag(db, user_id, event_id, row["category_id"], "can_edit_article")
 
@@ -376,7 +389,7 @@ def set_product_active(
             (product_id, event_id),
         ).fetchone()
         if not row:
-            raise HTTPException(status_code=404, detail="Product not found")
+            raise HTTPException(status_code=404, detail="Artikel nicht gefunden")
 
         _require_category_flag(db, user_id, event_id, row["category_id"], "can_deactivate_article")
 
@@ -414,7 +427,7 @@ def delete_product(
             (product_id, event_id),
         ).fetchone()
         if not row:
-            raise HTTPException(status_code=404, detail="Product not found")
+            raise HTTPException(status_code=404, detail="Artikel nicht gefunden")
 
         _require_category_flag(db, user_id, event_id, row["category_id"], "can_delete_article")
 

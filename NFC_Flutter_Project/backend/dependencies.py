@@ -56,9 +56,9 @@ def _decode_access_token(token: str) -> dict:
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+        raise HTTPException(status_code=401, detail="Ungültiges oder abgelaufenes Token")
     if payload.get("type") != "access":
-        raise HTTPException(status_code=401, detail="Invalid token type")
+        raise HTTPException(status_code=401, detail="Ungültiger Token-Typ")
     return payload
 
 
@@ -87,7 +87,7 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
             "SELECT * FROM user WHERE id=? AND active=1", (user_id,)
         ).fetchone()
     if not user:
-        raise HTTPException(status_code=401, detail="User not found or inactive")
+        raise HTTPException(status_code=401, detail="Benutzer nicht gefunden oder inaktiv")
     user_dict = dict(user)
     user_ctx.set({"id": user_dict["id"], "username": user_dict["username"]})
     return user_dict
@@ -115,7 +115,7 @@ def get_active_event(current_user: dict = Depends(get_current_user)) -> dict:
             (current_user["tenant_id"],)
         ).fetchone()
     if not event:
-        raise HTTPException(status_code=400, detail="No active event found for this tenant")
+        raise HTTPException(status_code=400, detail="Kein aktives Event für diesen Mandanten gefunden")
     return dict(event)
 
 
@@ -147,11 +147,20 @@ def require_permission(permission_id: str):
                 """,
                 (current_user["id"], active_event["id"], permission_id),
             ).fetchone()
-        if not row:
+            if row:
+                return RequestContext(user=current_user, event=active_event)
+
+            # permission_node.label is the same German display label the
+            # permission-tree endpoint already exposes to the UI — reuse it
+            # here so a 403 shows a real name instead of a raw ID like
+            # "guthaben.topup".
+            label_row = db.execute(
+                "SELECT label FROM permission_node WHERE id=?", (permission_id,)
+            ).fetchone()
+            label = label_row["label"] if label_row else permission_id
             raise HTTPException(
                 status_code=403,
-                detail=f"Permission '{permission_id}' required",
+                detail=f"Berechtigung '{label}' erforderlich",
             )
-        return RequestContext(user=current_user, event=active_event)
 
     return checker

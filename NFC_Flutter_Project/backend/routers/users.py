@@ -47,7 +47,7 @@ def create_user(
             (tenant_id, body.username),
         ).fetchone()
         if existing:
-            raise HTTPException(status_code=409, detail="Username already exists")
+            raise HTTPException(status_code=409, detail="Benutzername bereits vergeben")
 
         cursor = db.execute(
             "INSERT INTO user (tenant_id, username, password_hash, display_name) VALUES (?, ?, ?, ?)",
@@ -80,7 +80,7 @@ def update_user(
             (user_id, tenant_id),
         ).fetchone()
         if not row:
-            raise HTTPException(status_code=404, detail="User not found")
+            raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
         # Check for duplicate username if changing it
         if body.username and body.username != row["username"]:
@@ -89,7 +89,7 @@ def update_user(
                 (tenant_id, body.username, user_id),
             ).fetchone()
             if dup:
-                raise HTTPException(status_code=409, detail="Username already taken")
+                raise HTTPException(status_code=409, detail="Benutzername bereits vergeben")
 
         new_username = body.username or row["username"]
         new_display = body.display_name if body.display_name is not None else row["display_name"]
@@ -121,7 +121,7 @@ def deactivate_user(
     current_user_id = ctx["user"]["id"]
 
     if user_id == current_user_id:
-        raise HTTPException(status_code=400, detail="Cannot deactivate your own account")
+        raise HTTPException(status_code=400, detail="Eigenes Konto kann nicht deaktiviert werden")
 
     with get_db() as db:
         row = db.execute(
@@ -129,7 +129,7 @@ def deactivate_user(
             (user_id, tenant_id),
         ).fetchone()
         if not row:
-            raise HTTPException(status_code=404, detail="User not found")
+            raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
         db.execute("UPDATE user SET active=0 WHERE id=?", (user_id,))
 
     logger.warning(
@@ -155,7 +155,7 @@ def get_user_permissions(
             (user_id, tenant_id),
         ).fetchone()
         if not user_row:
-            raise HTTPException(status_code=404, detail="User not found")
+            raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
         perm_rows = db.execute(
             "SELECT permission_id FROM user_permission WHERE user_id=? AND event_id=?",
@@ -211,7 +211,7 @@ def set_user_permissions(
             (user_id, tenant_id),
         ).fetchone()
         if not user_row:
-            raise HTTPException(status_code=404, detail="User not found")
+            raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
         # Validate all permission IDs exist
         for perm_id in body.permission_ids:
@@ -220,7 +220,7 @@ def set_user_permissions(
                 (perm_id,),
             ).fetchone()
             if not valid:
-                raise HTTPException(status_code=400, detail=f"Invalid permission: '{perm_id}'")
+                raise HTTPException(status_code=400, detail=f"Ungültige Berechtigung: '{perm_id}'")
 
         # Full replace pattern: delete all existing rows then insert the new set
         # in one transaction. Simpler than a diff-merge and less error-prone —
@@ -260,7 +260,7 @@ def set_user_category_access(
             (user_id, tenant_id),
         ).fetchone()
         if not user_row:
-            raise HTTPException(status_code=404, detail="User not found")
+            raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
         for item in body.categories:
             valid = db.execute(
@@ -270,7 +270,7 @@ def set_user_category_access(
             if not valid:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Category {item.category_id} not found for this event",
+                    detail=f"Kategorie {item.category_id} nicht in diesem Event gefunden",
                 )
 
         # Full replace — same pattern as set_user_permissions above.
@@ -380,14 +380,14 @@ def apply_role_template(
             (user_id, tenant_id),
         ).fetchone()
         if not user_row:
-            raise HTTPException(status_code=404, detail="User not found")
+            raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
         template = db.execute(
             "SELECT id FROM role_template WHERE id=? AND tenant_id=?",
             (template_id, tenant_id),
         ).fetchone()
         if not template:
-            raise HTTPException(status_code=404, detail="Role template not found")
+            raise HTTPException(status_code=404, detail="Rollenvorlage nicht gefunden")
 
         perm_rows = db.execute(
             "SELECT permission_id FROM role_template_permission WHERE role_template_id=?",

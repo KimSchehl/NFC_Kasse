@@ -5,6 +5,7 @@ import '../../models/category_model.dart';
 import '../../models/user_model.dart';
 import '../../providers/providers.dart';
 import '../../services/app_logger.dart';
+import '../../utils/formatters.dart';
 
 enum _CatFlag {
   book, storno5min, stornoUnlimited,
@@ -110,6 +111,10 @@ class _EditUserDialogState extends ConsumerState<EditUserDialog> {
       setState(() => _error = 'Passwort ist erforderlich');
       return;
     }
+    if (password.isNotEmpty && password.length < 6) {
+      setState(() => _error = 'Passwort muss mindestens 6 Zeichen lang sein');
+      return;
+    }
 
     setState(() {
       _loading = true;
@@ -143,7 +148,7 @@ class _EditUserDialogState extends ConsumerState<EditUserDialog> {
     } catch (e) {
       setState(() {
         _loading = false;
-        _error = e.toString();
+        _error = formatApiError(e);
       });
     }
   }
@@ -193,6 +198,7 @@ class _EditUserDialogState extends ConsumerState<EditUserDialog> {
                 controller: _password,
                 decoration: InputDecoration(
                   labelText: isNew ? 'Passwort' : 'Neues Passwort (leer = unverändert)',
+                  helperText: 'Mindestens 6 Zeichen',
                 ),
                 obscureText: true,
               ),

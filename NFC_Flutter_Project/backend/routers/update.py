@@ -50,7 +50,7 @@ def get_latest():
     """Return the latest available APK version and its download path."""
     apk = _latest_apk()
     if apk is None:
-        raise HTTPException(status_code=404, detail="No update available")
+        raise HTTPException(status_code=404, detail="Kein Update verfügbar")
     return {
         "version": _semver_of(apk),
         "filename": apk.name,
@@ -62,10 +62,10 @@ def get_latest():
 def download_apk(filename: str):
     """Serve the requested APK file."""
     if not _SAFE_FILENAME.match(filename):
-        raise HTTPException(status_code=400, detail="Invalid filename")
+        raise HTTPException(status_code=400, detail="Ungültiger Dateiname")
     path = UPDATES_DIR / filename
     if not path.exists():
-        raise HTTPException(status_code=404, detail="File not found")
+        raise HTTPException(status_code=404, detail="Datei nicht gefunden")
     return FileResponse(
         path=path,
         media_type="application/vnd.android.package-archive",

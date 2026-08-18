@@ -44,7 +44,7 @@ def set_chip_name(
             (tenant_id, nfc_uid),
         ).fetchone()
         if not customer:
-            raise HTTPException(status_code=404, detail="Chip not found")
+            raise HTTPException(status_code=404, detail="Chip nicht gefunden")
         db.execute(
             "UPDATE customer SET customer_name=? WHERE id=?",
             (name, customer["id"]),

@@ -63,7 +63,7 @@ class _CancelBookingDialogState extends ConsumerState<CancelBookingDialog> {
     } catch (e) {
       setState(() {
         _loading = false;
-        _error = 'Fehler: ${e.toString()}';
+        _error = 'Fehler: ${formatApiError(e)}';
       });
     }
   }

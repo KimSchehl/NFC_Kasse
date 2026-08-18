@@ -62,7 +62,7 @@ def topup(
             "Topup failed: database busy (nfc_uid=%s amount=%.2f user_id=%s)",
             body.nfc_uid, body.amount, user_id,
         )
-        raise HTTPException(status_code=503, detail="Database busy, please retry")
+        raise HTTPException(status_code=503, detail="Datenbank ausgelastet, bitte erneut versuchen")
 
     logger.info(
         "Topup: nfc_uid=%s amount=%.2f new_balance=%.2f by=%s",
@@ -92,7 +92,7 @@ def payout(
             ).fetchone()
             if not customer:
                 logger.warning("Payout denied: nfc_uid=%s not found", nfc_uid)
-                raise HTTPException(status_code=404, detail="Customer not found")
+                raise HTTPException(status_code=404, detail="Kunde nicht gefunden")
 
             current_balance = customer["balance"]
             if current_balance <= 0:
@@ -100,7 +100,7 @@ def payout(
                     "Payout denied: nfc_uid=%s customer_id=%s has no balance",
                     nfc_uid, customer["id"],
                 )
-                raise HTTPException(status_code=400, detail="No balance to pay out")
+                raise HTTPException(status_code=400, detail="Kein Guthaben zum Auszahlen vorhanden")
 
             # Record the payout as a negative amount topup row so the audit trail
             # shows who paid out how much and when, without a separate table.
@@ -119,7 +119,7 @@ def payout(
         logger.error(
             "Payout failed: database busy (nfc_uid=%s user_id=%s)", nfc_uid, user_id,
         )
-        raise HTTPException(status_code=503, detail="Database busy, please retry")
+        raise HTTPException(status_code=503, detail="Datenbank ausgelastet, bitte erneut versuchen")
 
     logger.info(
         "Payout: nfc_uid=%s amount=%.2f by=%s",
