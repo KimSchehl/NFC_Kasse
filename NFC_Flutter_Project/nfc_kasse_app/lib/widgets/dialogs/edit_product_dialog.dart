@@ -38,6 +38,7 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
   late final TextEditingController _name;
   late final TextEditingController _price;
   late final TextEditingController _points;
+  late final TextEditingController _stock;
   bool _active = true;
   bool _isTopup = false;
   bool _isPayout = false;
@@ -61,6 +62,7 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
       text: p != null ? (_isTopup ? p.price.abs() : p.price).toStringAsFixed(2) : '',
     );
     _points = TextEditingController(text: (p?.points ?? 0).toString());
+    _stock = TextEditingController(text: p?.stock?.toString() ?? '');
     _active = p?.active ?? true;
     _isPayout = p?.isPayout ?? false;
     _excludeFromStats = p?.excludeFromStats ?? false;
@@ -71,6 +73,7 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
     _name.dispose();
     _price.dispose();
     _points.dispose();
+    _stock.dispose();
     super.dispose();
   }
 
@@ -112,6 +115,22 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
     final savedExcludeFromStats = _isTopup ? true : _excludeFromStats;
     final savedIsPayout = _isTopup ? false : _isPayout;
 
+    // Aufladen/Auszahlungs-Artikel represent no physical inventory — the
+    // stock field is hidden for them (see build()), so force it to
+    // "untracked" here too rather than trusting whatever the (hidden) text
+    // field still holds from before the checkbox was toggled.
+    int? stockVal;
+    if (!_isTopup && !savedIsPayout) {
+      final stockText = _stock.text.trim();
+      if (stockText.isNotEmpty) {
+        stockVal = int.tryParse(stockText);
+        if (stockVal == null || stockVal < 0) {
+          setState(() => _error = 'Ungültiger Bestand (leer lassen für unbegrenzt, oder eine positive Zahl)');
+          return;
+        }
+      }
+    }
+
     setState(() {
       _loading = true;
       _error = null;
@@ -127,6 +146,7 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
           isPayout: savedIsPayout,
           excludeFromStats: savedExcludeFromStats,
           points: pointsVal,
+          stock: stockVal,
         );
       } else {
         await svc.updateProduct(
@@ -136,6 +156,7 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
           isPayout: savedIsPayout,
           excludeFromStats: savedExcludeFromStats,
           points: pointsVal,
+          stock: stockVal,
         );
         if (widget.product!.active != _active && widget.canDeactivate) {
           await svc.setActive(widget.product!.id, _active);
@@ -285,6 +306,18 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
                   contentPadding: EdgeInsets.zero,
                   controlAffinity: ListTileControlAffinity.leading,
                 ),
+                if (!_isPayout) ...[
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _stock,
+                    enabled: widget.canEditDetails,
+                    decoration: const InputDecoration(
+                      labelText: 'Bestand (leer = unbegrenzt)',
+                      helperText: 'Wird bei jeder Buchung automatisch reduziert',
+                    ),
+                    keyboardType: TextInputType.number,
+                  ),
+                ],
               ],
               ], // end canEditDetails
               if (!isNew) ...[

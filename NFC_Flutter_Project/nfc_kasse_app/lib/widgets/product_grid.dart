@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -122,10 +124,30 @@ class _GridState extends ConsumerState<_Grid> {
       'Artikel-Dialog geöffnet: ${product?.name ?? "Neuer Artikel"}',
       logger: 'ui.pos',
     );
+
+    // Editing an existing product: pull in any stock/price changes from
+    // sales made since the last sync poll first, so the dialog never shows
+    // a stale (e.g. pre-sale) stock count instead of the current remainder.
+    ProductModel? dialogProduct = product;
+    if (product != null) {
+      await ref.read(productSyncProvider.notifier).checkForChanges();
+      if (!mounted) return;
+      final fresh = ref.read(productsProvider(widget.category.id)).valueOrNull;
+      if (fresh != null) {
+        for (final p in fresh) {
+          if (p.id == product.id) {
+            dialogProduct = p;
+            break;
+          }
+        }
+      }
+    }
+
+    if (!context.mounted) return;
     await showDialog(
       context: context,
       builder: (_) => EditProductDialog(
-        product: product,
+        product: dialogProduct,
         categoryId: widget.category.id,
         canEditDetails: product == null ? true : widget.category.canEditArticle,
         canDelete: widget.category.canDeleteArticle,
@@ -206,7 +228,7 @@ class _GridState extends ConsumerState<_Grid> {
               maxLines: buttonMaxLines,
               color: widget.prefs.getProductColor(product.id),
               onTap: () {
-                if (!product.active) return;
+                if (!product.active || product.isOutOfStock) return;
                 AppLogger.trace('Artikel zu Warenkorb: ${product.name}', logger: 'ui.pos');
                 ref.read(cartProvider.notifier).addProduct(product);
               },
@@ -244,6 +266,77 @@ class _GridState extends ConsumerState<_Grid> {
 }
 
 // ---------------------------------------------------------------------------
+// Sold-out hazard-stripe frame — shared between _ProductTile and
+// _DraggableTile._editCard, both of which otherwise render independently.
+// ---------------------------------------------------------------------------
+
+/// Wraps [child] with a diagonal red/white hazard-stripe border frame
+/// (like warning tape) around its edge, leaving [child] itself untouched
+/// and fully visible in the center. Used to flag sold-out articles more
+/// prominently than the plain greyed-out/"Ausverkauft" label alone.
+///
+/// Implemented as a full-size striped layer *behind* an inset copy of
+/// [child] (rather than clipping a single striped painter down to a
+/// border-shaped region via `Path.combine`) because Flutter Web's canvas
+/// backend does not reliably support `Path.combine`/`clipPath` there — it
+/// silently painted the stripes across the whole tile instead of just the
+/// border on web, while rendering correctly on Android. Plain layering only
+/// needs a single rounded-rect clip, which is supported everywhere.
+class _SoldOutFrame extends StatelessWidget {
+  final Widget child;
+
+  const _SoldOutFrame({required this.child});
+
+  static const _frameThickness = 8.0;
+  static const _borderRadius = 12.0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(_borderRadius),
+            child: const CustomPaint(painter: _HazardStripePainter()),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.all(_frameThickness),
+          child: child,
+        ),
+      ],
+    );
+  }
+}
+
+class _HazardStripePainter extends CustomPainter {
+  static const _stripeWidth = 7.0;
+
+  const _HazardStripePainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawRect(Offset.zero & size, Paint()..color = Colors.white);
+
+    // Rotate the canvas 45° around the tile's center, then paint plain
+    // vertical bars spanning well beyond the (now-diagonal) visible bounds
+    // — simpler and more robust than computing rotated stripe geometry by hand.
+    canvas.save();
+    canvas.translate(size.width / 2, size.height / 2);
+    canvas.rotate(math.pi / 4);
+    final half = size.width + size.height;
+    final stripePaint = Paint()..color = const Color(0xFFE53935);
+    for (double x = -half; x < half; x += _stripeWidth * 2) {
+      canvas.drawRect(Rect.fromLTWH(x, -half, _stripeWidth, half * 2), stripePaint);
+    }
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _HazardStripePainter oldDelegate) => false;
+}
+
+// ---------------------------------------------------------------------------
 // Tiles
 // ---------------------------------------------------------------------------
 
@@ -269,19 +362,28 @@ class _ProductTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final inactive = !product.active;
+    final outOfStock = product.isOutOfStock;
+    final greyedOut = inactive || outOfStock;
+    final showFrame = outOfStock && !inactive;
     final isRefund = product.isRefund;
 
+    // The plain "Inaktiv" tile blends its 50%-alpha grey against the
+    // ordinary grid background behind it. A sold-out tile instead sits on
+    // top of _SoldOutFrame's striped layer, so it needs a fully opaque
+    // background here — otherwise the stripes bleed through the text.
     final cardColor = inactive
         ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5)
-        : color ??
-            (isRefund
-                ? theme.colorScheme.tertiaryContainer
-                : theme.colorScheme.surfaceContainerHigh);
+        : showFrame
+            ? theme.colorScheme.surfaceContainerHighest
+            : color ??
+                (isRefund
+                    ? theme.colorScheme.tertiaryContainer
+                    : theme.colorScheme.surfaceContainerHigh);
 
     final onCard =
-        color != null && !inactive ? _contrast(color!) : null;
+        color != null && !greyedOut ? _contrast(color!) : null;
 
-    return Card(
+    final card = Card(
       clipBehavior: Clip.antiAlias,
       color: cardColor,
       child: InkWell(
@@ -300,7 +402,7 @@ class _ProductTile extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontSize: 20,
-                      color: inactive
+                      color: greyedOut
                           ? theme.colorScheme.onSurface.withValues(alpha: 0.4)
                           : onCard,
                     ),
@@ -311,7 +413,7 @@ class _ProductTile extends StatelessWidget {
                 formatPrice(product.price),
                 style: theme.textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.bold,
-                  color: inactive
+                  color: greyedOut
                       ? theme.colorScheme.onSurface.withValues(alpha: 0.4)
                       : onCard ??
                           (isRefund
@@ -319,9 +421,9 @@ class _ProductTile extends StatelessWidget {
                               : theme.colorScheme.primary),
                 ),
               ),
-              if (inactive)
+              if (greyedOut)
                 Text(
-                  'Inaktiv',
+                  inactive ? 'Inaktiv' : 'Ausverkauft',
                   style: TextStyle(
                     fontSize: 10,
                     color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
@@ -332,6 +434,10 @@ class _ProductTile extends StatelessWidget {
         ),
       ),
     );
+
+    // Sold-out (but not deliberately deactivated) gets the hazard-stripe
+    // frame instead of just the plain grey/"Ausverkauft" treatment above.
+    return showFrame ? _SoldOutFrame(child: card) : card;
   }
 }
 
@@ -405,6 +511,8 @@ class _DraggableTile extends StatelessWidget {
 
   Widget _editCard(BuildContext context, ThemeData theme, bool hovered) {
     final inactive = !product.active;
+    final outOfStock = product.isOutOfStock;
+    final greyedOut = inactive || outOfStock;
     final isRefund = product.isRefund;
 
     final cardColor = hovered
@@ -414,12 +522,12 @@ class _DraggableTile extends StatelessWidget {
             : theme.colorScheme.surfaceContainerHigh);
 
     Color? onCard;
-    if (color != null && !inactive && !hovered) {
+    if (color != null && !greyedOut && !hovered) {
       final l = 0.299 * color!.r + 0.587 * color!.g + 0.114 * color!.b;
       onCard = l > 0.5 ? Colors.black87 : Colors.white;
     }
 
-    return Card(
+    final card = Card(
       clipBehavior: Clip.antiAlias,
       color: cardColor,
       shape: RoundedRectangleBorder(
@@ -445,7 +553,7 @@ class _DraggableTile extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontSize: 20,
-                      color: inactive
+                      color: greyedOut
                           ? theme.colorScheme.onSurface.withValues(alpha: 0.4)
                           : onCard,
                     ),
@@ -456,16 +564,16 @@ class _DraggableTile extends StatelessWidget {
                 formatPrice(product.price),
                 style: theme.textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.bold,
-                  color: inactive
+                  color: greyedOut
                       ? theme.colorScheme.onSurface.withValues(alpha: 0.4)
                       : onCard ?? (isRefund
                           ? theme.colorScheme.tertiary
                           : theme.colorScheme.primary),
                 ),
               ),
-              if (inactive)
+              if (greyedOut)
                 Text(
-                  'Inaktiv',
+                  inactive ? 'Inaktiv' : 'Ausverkauft',
                   style: TextStyle(
                     fontSize: 10,
                     color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
@@ -476,6 +584,8 @@ class _DraggableTile extends StatelessWidget {
         ),
       ),
     );
+
+    return (outOfStock && !inactive) ? _SoldOutFrame(child: card) : card;
   }
 }
 

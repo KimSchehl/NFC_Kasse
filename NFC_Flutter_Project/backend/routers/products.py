@@ -1,6 +1,7 @@
 import logging
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from database import get_db
 from dependencies import RequestContext, get_active_event, get_current_user, require_permission
@@ -10,6 +11,7 @@ from schemas import (
     CategoryUpdate,
     CategoryWithPermissionsResponse,
     ProductActiveUpdate,
+    ProductChangesResponse,
     ProductCreate,
     ProductResponse,
     ProductUpdate,
@@ -263,18 +265,95 @@ def list_products(
 
         if show_inactive:
             rows = db.execute(
-                """SELECT id, name, price, category_id, sort_order, active, is_payout, exclude_from_stats, points
+                """SELECT id, name, price, category_id, sort_order, active, is_payout, exclude_from_stats, points, stock
                    FROM product WHERE category_id=? AND deleted=0 ORDER BY sort_order""",
                 (category_id,),
             ).fetchall()
         else:
             rows = db.execute(
-                """SELECT id, name, price, category_id, sort_order, active, is_payout, exclude_from_stats
+                """SELECT id, name, price, category_id, sort_order, active, is_payout, exclude_from_stats, stock
                    FROM product WHERE category_id=? AND deleted=0 AND active=1 ORDER BY sort_order""",
                 (category_id,),
             ).fetchall()
 
     return [ProductResponse(**dict(r)) for r in rows]
+
+
+@router.get("/changed", response_model=ProductChangesResponse)
+def get_changed_products(
+    category_id: int,
+    since: str = Query(..., description="ISO datetime — products changed after this are returned"),
+    current_user: dict = Depends(get_current_user),
+    active_event: dict = Depends(get_active_event),
+):
+    """
+    Powers the cross-device catalog sync poll: devices remember the
+    server-returned `checked_at` from their last call and pass it back as
+    `since`, getting back only what actually changed for this category since
+    then — either a full products list (on first view of a category) or a
+    handful of updates (on every subsequent poll / pre-booking check).
+
+    Deliberately compares timestamps in Python, not SQL: SQLite stores
+    `datetime('now')` as naive UTC ("2026-08-18 20:15:00"), while `since`
+    arrives as an ISO string with a 'T'/'Z' ("2026-08-18T20:15:00.000Z") — a
+    raw SQL string comparison of those two formats isn't reliable. Fetching
+    a whole category (typically well under 100 rows) and filtering in Python
+    is the same trade-off `sales.py`'s cancel-window check already makes for
+    the same reason.
+    """
+    user_id = current_user["id"]
+    event_id = active_event["id"]
+
+    try:
+        since_dt = datetime.fromisoformat(since)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Ungültiges Datumsformat für 'since'")
+    if since_dt.tzinfo is None:
+        since_dt = since_dt.replace(tzinfo=timezone.utc)
+
+    with get_db() as db:
+        cat = db.execute(
+            "SELECT id FROM category WHERE id=? AND event_id=? AND deleted=0",
+            (category_id, event_id),
+        ).fetchone()
+        if not cat:
+            raise HTTPException(status_code=404, detail="Kategorie nicht gefunden")
+
+        is_manager = _user_can_manage_categories(db, user_id, event_id)
+        access = None
+        if not is_manager:
+            access = _get_category_access(db, user_id, event_id, category_id)
+            if not access:
+                raise HTTPException(status_code=403, detail="Kein Zugriff auf diese Kategorie")
+        show_inactive = is_manager or bool((access or {}).get("can_deactivate_article", False))
+
+        rows = db.execute(
+            """SELECT id, name, price, category_id, sort_order, active, is_payout,
+                      exclude_from_stats, points, stock, deleted, updated_at
+               FROM product WHERE category_id=?""",
+            (category_id,),
+        ).fetchall()
+
+    products = []
+    removed_ids = []
+    for r in rows:
+        if r["updated_at"] is None:
+            continue  # never touched since this column was added — can't have "changed"
+        updated_at = datetime.fromisoformat(r["updated_at"])
+        if updated_at.tzinfo is None:
+            updated_at = updated_at.replace(tzinfo=timezone.utc)
+        if updated_at <= since_dt:
+            continue
+        if r["deleted"]:
+            removed_ids.append(r["id"])
+        elif show_inactive or r["active"]:
+            products.append(ProductResponse(**dict(r)))
+
+    return ProductChangesResponse(
+        products=products,
+        removed_ids=removed_ids,
+        checked_at=datetime.now(timezone.utc).isoformat(),
+    )
 
 
 @router.post("/", response_model=ProductResponse, status_code=201)
@@ -303,9 +382,9 @@ def create_product(
         next_sort = max_row["m"] + 1
 
         cursor = db.execute(
-            "INSERT INTO product (category_id, name, price, sort_order, is_payout, exclude_from_stats, points) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO product (category_id, name, price, sort_order, is_payout, exclude_from_stats, points, stock) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (body.category_id, body.name, body.price, next_sort,
-             1 if body.is_payout else 0, 1 if body.exclude_from_stats else 0, body.points),
+             1 if body.is_payout else 0, 1 if body.exclude_from_stats else 0, body.points, body.stock),
         )
         new_id = cursor.lastrowid
 
@@ -317,6 +396,7 @@ def create_product(
         id=new_id, name=body.name, price=body.price,
         category_id=body.category_id, sort_order=next_sort, active=True,
         is_payout=body.is_payout, exclude_from_stats=body.exclude_from_stats, points=body.points,
+        stock=body.stock,
     )
 
 
@@ -350,11 +430,19 @@ def update_product(
         new_is_payout = body.is_payout if body.is_payout is not None else bool(row["is_payout"])
         new_exclude = body.exclude_from_stats if body.exclude_from_stats is not None else bool(row["exclude_from_stats"])
         new_points = body.points if body.points is not None else int(row["points"])
+        # stock is the one field where "omitted" and "explicit null" must be
+        # told apart — null means "clear tracking", which the `!= None`
+        # pattern above can't express (it would just mean "unchanged" for a
+        # field that legitimately wants to *become* null).
+        if "stock" in body.model_fields_set:
+            new_stock = body.stock
+        else:
+            new_stock = row["stock"]
 
         db.execute(
-            "UPDATE product SET name=?, price=?, sort_order=?, is_payout=?, exclude_from_stats=?, points=? WHERE id=?",
+            "UPDATE product SET name=?, price=?, sort_order=?, is_payout=?, exclude_from_stats=?, points=?, stock=?, updated_at=datetime('now') WHERE id=?",
             (new_name, new_price, new_sort,
-             1 if new_is_payout else 0, 1 if new_exclude else 0, new_points, product_id),
+             1 if new_is_payout else 0, 1 if new_exclude else 0, new_points, new_stock, product_id),
         )
 
     logger.info(
@@ -365,6 +453,7 @@ def update_product(
         id=product_id, name=new_name, price=new_price,
         category_id=row["category_id"], sort_order=new_sort, active=bool(row["active"]),
         is_payout=new_is_payout, exclude_from_stats=new_exclude, points=new_points,
+        stock=new_stock,
     )
 
 
@@ -381,7 +470,7 @@ def set_product_active(
     with get_db() as db:
         row = db.execute(
             """
-            SELECT p.id, p.name, p.price, p.category_id, p.sort_order, p.active, p.is_payout, p.exclude_from_stats, p.points
+            SELECT p.id, p.name, p.price, p.category_id, p.sort_order, p.active, p.is_payout, p.exclude_from_stats, p.points, p.stock
             FROM product p
             JOIN category c ON p.category_id = c.id
             WHERE p.id=? AND c.event_id=? AND p.deleted=0
@@ -393,7 +482,10 @@ def set_product_active(
 
         _require_category_flag(db, user_id, event_id, row["category_id"], "can_deactivate_article")
 
-        db.execute("UPDATE product SET active=? WHERE id=?", (1 if body.active else 0, product_id))
+        db.execute(
+            "UPDATE product SET active=?, updated_at=datetime('now') WHERE id=?",
+            (1 if body.active else 0, product_id),
+        )
 
     logger.info(
         "Product %s: product_id=%s by=%s",
@@ -405,6 +497,7 @@ def set_product_active(
         is_payout=bool(row["is_payout"]),
         exclude_from_stats=bool(row["exclude_from_stats"]),
         points=int(row["points"]),
+        stock=row["stock"],
     )
 
 
@@ -431,7 +524,10 @@ def delete_product(
 
         _require_category_flag(db, user_id, event_id, row["category_id"], "can_delete_article")
 
-        db.execute("UPDATE product SET deleted=1 WHERE id=?", (product_id,))
+        db.execute(
+            "UPDATE product SET deleted=1, updated_at=datetime('now') WHERE id=?",
+            (product_id,),
+        )
 
     logger.warning(
         "Product deleted: product_id=%s by=%s", product_id, current_user["username"],

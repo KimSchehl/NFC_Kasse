@@ -105,6 +105,7 @@ class ProductResponse(BaseModel):
     is_payout: bool = False
     exclude_from_stats: bool = False
     points: int = 0
+    stock: int | None = None  # None = not stock-tracked (unlimited)
 
 
 class ProductCreate(BaseModel):
@@ -115,6 +116,14 @@ class ProductCreate(BaseModel):
     is_payout: bool = False
     exclude_from_stats: bool = False
     points: int = 0
+    stock: int | None = None
+
+    @field_validator("stock")
+    @classmethod
+    def stock_not_negative(cls, v: int | None) -> int | None:
+        if v is not None and v < 0:
+            raise ValueError("Bestand darf nicht negativ sein")
+        return v
 
 
 class ProductUpdate(BaseModel):
@@ -124,10 +133,30 @@ class ProductUpdate(BaseModel):
     is_payout: bool | None = None
     exclude_from_stats: bool | None = None
     points: int | None = None
+    stock: int | None = None  # see products.py's update_product: distinguishes
+    # "omitted" (model_fields_set) from "explicitly null" (clear tracking)
+
+    @field_validator("stock")
+    @classmethod
+    def stock_not_negative(cls, v: int | None) -> int | None:
+        if v is not None and v < 0:
+            raise ValueError("Bestand darf nicht negativ sein")
+        return v
 
 
 class ProductActiveUpdate(BaseModel):
     active: bool
+
+
+class LowStockWarning(BaseModel):
+    product_name: str
+    remaining: int
+
+
+class ProductChangesResponse(BaseModel):
+    products: list[ProductResponse]
+    removed_ids: list[int]
+    checked_at: str
 
 
 # ---------------------------------------------------------------------------
@@ -152,6 +181,7 @@ class BookingResponse(BaseModel):
     sale_ids: list[int]
     chip_deposit_applied: float = 0.0   # Pfand deducted on new-customer issuance
     chip_deposit_refunded: float = 0.0  # Pfand returned on payout
+    low_stock_warnings: list[LowStockWarning] = []
 
 
 class BalanceResponse(BaseModel):
@@ -371,6 +401,7 @@ class PrintBonResponse(BaseModel):
     success: bool
     bons_printed: int
     sale_ids: list[int]
+    low_stock_warnings: list[LowStockWarning] = []
 
 
 # ---------------------------------------------------------------------------

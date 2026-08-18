@@ -65,6 +65,10 @@ class _CartPanelState extends ConsumerState<CartPanel> {
       return;
     }
 
+    // Catch price/stock changes made on other devices since the last poll
+    // before committing to this booking.
+    await ref.read(productSyncProvider.notifier).checkForChanges();
+
     final isPayout = ref.read(cartProvider).any((i) => i.product.isPayout);
     AppLogger.trace(
       '${isPayout ? "Auszahlen" : "Buchen"} geklickt: ${cart.productIds.length} Artikel, ${cart.total.toStringAsFixed(2)}€',
@@ -123,6 +127,7 @@ class _CartPanelState extends ConsumerState<CartPanel> {
             dismissDirection: DismissDirection.up,
           ),
         );
+        _showLowStockWarnings(context, result);
       }
     } on Exception catch (e) {
       if (!context.mounted) return;
@@ -135,6 +140,37 @@ class _CartPanelState extends ConsumerState<CartPanel> {
     } finally {
       if (mounted) setState(() => _isBooking = false);
     }
+  }
+
+  /// Shows a warning SnackBar for each article whose stock dropped to or
+  /// below the server's low-stock threshold as a result of this booking.
+  /// Local-only by design — other devices learn of the new stock level via
+  /// the normal catalog-sync poll, not a broadcast.
+  void _showLowStockWarnings(BuildContext context, Map<String, dynamic> result) {
+    final warnings = (result['low_stock_warnings'] as List?) ?? [];
+    if (warnings.isEmpty) return;
+    final lines = warnings.map((w) {
+      final name = w['product_name'] as String;
+      final remaining = (w['remaining'] as num).toInt();
+      return remaining <= 0 ? '$name: ausverkauft' : '$name: nur noch $remaining übrig';
+    }).join('\n');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.warning_amber_outlined, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Expanded(child: Text(lines)),
+          ],
+        ),
+        backgroundColor: Colors.orange.shade800,
+        duration: const Duration(seconds: 5),
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.only(top: 8, left: 8, right: 8),
+        dismissDirection: DismissDirection.up,
+      ),
+    );
   }
 
   Future<void> _storno(BuildContext context) async {
@@ -155,13 +191,19 @@ class _CartPanelState extends ConsumerState<CartPanel> {
       setState(() => _isBooking = false);
       return;
     }
+
+    // Catch price/stock changes made on other devices since the last poll
+    // before committing to this booking.
+    await ref.read(productSyncProvider.notifier).checkForChanges();
+
     AppLogger.trace('Drucken geklickt: ${items.length} Artikel', logger: 'ui.pos');
     // Captured before the await - see the comment in _book() for why.
     final lastBookingNotifier = ref.read(lastBookingProvider.notifier);
 
     try {
       final svc = ref.read(printServiceProvider);
-      final printed = await svc.printBons(items);
+      final result = await svc.printBons(items);
+      final printed = (result['bons_printed'] as num?)?.toInt() ?? 0;
 
       cart.clear();
       lastBookingNotifier.state = null;
@@ -183,6 +225,7 @@ class _CartPanelState extends ConsumerState<CartPanel> {
           dismissDirection: DismissDirection.up,
         ),
       );
+      _showLowStockWarnings(context, result);
     } on Exception catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

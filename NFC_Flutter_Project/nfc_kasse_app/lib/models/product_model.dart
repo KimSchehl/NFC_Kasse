@@ -12,6 +12,7 @@ class ProductModel {
   final bool isPayout;
   final bool excludeFromStats;
   final int points;
+  final int? stock;
 
   const ProductModel({
     required this.id,
@@ -23,6 +24,7 @@ class ProductModel {
     this.isPayout = false,
     this.excludeFromStats = false,
     this.points = 0,
+    this.stock,
   });
 
   factory ProductModel.fromJson(Map<String, dynamic> j) => ProductModel(
@@ -35,8 +37,12 @@ class ProductModel {
         isPayout: j['is_payout'] as bool? ?? false,
         excludeFromStats: j['exclude_from_stats'] as bool? ?? false,
         points: j['points'] as int? ?? 0,
+        stock: j['stock'] as int?,
       );
 
   // Negative price = refund/topup (Pfand Rückgabe, Aufladen)
   bool get isRefund => price < 0;
+
+  // null = not stock-tracked (unlimited)
+  bool get isOutOfStock => stock != null && stock! <= 0;
 }

@@ -30,6 +30,7 @@ from pathlib import Path
 import yaml
 from fastapi import APIRouter, Depends, HTTPException
 
+import stock
 from config import (
     BAR_CHIP_UID,
     PRINTER_BAUDRATE,
@@ -368,7 +369,7 @@ def print_bon(
         unique_ids = list(set(product_ids_flat))
         ph = ",".join("?" * len(unique_ids))
         products = db.execute(
-            f"SELECT p.id, p.name, p.price "
+            f"SELECT p.id, p.name, p.price, p.stock "
             f"FROM product p "
             f"JOIN category c ON p.category_id = c.id "
             f"WHERE p.id IN ({ph}) AND p.deleted = 0 AND p.active = 1 AND c.event_id = ?",
@@ -383,8 +384,12 @@ def print_bon(
                 detail=f"Unbekannte oder inaktive Artikel-IDs: {missing}",
             )
 
-        product_map = {p["id"]: {"name": p["name"], "price": p["price"]} for p in products}
+        product_map = {p["id"]: {"name": p["name"], "price": p["price"], "stock": p["stock"]} for p in products}
         total_price = sum(product_map[pid]["price"] for pid in product_ids_flat)
+
+        # Validates sufficient stock and decrements it — same helper and same
+        # rollback-safety reasoning as sales.py's create_booking().
+        low_stock_warnings = stock.check_stock_and_decrement(db, product_ids_flat, product_map)
 
         # Debit BAR chip (balance intentionally goes negative — it's a cash-sales counter)
         db.execute(
@@ -415,4 +420,7 @@ def print_bon(
                 jobs_queued += 1
                 sale_idx += 1
 
-    return PrintBonResponse(success=True, bons_printed=jobs_queued, sale_ids=sale_ids)
+    return PrintBonResponse(
+        success=True, bons_printed=jobs_queued, sale_ids=sale_ids,
+        low_stock_warnings=low_stock_warnings,
+    )

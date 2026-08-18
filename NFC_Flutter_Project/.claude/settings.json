@@ -97,7 +97,19 @@
       "Bash(DB_PATH=\"C:/Users/KimSc/AppData/Local/Temp/claude/c--Users-KimSc-Desktop-NFC-Kasse-NFC-Flutter-Project/69dfb582-348d-44e3-9513-215f1e4e31c7/scratchpad/smoke_test4.db\" python init_db.py)",
       "Bash(DB_PATH=\"C:/Users/KimSc/AppData/Local/Temp/claude/c--Users-KimSc-Desktop-NFC-Kasse-NFC-Flutter-Project/69dfb582-348d-44e3-9513-215f1e4e31c7/scratchpad/smoke_test4.db\" SECRET_KEY=testsecretkey1234567890 python -m uvicorn main:app --host 127.0.0.1 --port 8127)",
       "Bash(curl -s http://127.0.0.1:8127/health)",
-      "Bash(python -m pytest -q)"
+      "Bash(python -m pytest -q)",
+      "Bash(python -m py_compile schemas.py init_db.py main.py stock.py)",
+      "Bash(python -m py_compile routers/products.py)",
+      "Bash(python -m py_compile routers/sales.py)",
+      "Bash(python -m py_compile routers/printer.py)",
+      "Bash(python -m py_compile main.py init_db.py schemas.py stock.py routers/products.py routers/sales.py routers/printer.py)",
+      "Bash(DB_PATH=\"C:/Users/KimSc/AppData/Local/Temp/claude/c--Users-KimSc-Desktop-NFC-Kasse-NFC-Flutter-Project/69dfb582-348d-44e3-9513-215f1e4e31c7/scratchpad/smoke_test5.db\" python init_db.py)",
+      "Bash(DB_PATH=\"C:/Users/KimSc/AppData/Local/Temp/claude/c--Users-KimSc-Desktop-NFC-Kasse-NFC-Flutter-Project/69dfb582-348d-44e3-9513-215f1e4e31c7/scratchpad/smoke_test5.db\" SECRET_KEY=testsecretkey1234567890 python -m uvicorn main:app --host 127.0.0.1 --port 8128)",
+      "Bash(curl -s http://127.0.0.1:8128/health)",
+      "Read(//c/Users/KimSc/AppData/Local/Pub/Cache/hosted/pub.dev/riverpod-2.6.1/lib/src/future_provider/**)",
+      "Read(//c/Users/KimSc/AppData/Local/Pub/Cache/hosted/pub.dev/riverpod-2.6.1/lib/src/**)",
+      "Read(//c/Users/KimSc/AppData/Local/Pub/Cache/hosted/pub.dev/riverpod-2.6.1/lib/src/async_notifier/**)",
+      "Bash(flutter build *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\KimSc\\Desktop\\NFC_Kasse\\nfc-ble-reader",

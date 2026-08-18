@@ -146,6 +146,8 @@ def init_db():
         is_payout           INTEGER NOT NULL DEFAULT 0,  -- marks article as full-balance payout
         exclude_from_stats  INTEGER NOT NULL DEFAULT 0,  -- exclude from revenue statistics
         points              INTEGER NOT NULL DEFAULT 0,  -- leaderboard points per booking
+        stock       INTEGER,  -- NULL = not stock-tracked (unlimited); decremented per booking
+        updated_at  TEXT    DEFAULT (datetime('now')),  -- bumped on any change; drives /changed sync
         created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
     )""")
 

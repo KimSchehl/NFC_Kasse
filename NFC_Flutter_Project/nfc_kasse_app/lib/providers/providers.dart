@@ -141,6 +141,9 @@ final connectionStatusProvider = StreamProvider<bool>((ref) {
         ref
             .read(loggingProvider.notifier)
             .applyRemoteLevel(response.data['log_level'] as String?);
+        // Fire-and-forget: piggybacks the product-catalog change check on
+        // the same 10s cadence without blocking this stream on its result.
+        unawaited(ref.read(productSyncProvider.notifier).checkForChanges());
         ok = true;
       } catch (_) {
         ok = false;
@@ -1048,11 +1051,40 @@ final currentScreenProvider = StateProvider<AppScreen>((ref) => AppScreen.pos);
 ///
 /// Watches [productsRefreshProvider] so that incrementing it causes all
 /// category-specific instances to refetch (used after create/edit/delete).
-final productsProvider = FutureProvider.family<List<ProductModel>, int>(
-  (ref, categoryId) async {
+///
+/// An `AsyncNotifierProvider`, not a plain `FutureProvider` — [ProductSyncNotifier]
+/// needs to patch specific products into the cached list via
+/// `ref.read(productsProvider(id).notifier).state = ...` without a full
+/// refetch, which only a Notifier-backed provider exposes in this Riverpod
+/// version (plain `FutureProvider` has no externally-settable `.notifier.state`).
+class ProductsNotifier extends FamilyAsyncNotifier<List<ProductModel>, int> {
+  @override
+  Future<List<ProductModel>> build(int categoryId) async {
     ref.watch(productsRefreshProvider); // invalidate trigger
     return ref.read(productServiceProvider).getProducts(categoryId);
-  },
+  }
+
+  /// Called by [ProductSyncNotifier] to patch specific products in place —
+  /// updates/inserts from [changed], removals by ID in [removedIds] — without
+  /// a full refetch. No-op if this category's data isn't loaded yet (e.g. the
+  /// initial fetch is still in flight).
+  void applyChanges(List<ProductModel> changed, List<int> removedIds) {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    final changedById = {for (final p in changed) p.id: p};
+    final patched = [
+      for (final p in current)
+        if (!removedIds.contains(p.id)) (changedById[p.id] ?? p),
+      for (final p in changed)
+        if (!current.any((c) => c.id == p.id)) p,
+    ]..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    state = AsyncData(patched);
+  }
+}
+
+final productsProvider =
+    AsyncNotifierProvider.family<ProductsNotifier, List<ProductModel>, int>(
+  ProductsNotifier.new,
 );
 
 /// Incrementing this integer invalidates all [productsProvider] instances.
@@ -1068,3 +1100,57 @@ final categoriesProvider = FutureProvider<List<CategoryModel>>((ref) {
   ref.watch(categoriesRefreshProvider);
   return ref.read(productServiceProvider).getCategories();
 });
+
+// ---------------------------------------------------------------------------
+// Product catalog sync — cross-device price/stock updates
+// ---------------------------------------------------------------------------
+
+typedef ProductSyncState = ({int? categoryId, DateTime? lastSyncedAt});
+
+/// Owns the "did any product in my currently-viewed category change since I
+/// last checked" poll. Deliberately per-product (via `GET
+/// /api/products/changed`'s `since` timestamp), not a blunt "reload the whole
+/// category" signal — see docs/plan discussion for why a simpler global
+/// revision counter was rejected in favor of this.
+///
+/// Called from two places: [connectionStatusProvider]'s existing 10s poll
+/// loop (fire-and-forget), and directly before booking in `cart_panel.dart`
+/// (awaited, so a very recent change is caught before the booking is sent —
+/// the server rejects an out-of-stock booking regardless, this just avoids
+/// the round trip and gives the cashier an up-to-date grid first).
+class ProductSyncNotifier extends Notifier<ProductSyncState> {
+  @override
+  ProductSyncState build() => (categoryId: null, lastSyncedAt: null);
+
+  Future<void> checkForChanges() async {
+    final category = ref.read(selectedCategoryProvider);
+    if (category == null) return;
+
+    // Category just switched (or this is the very first call ever): the
+    // normal productsProvider fetch for this category is already fresh —
+    // nothing to reconcile yet, just establish the baseline for next time.
+    if (state.categoryId != category.id) {
+      state = (categoryId: category.id, lastSyncedAt: DateTime.now().toUtc());
+      return;
+    }
+
+    try {
+      final result = await ref
+          .read(productServiceProvider)
+          .getChangedProducts(category.id, state.lastSyncedAt!);
+      if (result.products.isNotEmpty || result.removedIds.isNotEmpty) {
+        ref
+            .read(productsProvider(category.id).notifier)
+            .applyChanges(result.products, result.removedIds);
+      }
+      state = (categoryId: category.id, lastSyncedAt: result.checkedAt);
+    } catch (_) {
+      // Not critical — the next check (poll or booking click) retries with
+      // the same `since` baseline, this just delays visibility briefly.
+    }
+  }
+}
+
+final productSyncProvider = NotifierProvider<ProductSyncNotifier, ProductSyncState>(
+  ProductSyncNotifier.new,
+);

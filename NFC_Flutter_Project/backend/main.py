@@ -120,6 +120,18 @@ def _migrate() -> None:
             db.execute("ALTER TABLE product ADD COLUMN points INTEGER NOT NULL DEFAULT 0")
         except Exception:
             pass
+        # stock tracking + change timestamp (for the /api/products/changed sync
+        # endpoint). No DEFAULT possible via ALTER TABLE ADD COLUMN in SQLite —
+        # existing rows get NULL, which /changed correctly treats as "never
+        # changed" until the next save touches them.
+        try:
+            db.execute("ALTER TABLE product ADD COLUMN stock INTEGER")
+        except Exception:
+            pass
+        try:
+            db.execute("ALTER TABLE product ADD COLUMN updated_at TEXT")
+        except Exception:
+            pass
         # leaderboard_score table — full add-on, separate from customer table
         db.execute("""
             CREATE TABLE IF NOT EXISTS leaderboard_score (

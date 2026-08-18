@@ -1,4 +1,5 @@
 import '../models/category_model.dart';
+import '../models/product_changes_result.dart';
 import '../models/product_model.dart';
 import 'api_client.dart';
 
@@ -28,6 +29,7 @@ class ProductService {
     bool isPayout = false,
     bool excludeFromStats = false,
     int points = 0,
+    int? stock,
   }) async {
     final resp = await _client.dio.post('/api/products/', data: {
       'name': name,
@@ -36,6 +38,7 @@ class ProductService {
       'is_payout': isPayout,
       'exclude_from_stats': excludeFromStats,
       'points': points,
+      'stock': stock,
     });
     return ProductModel.fromJson(resp.data as Map<String, dynamic>);
   }
@@ -47,6 +50,7 @@ class ProductService {
     bool? isPayout,
     bool? excludeFromStats,
     int? points,
+    int? stock,
   }) async {
     final data = <String, dynamic>{};
     if (name != null) data['name'] = name;
@@ -54,8 +58,25 @@ class ProductService {
     if (isPayout != null) data['is_payout'] = isPayout;
     if (excludeFromStats != null) data['exclude_from_stats'] = excludeFromStats;
     if (points != null) data['points'] = points;
+    // Unlike every other field here, `stock` is always sent explicitly, even
+    // when null — the only caller (the edit dialog) always resends the full
+    // current stock state, and null legitimately means "clear tracking", not
+    // "leave unchanged". Don't "fix" this to match the `if (x != null)`
+    // pattern above; that would silently reintroduce the inability to clear it.
+    data['stock'] = stock;
     final resp = await _client.dio.put('/api/products/$id', data: data);
     return ProductModel.fromJson(resp.data as Map<String, dynamic>);
+  }
+
+  /// Powers cross-device catalog sync: returns only the products in
+  /// [categoryId] that changed after [since], plus IDs of any that were
+  /// deleted since then.
+  Future<ProductChangesResult> getChangedProducts(int categoryId, DateTime since) async {
+    final resp = await _client.dio.get('/api/products/changed', queryParameters: {
+      'category_id': categoryId,
+      'since': since.toIso8601String(),
+    });
+    return ProductChangesResult.fromJson(resp.data as Map<String, dynamic>);
   }
 
   Future<ProductModel> setActive(int id, bool active) async {

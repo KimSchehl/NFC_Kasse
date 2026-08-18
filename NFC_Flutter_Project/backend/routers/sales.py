@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 
+import stock
 from config import CHIP_DEPOSIT, LEADERBOARD_ENABLED
 from database import get_db
 from dependencies import RequestContext, get_active_event, get_current_user
@@ -144,7 +145,7 @@ def create_booking(
         placeholders = ",".join("?" * len(unique_ids))
         products = db.execute(
             f"""
-            SELECT p.id, p.price, p.active, p.category_id, p.is_payout, p.points, c.event_id
+            SELECT p.id, p.name, p.price, p.active, p.category_id, p.is_payout, p.points, p.stock, c.event_id
             FROM product p
             JOIN category c ON p.category_id = c.id
             WHERE p.id IN ({placeholders}) AND p.deleted=0
@@ -160,6 +161,13 @@ def create_booking(
                 raise HTTPException(status_code=400, detail="Artikel gehört nicht zu diesem Event")
             if not p["active"]:
                 raise HTTPException(status_code=400, detail=f"Artikel {p['id']} ist nicht verfügbar")
+
+        # Validates sufficient stock and decrements it. Safe to run before the
+        # payout/permission checks below: get_db() rolls back the *entire*
+        # transaction on any later exception, so a subsequent rejection undoes
+        # this decrement automatically (see stock.py's docstring).
+        products_by_id = {p["id"]: p for p in products}
+        low_stock_warnings = stock.check_stock_and_decrement(db, body.product_ids, products_by_id)
 
         is_payout_booking = any(p["is_payout"] for p in products)
         if is_payout_booking and len(body.product_ids) > 1:
@@ -218,6 +226,7 @@ def create_booking(
                 new_balance=0.0,
                 sale_ids=[cursor.lastrowid],
                 chip_deposit_refunded=CHIP_DEPOSIT,
+                low_stock_warnings=low_stock_warnings,
             )
 
         # ---- Normal booking flow -----------------------------------------
@@ -267,6 +276,7 @@ def create_booking(
                 new_balance=new_balance,
                 sale_ids=sale_ids,
                 chip_deposit_applied=chip_deposit_applied,
+                low_stock_warnings=low_stock_warnings,
             )
 
     if is_payout_booking:
@@ -367,6 +377,14 @@ def cancel_booking(
         db.execute(
             "UPDATE customer SET balance = balance + ? WHERE id=?",
             (refunded, sale["customer_id"]),
+        )
+        # Restore stock — mirrors the decrement in create_booking(). No-op
+        # (WHERE clause matches nothing) if this product was never
+        # stock-tracked in the first place.
+        db.execute(
+            "UPDATE product SET stock = stock + 1, updated_at = datetime('now') "
+            "WHERE id=? AND stock IS NOT NULL",
+            (sale["product_id"],),
         )
         if LEADERBOARD_ENABLED:
             pts_row = db.execute(
