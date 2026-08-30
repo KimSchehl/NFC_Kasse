@@ -1,0 +1,4 @@
+(sym_lib_table
+	(version 7)
+	(lib (name "HOOYA_MK-12D13G4-B") (type "KiCad") (uri "${KIPRJMOD}/HOOYA_MK-12D13G4-B.kicad_sym") (options "") (descr ""))
+)

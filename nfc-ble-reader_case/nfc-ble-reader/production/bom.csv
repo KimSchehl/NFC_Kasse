@@ -1,0 +1,9 @@
+﻿Designator,Footprint,Quantity,Value,LCSC Part #
+BT1,BATTERY-SMD_18650-1S-L77.1-W20.7-1,1,Battery_Cell,C2988620
+C1,0805,1,1µF,
+"R1, R2",0805,2,1M,
+R3,0805,1,1k,
+SW2,SW-TH_MK-12D13G4-B,1,MK-12D13G4-B,C20611678
+U1,SOT-23-5_HandSoldering,1,DW03C,
+U2,PinSocket_1x08_P2.54mm_Vertical,1,PN532_NFC_Elechouse_HW147_SPI,
+U3,ProMicro_NRF52840,1,ProMicro_NRF52840,
