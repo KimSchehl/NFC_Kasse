@@ -13,6 +13,7 @@ class ProductModel {
   final bool excludeFromStats;
   final int points;
   final int? stock;
+  final bool requiresPager;
 
   const ProductModel({
     required this.id,
@@ -25,6 +26,7 @@ class ProductModel {
     this.excludeFromStats = false,
     this.points = 0,
     this.stock,
+    this.requiresPager = false,
   });
 
   factory ProductModel.fromJson(Map<String, dynamic> j) => ProductModel(
@@ -38,6 +40,7 @@ class ProductModel {
         excludeFromStats: j['exclude_from_stats'] as bool? ?? false,
         points: j['points'] as int? ?? 0,
         stock: j['stock'] as int?,
+        requiresPager: j['requires_pager'] as bool? ?? false,
       );
 
   // Negative price = refund/topup (Pfand Rückgabe, Aufladen)

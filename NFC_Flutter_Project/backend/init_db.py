@@ -146,6 +146,7 @@ def init_db():
         is_payout           INTEGER NOT NULL DEFAULT 0,  -- marks article as full-balance payout
         exclude_from_stats  INTEGER NOT NULL DEFAULT 0,  -- exclude from revenue statistics
         points              INTEGER NOT NULL DEFAULT 0,  -- leaderboard points per booking
+        requires_pager      INTEGER NOT NULL DEFAULT 0,  -- marks article as needing a kitchen pager when booked
         stock       INTEGER,  -- NULL = not stock-tracked (unlimited); decremented per booking
         updated_at  TEXT    DEFAULT (datetime('now')),  -- bumped on any change; drives /changed sync
         created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
@@ -370,6 +371,30 @@ def init_db():
     )""")
 
     # ------------------------------------------------------------------
+    # PAGER ORDER — optional add-on (see PAGER_ENABLED in config.py).
+    # One row per booking that contained at least one requires_pager article
+    # (not one row per article — see sales.py's create_booking()). Scoped to
+    # the cashier who created it (created_by), not shared across operators.
+    # sale_ids: JSON list of the sale.id rows this pager covers — a
+    # denormalized back-reference (like print_job.sale_id), not currently
+    # read back by any endpoint, kept for future traceability.
+    # status: 'open' while the pager is out with a guest, 'done' once
+    # returned/delivered. event_reset() force-closes any still-open rows.
+    # ------------------------------------------------------------------
+    c.execute("""
+    CREATE TABLE pager_order (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id     INTEGER NOT NULL REFERENCES event(id),
+        created_by   INTEGER NOT NULL REFERENCES user(id),
+        item_summary TEXT    NOT NULL,             -- e.g. "2× Pizza Salami, Steak"
+        pager_number INTEGER NOT NULL,
+        sale_ids     TEXT,                          -- JSON list of sale.id
+        status       TEXT    NOT NULL DEFAULT 'open',  -- open|done
+        created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+        done_at      TEXT
+    )""")
+
+    # ------------------------------------------------------------------
     # DEVICE LOG LEVEL — one row per client device (+ '__server__') that has
     # ever polled /health or had its log level explicitly set by an admin.
     # forced_level=NULL means "no remote override, device uses its own local
@@ -390,6 +415,7 @@ def init_db():
     # INDEXES — for frequent query patterns
     # ------------------------------------------------------------------
     c.execute("CREATE INDEX idx_print_job_status       ON print_job(status, created_at)")
+    c.execute("CREATE INDEX idx_pager_order_operator   ON pager_order(created_by, event_id, status)")
     c.execute("CREATE INDEX idx_sale_customer         ON sale(customer_id)")
     c.execute("CREATE INDEX idx_sale_event            ON sale(event_id)")
     c.execute("CREATE INDEX idx_sale_booked_at        ON sale(booked_at)")

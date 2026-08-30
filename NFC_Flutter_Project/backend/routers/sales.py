@@ -1,10 +1,12 @@
+import json
 import logging
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 
 import stock
-from config import CHIP_DEPOSIT, LEADERBOARD_ENABLED
+from config import CHIP_DEPOSIT, LEADERBOARD_ENABLED, PAGER_ENABLED
 from database import get_db
 from dependencies import RequestContext, get_active_event, get_current_user
 from schemas import BalanceResponse, BookingRequest, BookingResponse, CancelResponse
@@ -65,6 +67,22 @@ def _get_or_create_customer(db, tenant_id: int, nfc_uid: str) -> tuple[int, bool
         (tenant_id, nfc_uid),
     )
     return cursor.lastrowid, True
+
+
+def _build_pager_item_summary(product_ids: list[int], products_by_id: dict) -> str:
+    """
+    Builds the denormalized display string for a pager_order row, e.g.
+    "2× Pizza Salami, Steak" — [product_ids] is already filtered to the
+    requires_pager items from one booking. Groups repeated IDs (quantity > 1)
+    while preserving first-seen order.
+    """
+    counts = Counter(product_ids)
+    parts = []
+    for pid in dict.fromkeys(product_ids):
+        name = products_by_id[pid]["name"]
+        qty = counts[pid]
+        parts.append(f"{qty}× {name}" if qty > 1 else name)
+    return ", ".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -145,7 +163,7 @@ def create_booking(
         placeholders = ",".join("?" * len(unique_ids))
         products = db.execute(
             f"""
-            SELECT p.id, p.name, p.price, p.active, p.category_id, p.is_payout, p.points, p.stock, c.event_id
+            SELECT p.id, p.name, p.price, p.active, p.category_id, p.is_payout, p.points, p.stock, p.requires_pager, c.event_id
             FROM product p
             JOIN category c ON p.category_id = c.id
             WHERE p.id IN ({placeholders}) AND p.deleted=0
@@ -259,6 +277,28 @@ def create_booking(
                     (event_id, customer_id, product_id, product_map[product_id], user_id),
                 )
                 sale_ids.append(cursor.lastrowid)
+
+            # Pager add-on: one pager_order row per booking (not per item),
+            # created in the same transaction as the sale rows above so it
+            # can never end up out of sync with them. Guarded by
+            # pager_product_ids being non-empty so a stray pager_number from
+            # a misbehaving client doesn't create an empty-summary row —
+            # the booking itself succeeds either way.
+            if PAGER_ENABLED and body.pager_number is not None:
+                pager_product_ids = [pid for pid in body.product_ids if products_by_id[pid]["requires_pager"]]
+                if pager_product_ids:
+                    item_summary = _build_pager_item_summary(pager_product_ids, products_by_id)
+                    pager_sale_ids = [
+                        sid for pid, sid in zip(body.product_ids, sale_ids)
+                        if products_by_id[pid]["requires_pager"]
+                    ]
+                    db.execute(
+                        """
+                        INSERT INTO pager_order (event_id, created_by, item_summary, pager_number, sale_ids, status)
+                        VALUES (?, ?, ?, ?, ?, 'open')
+                        """,
+                        (event_id, user_id, item_summary, body.pager_number, json.dumps(pager_sale_ids)),
+                    )
 
             if LEADERBOARD_ENABLED:
                 total_pts = sum(product_points_map.get(pid, 0) for pid in body.product_ids)

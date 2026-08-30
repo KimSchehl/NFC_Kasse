@@ -34,6 +34,11 @@ BAR_CHIP_UID: str = os.getenv("BAR_CHIP_UID", "BAR")
 # When false, all leaderboard routes are inactive and no points are tracked.
 LEADERBOARD_ENABLED: bool = os.getenv("LEADERBOARD", "false").lower() in ("true", "1", "yes")
 
+# Pager add-on (optional feature).
+# Set PAGER=true in config.env to enable.
+# When false, the pager route/column is inactive and no pager data is tracked.
+PAGER_ENABLED: bool = os.getenv("PAGER", "false").lower() in ("true", "1", "yes")
+
 PRINTER_TYPE: str = os.getenv("PRINTER_TYPE", "serial")
 PRINTER_PORT: str = os.getenv("PRINTER_PORT", "COM4")
 PRINTER_BAUDRATE: int = int(os.getenv("PRINTER_BAUDRATE", "9600"))

@@ -16,10 +16,15 @@ class SalesService {
   /// [productIds] may contain repeated IDs — each occurrence is a separate
   /// sale row (quantity 2 of the same product → `[id, id]`). The server
   /// de-duplicates for the DB lookup but processes the full list for pricing.
-  Future<Map<String, dynamic>> book(String nfcUid, List<int> productIds) async {
+  ///
+  /// [pagerNumber] is only relevant when the cart contains a `requiresPager`
+  /// article (pager add-on) — omitted/null both when the feature is off and
+  /// when the cashier chose "Überspringen".
+  Future<Map<String, dynamic>> book(String nfcUid, List<int> productIds, {int? pagerNumber}) async {
     final resp = await _client.dio.post('/api/sales/', data: {
       'nfc_uid': nfcUid,
       'product_ids': productIds,
+      'pager_number': ?pagerNumber,
     });
     return resp.data as Map<String, dynamic>;
   }

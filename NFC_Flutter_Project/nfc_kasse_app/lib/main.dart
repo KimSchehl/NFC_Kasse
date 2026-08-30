@@ -64,6 +64,10 @@ Future<void> main() async {
     final initialButtonMaxLines = int.tryParse(buttonMaxLinesStr ?? '') ?? 2;
     final initialSidebarCollapsed =
         (await storage.read(key: 'display_sidebarCollapsed')) == 'true';
+    final cartWidthStr = await storage.read(key: 'display_cartWidth');
+    final pagerWidthStr = await storage.read(key: 'display_pagerWidth');
+    final initialCartWidth = double.tryParse(cartWidthStr ?? '') ?? 300.0;
+    final initialPagerWidth = double.tryParse(pagerWidthStr ?? '') ?? 260.0;
 
     // Restore (or generate + persist once) this device's stable log-correlation ID.
     var deviceId = await storage.read(key: 'log_device_id');
@@ -83,6 +87,8 @@ Future<void> main() async {
         cartTextScaleProvider.overrideWith((ref) => initialCartTextScale),
         buttonMaxLinesProvider.overrideWith((ref) => initialButtonMaxLines),
         sidebarCollapsedProvider.overrideWith((ref) => initialSidebarCollapsed),
+        cartWidthProvider.overrideWith((ref) => initialCartWidth),
+        pagerWidthProvider.overrideWith((ref) => initialPagerWidth),
         deviceIdProvider.overrideWith((ref) => deviceId!),
         localLogLevelProvider.overrideWith((ref) => initialLogLevel),
         deviceLabelProvider.overrideWith((ref) => initialDeviceLabel),

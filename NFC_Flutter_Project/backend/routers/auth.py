@@ -212,7 +212,7 @@ def me(
             for r in cat_rows
         ]
 
-    from config import LEADERBOARD_ENABLED
+    from config import LEADERBOARD_ENABLED, PAGER_ENABLED
     return MeResponse(
         id=current_user["id"],
         username=current_user["username"],
@@ -220,4 +220,5 @@ def me(
         permissions=permissions,
         categories=categories,
         leaderboard_enabled=LEADERBOARD_ENABLED,
+        pager_enabled=PAGER_ENABLED,
     )

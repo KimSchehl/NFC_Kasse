@@ -7,6 +7,7 @@ import '../providers/providers.dart';
 import '../services/app_logger.dart';
 import '../utils/formatters.dart';
 import 'dialogs/cancel_booking_dialog.dart';
+import 'dialogs/pager_assign_dialog.dart';
 
 /// The shopping cart panel shown on the right side (wide layout) or the bottom
 /// half (narrow layout) of the POS screen.
@@ -87,9 +88,30 @@ class _CartPanelState extends ConsumerState<CartPanel> {
     final customerNotifier = ref.read(customerProvider.notifier);
     final lastBookingNotifier = ref.read(lastBookingProvider.notifier);
 
+    // Pager add-on: ask for a pager number before the actual booking call, so
+    // it can travel along in the same request (see PagerAssignDialog's doc
+    // comment for why). Payout bookings are excluded defensively — they're
+    // already restricted to a single non-pager item by the backend, but this
+    // avoids ever showing the popup for one regardless.
+    int? pagerNumber;
+    final pagerEnabled = ref.read(authProvider).valueOrNull?.pagerEnabled ?? false;
+    final pagerItems = cartItems.where((i) => i.product.requiresPager).toList();
+    if (pagerEnabled && pagerItems.isNotEmpty && !isPayout) {
+      // No mounted-triggered setState here: if the widget was disposed mid-
+      // flight there's no UI left to reset, and setState() after dispose()
+      // throws — just bail out (booking is aborted, nothing was sent yet).
+      if (!context.mounted) return;
+      pagerNumber = await showDialog<int?>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => PagerAssignDialog(pagerItems: pagerItems),
+      );
+      if (!context.mounted) return;
+    }
+
     try {
       final svc = ref.read(salesServiceProvider);
-      final result = await svc.book(customer.nfcUid, cart.productIds);
+      final result = await svc.book(customer.nfcUid, cart.productIds, pagerNumber: pagerNumber);
 
       if (isPayout) {
         customerNotifier.state = null;
@@ -128,6 +150,11 @@ class _CartPanelState extends ConsumerState<CartPanel> {
           ),
         );
         _showLowStockWarnings(context, result);
+        if (pagerNumber != null) {
+          // Immediate refresh so the operator's own pager list shows the new
+          // entry right away rather than waiting for the next 10s poll.
+          unawaited(ref.read(pagerListProvider.notifier).refresh());
+        }
       }
     } on Exception catch (e) {
       if (!context.mounted) return;

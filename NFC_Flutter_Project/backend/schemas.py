@@ -55,6 +55,7 @@ class MeResponse(BaseModel):
     permissions: list[str]
     categories: list[CategoryPermissionResponse]
     leaderboard_enabled: bool = False
+    pager_enabled: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -106,6 +107,7 @@ class ProductResponse(BaseModel):
     exclude_from_stats: bool = False
     points: int = 0
     stock: int | None = None  # None = not stock-tracked (unlimited)
+    requires_pager: bool = False
 
 
 class ProductCreate(BaseModel):
@@ -117,6 +119,7 @@ class ProductCreate(BaseModel):
     exclude_from_stats: bool = False
     points: int = 0
     stock: int | None = None
+    requires_pager: bool = False
 
     @field_validator("stock")
     @classmethod
@@ -135,6 +138,7 @@ class ProductUpdate(BaseModel):
     points: int | None = None
     stock: int | None = None  # see products.py's update_product: distinguishes
     # "omitted" (model_fields_set) from "explicitly null" (clear tracking)
+    requires_pager: bool | None = None
 
     @field_validator("stock")
     @classmethod
@@ -166,6 +170,7 @@ class ProductChangesResponse(BaseModel):
 class BookingRequest(BaseModel):
     nfc_uid: str
     product_ids: list[int]
+    pager_number: int | None = None
 
     @field_validator("product_ids")
     @classmethod
@@ -173,6 +178,22 @@ class BookingRequest(BaseModel):
         if not v:
             raise ValueError("Artikel-Liste darf nicht leer sein")
         return v
+
+    @field_validator("pager_number")
+    @classmethod
+    def pager_number_positive(cls, v: int | None) -> int | None:
+        if v is not None and v <= 0:
+            raise ValueError("Pager-Nummer muss größer als 0 sein")
+        return v
+
+
+class PagerOrderResponse(BaseModel):
+    id: int
+    item_summary: str
+    pager_number: int
+    status: str
+    created_at: str
+    done_at: str | None = None
 
 
 class BookingResponse(BaseModel):

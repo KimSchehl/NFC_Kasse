@@ -43,6 +43,7 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
   bool _isTopup = false;
   bool _isPayout = false;
   bool _excludeFromStats = false;
+  bool _requiresPager = false;
   Color? _color;
   bool _loading = false;
   String? _error;
@@ -66,6 +67,7 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
     _active = p?.active ?? true;
     _isPayout = p?.isPayout ?? false;
     _excludeFromStats = p?.excludeFromStats ?? false;
+    _requiresPager = p?.requiresPager ?? false;
   }
 
   @override
@@ -114,6 +116,9 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
     final savedPrice = _isTopup ? -price.abs() : price;
     final savedExcludeFromStats = _isTopup ? true : _excludeFromStats;
     final savedIsPayout = _isTopup ? false : _isPayout;
+    // Same reasoning as stock below — Aufladen/Auszahlungs-Artikel can't
+    // sensibly need a pager either.
+    final savedRequiresPager = (_isTopup || savedIsPayout) ? false : _requiresPager;
 
     // Aufladen/Auszahlungs-Artikel represent no physical inventory — the
     // stock field is hidden for them (see build()), so force it to
@@ -147,6 +152,7 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
           excludeFromStats: savedExcludeFromStats,
           points: pointsVal,
           stock: stockVal,
+          requiresPager: savedRequiresPager,
         );
       } else {
         await svc.updateProduct(
@@ -157,6 +163,7 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
           excludeFromStats: savedExcludeFromStats,
           points: pointsVal,
           stock: stockVal,
+          requiresPager: savedRequiresPager,
         );
         if (widget.product!.active != _active && widget.canDeactivate) {
           await svc.setActive(widget.product!.id, _active);
@@ -317,6 +324,15 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
                     ),
                     keyboardType: TextInputType.number,
                   ),
+                  if (ref.watch(authProvider).valueOrNull?.pagerEnabled ?? false)
+                    CheckboxListTile(
+                      title: const Text('Pager erforderlich'),
+                      subtitle: const Text('Kunde erhält beim Buchen einen Pager'),
+                      value: _requiresPager,
+                      onChanged: (v) => setState(() => _requiresPager = v ?? _requiresPager),
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                    ),
                 ],
               ],
               ], // end canEditDetails

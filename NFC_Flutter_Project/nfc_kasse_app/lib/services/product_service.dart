@@ -30,6 +30,7 @@ class ProductService {
     bool excludeFromStats = false,
     int points = 0,
     int? stock,
+    bool requiresPager = false,
   }) async {
     final resp = await _client.dio.post('/api/products/', data: {
       'name': name,
@@ -39,6 +40,7 @@ class ProductService {
       'exclude_from_stats': excludeFromStats,
       'points': points,
       'stock': stock,
+      'requires_pager': requiresPager,
     });
     return ProductModel.fromJson(resp.data as Map<String, dynamic>);
   }
@@ -51,6 +53,7 @@ class ProductService {
     bool? excludeFromStats,
     int? points,
     int? stock,
+    bool? requiresPager,
   }) async {
     final data = <String, dynamic>{};
     if (name != null) data['name'] = name;
@@ -58,6 +61,7 @@ class ProductService {
     if (isPayout != null) data['is_payout'] = isPayout;
     if (excludeFromStats != null) data['exclude_from_stats'] = excludeFromStats;
     if (points != null) data['points'] = points;
+    if (requiresPager != null) data['requires_pager'] = requiresPager;
     // Unlike every other field here, `stock` is always sent explicitly, even
     // when null — the only caller (the edit dialog) always resends the full
     // current stock state, and null legitimately means "clear tracking", not

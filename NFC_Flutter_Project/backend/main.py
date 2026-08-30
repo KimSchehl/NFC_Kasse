@@ -21,11 +21,13 @@ from database import get_db
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from config import BAR_CHIP_UID, EVENT_NAME, LEADERBOARD_ENABLED
+from config import BAR_CHIP_UID, EVENT_NAME, LEADERBOARD_ENABLED, PAGER_ENABLED
 from middleware import TraceIdMiddleware
 from routers import auth, customers, display, download, help, kiosk, logs as logs_router, preferences, printer, products, sales, stats, topup, update, users
 if LEADERBOARD_ENABLED:
     from routers import leaderboard
+if PAGER_ENABLED:
+    from routers import pager
 
 
 def _migrate() -> None:
@@ -132,6 +134,12 @@ def _migrate() -> None:
             db.execute("ALTER TABLE product ADD COLUMN updated_at TEXT")
         except Exception:
             pass
+        # requires_pager per product — pager add-on (kept even when PAGER=false,
+        # same reasoning as the points/leaderboard column above)
+        try:
+            db.execute("ALTER TABLE product ADD COLUMN requires_pager INTEGER NOT NULL DEFAULT 0")
+        except Exception:
+            pass
         # leaderboard_score table — full add-on, separate from customer table
         db.execute("""
             CREATE TABLE IF NOT EXISTS leaderboard_score (
@@ -184,6 +192,21 @@ def _migrate() -> None:
                 processed_at TEXT
             )
         """)
+        # Pager order table — pager add-on, see PAGER_ENABLED
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS pager_order (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id     INTEGER NOT NULL REFERENCES event(id),
+                created_by   INTEGER NOT NULL REFERENCES user(id),
+                item_summary TEXT    NOT NULL,
+                pager_number INTEGER NOT NULL,
+                sale_ids     TEXT,
+                status       TEXT    NOT NULL DEFAULT 'open',
+                created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+                done_at      TEXT
+            )
+        """)
+        db.execute("CREATE INDEX IF NOT EXISTS idx_pager_order_operator ON pager_order(created_by, event_id, status)")
 
 
 _migrate()
@@ -231,6 +254,8 @@ app.include_router(kiosk.router)
 if LEADERBOARD_ENABLED:
     app.include_router(leaderboard.router)      # /leaderboard HTML page (no /api prefix)
     app.include_router(leaderboard.api_router)  # /api/leaderboard/* API
+if PAGER_ENABLED:
+    app.include_router(pager.router)
 app.include_router(printer.router)
 app.include_router(preferences.router)
 app.include_router(help.router)

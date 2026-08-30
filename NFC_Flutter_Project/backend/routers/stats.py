@@ -204,6 +204,7 @@ def event_reset(
     2. Setzt alle Chip-Guthaben auf 0 und markiert alle Chips als
        'verfügbar für Neuausgabe' (is_available=1), sodass der nächste
        Scan eines Chips als neuer Kunde behandelt wird (inkl. Pfand).
+    3. Schließt alle noch offenen Pager-Einträge (Pager-Add-on).
 
     Artikel, Benutzer und der komplette Buchungsverlauf bleiben erhalten.
     """
@@ -240,6 +241,14 @@ def event_reset(
             (tenant_id, BAR_CHIP_UID),
         )
         reset_count = cursor.rowcount
+
+        # Offene Pager gehören zu physischen Geräten, die noch beim Gast sind —
+        # anders als sale/topup/print_job (reine Historie) würden sie sonst für
+        # immer als "offen" stehen bleiben, da sich event_id beim Reset nicht ändert.
+        db.execute(
+            "UPDATE pager_order SET status='done', done_at=datetime('now') WHERE event_id=? AND status='open'",
+            (event_id,),
+        )
 
     logger.warning(
         "Event reset complete: tenant_id=%s customers_reset=%s new_period_id=%s by=%s",

@@ -54,6 +54,14 @@ def test_me_returns_user_info(client, auth_headers):
     assert "sales.booking.create" in data["permissions"]
 
 
+def test_me_includes_pager_enabled_flag(client, auth_headers):
+    # conftest.py sets PAGER=true before main.py is first imported in this
+    # test session (see the comment there), so this should be True here.
+    resp = client.get("/api/auth/me", headers=auth_headers)
+    assert resp.status_code == 200
+    assert resp.json()["pager_enabled"] is True
+
+
 def test_me_without_token_returns_401(client):
     resp = client.get("/api/auth/me")
     assert resp.status_code == 401

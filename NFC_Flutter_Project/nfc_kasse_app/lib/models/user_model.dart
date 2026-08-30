@@ -15,6 +15,7 @@ class UserModel {
   final List<String> permissions;
   final List<CategoryModel> categories;
   final bool leaderboardEnabled;
+  final bool pagerEnabled;
 
   const UserModel({
     required this.id,
@@ -23,6 +24,7 @@ class UserModel {
     required this.permissions,
     required this.categories,
     this.leaderboardEnabled = false,
+    this.pagerEnabled = false,
   });
 
   factory UserModel.fromJson(Map<String, dynamic> j) => UserModel(
@@ -31,6 +33,7 @@ class UserModel {
         displayName: j['display_name'] as String?,
         permissions: (j['permissions'] as List).cast<String>(),
         leaderboardEnabled: j['leaderboard_enabled'] as bool? ?? false,
+        pagerEnabled: j['pager_enabled'] as bool? ?? false,
         // The /me endpoint returns categories as {category_id, category_name, can_*},
         // which we remap to the standard CategoryModel.fromJson key names.
         categories: (j['categories'] as List)

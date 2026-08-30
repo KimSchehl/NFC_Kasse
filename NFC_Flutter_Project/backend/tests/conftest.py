@@ -1,3 +1,15 @@
+import os
+
+# main.py registers the pager router conditionally at import time based on
+# config.PAGER_ENABLED, which itself reads this env var at config.py's
+# *first* import — so it must be set before any test triggers that import
+# (via the `client` fixture below) for the pager router to exist in this
+# test session at all. Setting it here, at conftest module load (which
+# pytest always does before running any test), is the only place early
+# enough. Harmless for non-pager tests: PAGER_ENABLED only adds a route and
+# gates an `if` branch that's otherwise skipped when pager_number is omitted.
+os.environ.setdefault("PAGER", "true")
+
 import pytest
 from starlette.testclient import TestClient
 
@@ -50,6 +62,54 @@ def product_id(db):
             (cat_id, "Bier", 2.50),
         ).lastrowid
     return p_id
+
+
+@pytest.fixture
+def pager_product_id(db):
+    """Inserts a test category + requires_pager product, returns the product ID."""
+    import database
+    with database.get_db() as conn:
+        event_id = conn.execute("SELECT id FROM event LIMIT 1").fetchone()["id"]
+        cat_id = conn.execute(
+            "INSERT INTO category (event_id, name) VALUES (?, ?)",
+            (event_id, "Test Kategorie"),
+        ).lastrowid
+        p_id = conn.execute(
+            "INSERT INTO product (category_id, name, price, requires_pager) VALUES (?, ?, ?, 1)",
+            (cat_id, "Pizza Salami", 8.00),
+        ).lastrowid
+    return p_id
+
+
+@pytest.fixture
+def pager_product_id_2(db, pager_product_id):
+    """A second requires_pager product, in the same category as pager_product_id."""
+    import database
+    with database.get_db() as conn:
+        cat_id = conn.execute(
+            "SELECT category_id FROM product WHERE id=?", (pager_product_id,)
+        ).fetchone()["category_id"]
+        p_id = conn.execute(
+            "INSERT INTO product (category_id, name, price, requires_pager) VALUES (?, ?, ?, 1)",
+            (cat_id, "Steak", 12.00),
+        ).lastrowid
+    return p_id
+
+
+@pytest.fixture
+def other_user_auth_headers(client, auth_headers):
+    """Creates a second user (no special permissions) and logs them in."""
+    resp = client.post(
+        "/api/users/",
+        json={"username": "other_operator", "password": "password123"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201, resp.text
+
+    login = client.post("/api/auth/login", json={"username": "other_operator", "password": "password123"})
+    assert login.status_code == 200, login.text
+    token = login.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
 
 
 @pytest.fixture

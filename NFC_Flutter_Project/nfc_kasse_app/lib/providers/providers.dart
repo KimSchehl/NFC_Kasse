@@ -17,6 +17,7 @@ import '../models/cart_item.dart';
 import '../models/category_model.dart';
 import '../models/customer_model.dart';
 import '../models/help_model.dart';
+import '../models/pager_order_model.dart';
 import '../models/product_model.dart';
 import '../models/user_model.dart';
 import '../models/user_preferences_model.dart';
@@ -28,6 +29,7 @@ import '../services/customer_service.dart';
 import '../services/help_service.dart';
 import '../services/logs_service.dart';
 import '../services/notification_service.dart';
+import '../services/pager_service.dart';
 import '../services/preferences_service.dart';
 import '../services/display_service.dart';
 import '../services/kiosk_service.dart';
@@ -91,6 +93,9 @@ final customerServiceProvider = Provider(
 final printServiceProvider = Provider(
   (ref) => PrintService(ref.watch(apiClientProvider)),
 );
+final pagerServiceProvider = Provider(
+  (ref) => PagerService(ref.watch(apiClientProvider)),
+);
 final displayServiceProvider = Provider(
   (ref) => DisplayService(ref.watch(apiClientProvider)),
 );
@@ -144,6 +149,12 @@ final connectionStatusProvider = StreamProvider<bool>((ref) {
         // Fire-and-forget: piggybacks the product-catalog change check on
         // the same 10s cadence without blocking this stream on its result.
         unawaited(ref.read(productSyncProvider.notifier).checkForChanges());
+        // Same piggyback for the pager add-on's own small list — gated so a
+        // deployment with the feature off never calls the (unregistered,
+        // 404ing) route.
+        if (ref.read(authProvider).valueOrNull?.pagerEnabled ?? false) {
+          unawaited(ref.read(pagerListProvider.notifier).refresh());
+        }
         ok = true;
       } catch (_) {
         ok = false;
@@ -1053,6 +1064,23 @@ void setSidebarCollapsed(WidgetRef ref, bool collapsed) {
   ref.read(storageProvider).write(key: 'display_sidebarCollapsed', value: collapsed.toString());
 }
 
+/// Widths of the two resizable side panels on the wide POS layout (see
+/// `pos_screen.dart`'s `_WidePosLayout`) — the cart on the right (always
+/// present) and the pager list on the left (only when the pager add-on is
+/// enabled). Same persistence pattern as [sidebarCollapsedProvider].
+final cartWidthProvider = StateProvider<double>((ref) => 300.0);
+final pagerWidthProvider = StateProvider<double>((ref) => 260.0);
+
+void setCartWidth(WidgetRef ref, double width) {
+  ref.read(cartWidthProvider.notifier).state = width;
+  ref.read(storageProvider).write(key: 'display_cartWidth', value: width.toString());
+}
+
+void setPagerWidth(WidgetRef ref, double width) {
+  ref.read(pagerWidthProvider.notifier).state = width;
+  ref.read(storageProvider).write(key: 'display_pagerWidth', value: width.toString());
+}
+
 enum AppScreen { pos, stats, users, settings, account, logs }
 
 final currentScreenProvider = StateProvider<AppScreen>((ref) => AppScreen.pos);
@@ -1167,4 +1195,40 @@ class ProductSyncNotifier extends Notifier<ProductSyncState> {
 
 final productSyncProvider = NotifierProvider<ProductSyncNotifier, ProductSyncState>(
   ProductSyncNotifier.new,
+);
+
+// ---------------------------------------------------------------------------
+// Pager add-on — the operator's own open pager orders
+// ---------------------------------------------------------------------------
+
+/// The logged-in operator's own open pager orders (pager add-on). Unlike
+/// [ProductSyncNotifier], this doesn't need timestamp-diffing sync: the list
+/// is small (one operator's own open orders, not the whole catalog), so a
+/// plain refetch on every trigger (10s poll, after creating/closing an
+/// entry) is simple and sufficient — there's no cross-device sharing to
+/// reconcile in this version (see the plan's Context section).
+class PagerListNotifier extends AsyncNotifier<List<PagerOrderModel>> {
+  @override
+  Future<List<PagerOrderModel>> build() async {
+    final user = ref.watch(authProvider).valueOrNull;
+    if (user == null || !user.pagerEnabled) return [];
+    return ref.read(pagerServiceProvider).listOpen();
+  }
+
+  /// Re-fetches, keeping the previous list on failure rather than clearing
+  /// it — matches [ProductSyncNotifier.checkForChanges]'s "not critical, the
+  /// next trigger retries" tolerance for a background refresh.
+  Future<void> refresh() async {
+    final user = ref.read(authProvider).valueOrNull;
+    if (user == null || !user.pagerEnabled) return;
+    try {
+      state = AsyncData(await ref.read(pagerServiceProvider).listOpen());
+    } catch (_) {
+      // Ignored — next poll/trigger retries.
+    }
+  }
+}
+
+final pagerListProvider = AsyncNotifierProvider<PagerListNotifier, List<PagerOrderModel>>(
+  PagerListNotifier.new,
 );
