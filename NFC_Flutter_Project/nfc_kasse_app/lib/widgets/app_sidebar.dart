@@ -20,7 +20,12 @@ import 'dialogs/edit_category_dialog.dart';
 /// visible when the user has the required permissions. The Bearbeitungsmodus
 /// toggle is only shown when on the POS screen and the user has edit rights.
 class AppSidebar extends ConsumerWidget {
-  const AppSidebar({super.key});
+  /// Shows a collapse button in the title bar. Only used for the tablet
+  /// rail (see `MainShell`) — the phone Drawer already has its own way to
+  /// dismiss (swipe / tap outside / hamburger button).
+  final bool showCollapseButton;
+
+  const AppSidebar({super.key, this.showCollapseButton = false});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -48,13 +53,28 @@ class AppSidebar extends ConsumerWidget {
                 children: [
                   Icon(Icons.point_of_sale, color: theme.colorScheme.primary, size: 20),
                   const SizedBox(width: 8),
-                  Text(
-                    'NFC Kasse',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: theme.colorScheme.primary,
+                  Expanded(
+                    child: Text(
+                      'NFC Kasse',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.primary,
+                      ),
                     ),
                   ),
+                  if (showCollapseButton)
+                    IconButton(
+                      icon: const Icon(Icons.menu_open, size: 20),
+                      tooltip: 'Seitenleiste ausblenden',
+                      color: theme.colorScheme.primary,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () {
+                        AppLogger.trace('Seitenleiste ausgeblendet', logger: 'ui.sidebar');
+                        setSidebarCollapsed(ref, true);
+                      },
+                    ),
                 ],
               ),
             ),

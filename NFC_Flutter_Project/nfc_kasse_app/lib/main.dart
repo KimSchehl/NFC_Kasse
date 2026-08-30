@@ -62,6 +62,8 @@ Future<void> main() async {
     final initialGridColumns = int.tryParse(gridColumnsStr ?? '') ?? 3;
     final initialCartTextScale = double.tryParse(cartTextScaleStr ?? '') ?? 1.0;
     final initialButtonMaxLines = int.tryParse(buttonMaxLinesStr ?? '') ?? 2;
+    final initialSidebarCollapsed =
+        (await storage.read(key: 'display_sidebarCollapsed')) == 'true';
 
     // Restore (or generate + persist once) this device's stable log-correlation ID.
     var deviceId = await storage.read(key: 'log_device_id');
@@ -80,6 +82,7 @@ Future<void> main() async {
         gridColumnsProvider.overrideWith((ref) => initialGridColumns),
         cartTextScaleProvider.overrideWith((ref) => initialCartTextScale),
         buttonMaxLinesProvider.overrideWith((ref) => initialButtonMaxLines),
+        sidebarCollapsedProvider.overrideWith((ref) => initialSidebarCollapsed),
         deviceIdProvider.overrideWith((ref) => deviceId!),
         localLogLevelProvider.overrideWith((ref) => initialLogLevel),
         deviceLabelProvider.overrideWith((ref) => initialDeviceLabel),

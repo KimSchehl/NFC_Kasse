@@ -1039,6 +1039,20 @@ final gridColumnsProvider = StateProvider<int>((ref) => 3);
 final cartTextScaleProvider = StateProvider<double>((ref) => 1.0);
 final buttonMaxLinesProvider = StateProvider<int>((ref) => 2);
 
+/// Whether the persistent sidebar rail (tablet/wide layout only — the phone
+/// layout's Drawer is unaffected) is collapsed to reclaim screen width.
+/// Per-device preference, not per-user, so it lives alongside the other
+/// display settings above rather than in the server-synced [UserPreferences].
+final sidebarCollapsedProvider = StateProvider<bool>((ref) => false);
+
+/// Sets [sidebarCollapsedProvider] and persists it, matching the read side in
+/// `main.dart`. Shared by the collapse button in `AppSidebar` and the expand
+/// button in `MainShell`'s AppBar so the storage key lives in one place.
+void setSidebarCollapsed(WidgetRef ref, bool collapsed) {
+  ref.read(sidebarCollapsedProvider.notifier).state = collapsed;
+  ref.read(storageProvider).write(key: 'display_sidebarCollapsed', value: collapsed.toString());
+}
+
 enum AppScreen { pos, stats, users, settings, account, logs }
 
 final currentScreenProvider = StateProvider<AppScreen>((ref) => AppScreen.pos);

@@ -69,6 +69,8 @@ class _MainShellState extends ConsumerState<MainShell> {
       AppScreen.logs => const LogViewerScreen(),
     };
 
+    final sidebarCollapsed = ref.watch(sidebarCollapsedProvider);
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final isWide = constraints.maxWidth >= 600;
@@ -77,14 +79,23 @@ class _MainShellState extends ConsumerState<MainShell> {
           return Scaffold(
             body: Row(
               children: [
-                const AppSidebar(),
-                const VerticalDivider(width: 1),
+                if (!sidebarCollapsed) ...[
+                  const AppSidebar(showCollapseButton: true),
+                  const VerticalDivider(width: 1),
+                ],
                 Expanded(
                   child: Scaffold(
                     appBar: AppBar(
                       title: Text(screenTitle),
                       centerTitle: false,
                       automaticallyImplyLeading: false,
+                      leading: sidebarCollapsed
+                          ? IconButton(
+                              icon: const Icon(Icons.menu),
+                              tooltip: 'Seitenleiste einblenden',
+                              onPressed: () => setSidebarCollapsed(ref, false),
+                            )
+                          : null,
                       actions: [
                         const HelpButton(),
                         _BleReaderIndicator(),
