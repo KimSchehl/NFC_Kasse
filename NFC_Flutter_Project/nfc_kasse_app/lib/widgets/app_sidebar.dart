@@ -149,6 +149,13 @@ class AppSidebar extends ConsumerWidget {
                 selected: currentScreen == AppScreen.logs,
                 onTap: () => _navigate(context, ref, AppScreen.logs),
               ),
+            if (user?.canManageAnyArticles == true)
+              _NavTile(
+                icon: Icons.inventory_2_outlined,
+                label: 'Artikelverwaltung',
+                selected: currentScreen == AppScreen.articleAdmin,
+                onTap: () => _navigate(context, ref, AppScreen.articleAdmin),
+              ),
             _NavTile(
               icon: Icons.settings_outlined,
               label: 'Einstellungen',

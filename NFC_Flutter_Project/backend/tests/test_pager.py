@@ -1,3 +1,30 @@
+def test_book_option_whose_base_requires_pager_creates_pager_order(
+    client, auth_headers, option_product_ids, customer_with_balance
+):
+    """An option never sets requires_pager itself — the base's flag applies,
+    resolved via _effective() in create_booking()'s pager filter."""
+    import database
+    _, base_id, option_id = option_product_ids
+    with database.get_db() as conn:
+        conn.execute("UPDATE product SET requires_pager=1 WHERE id=?", (base_id,))
+
+    resp = client.post(
+        "/api/sales/",
+        json={
+            "nfc_uid": customer_with_balance,
+            "product_ids": [option_id],
+            "pager_number": 4,
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201, resp.text
+
+    data = client.get("/api/pager/", headers=auth_headers).json()
+    assert len(data) == 1
+    assert data[0]["item_summary"] == "Currywurst mit Pommes"  # the option's own name
+    assert data[0]["pager_number"] == 4
+
+
 def test_book_with_pager_number_creates_open_pager_order(
     client, auth_headers, pager_product_id, customer_with_balance
 ):

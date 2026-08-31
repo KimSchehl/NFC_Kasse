@@ -6,6 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from database import get_db
 from dependencies import RequestContext, get_active_event, get_current_user, require_permission
 from schemas import (
+    AdminCategoryResponse,
+    AdminProductsResponse,
     CategoryAccessItem,
     CategoryCreate,
     CategoryUpdate,
@@ -79,6 +81,52 @@ def _require_category_flag(db, user_id: int, event_id: int, category_id: int, fl
             status_code=403,
             detail=f"Keine Berechtigung '{_FLAG_LABELS.get(flag, flag)}' für diese Kategorie",
         )
+
+
+def _validate_group_id(db, group_id: int | None, category_id: int, self_id: int | None = None):
+    """
+    Raises if `group_id` isn't a valid base article for a product being
+    created/updated in `category_id`. A valid base: exists, not deleted,
+    same category (options never span categories), has no `group_id` of its
+    own (max one level of nesting — an option can't itself have options),
+    and isn't the product being saved (no self-reference).
+    """
+    if group_id is None:
+        return
+    if group_id == self_id:
+        raise HTTPException(status_code=400, detail="Ein Artikel kann nicht seine eigene Option sein")
+    base = db.execute(
+        "SELECT id, category_id, group_id FROM product WHERE id=? AND deleted=0",
+        (group_id,),
+    ).fetchone()
+    if not base:
+        raise HTTPException(status_code=404, detail="Basis-Artikel für die Option nicht gefunden")
+    if base["category_id"] != category_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Eine Option muss in derselben Kategorie wie ihr Basis-Artikel liegen",
+        )
+    if base["group_id"] is not None:
+        raise HTTPException(status_code=400, detail="Eine Option kann nicht selbst Optionen haben")
+
+
+def _get_article_manageable_category_ids(db, user_id: int, event_id: int) -> list[int] | None:
+    """
+    Category IDs where the user holds any of the 4 article-management flags.
+    Returns None as a sentinel for "manager — every category" rather than
+    materializing the full id list, so callers can branch cheaply.
+    """
+    if _user_can_manage_categories(db, user_id, event_id):
+        return None
+    rows = db.execute(
+        """
+        SELECT category_id FROM user_category_access
+        WHERE user_id=? AND event_id=?
+        AND (can_create_article=1 OR can_edit_article=1 OR can_deactivate_article=1 OR can_delete_article=1)
+        """,
+        (user_id, event_id),
+    ).fetchall()
+    return [r["category_id"] for r in rows]
 
 
 # ---------------------------------------------------------------------------
@@ -265,13 +313,13 @@ def list_products(
 
         if show_inactive:
             rows = db.execute(
-                """SELECT id, name, price, category_id, sort_order, active, is_payout, exclude_from_stats, points, stock, requires_pager
+                """SELECT id, name, price, category_id, sort_order, active, is_payout, exclude_from_stats, points, stock, requires_pager, group_id
                    FROM product WHERE category_id=? AND deleted=0 ORDER BY sort_order""",
                 (category_id,),
             ).fetchall()
         else:
             rows = db.execute(
-                """SELECT id, name, price, category_id, sort_order, active, is_payout, exclude_from_stats, stock, requires_pager
+                """SELECT id, name, price, category_id, sort_order, active, is_payout, exclude_from_stats, stock, requires_pager, group_id
                    FROM product WHERE category_id=? AND deleted=0 AND active=1 ORDER BY sort_order""",
                 (category_id,),
             ).fetchall()
@@ -329,7 +377,7 @@ def get_changed_products(
 
         rows = db.execute(
             """SELECT id, name, price, category_id, sort_order, active, is_payout,
-                      exclude_from_stats, points, stock, requires_pager, deleted, updated_at
+                      exclude_from_stats, points, stock, requires_pager, group_id, deleted, updated_at
                FROM product WHERE category_id=?""",
             (category_id,),
         ).fetchall()
@@ -356,6 +404,75 @@ def get_changed_products(
     )
 
 
+@router.get("/admin", response_model=AdminProductsResponse)
+def list_admin_products(
+    current_user: dict = Depends(get_current_user),
+    active_event: dict = Depends(get_active_event),
+):
+    """
+    Powers the article admin page: every article (including inactive) across
+    every category the user can manage articles in — unlike every other
+    endpoint above, not scoped to a single category.
+
+    Deliberately its own endpoint rather than looping GET / per category:
+    (a) far fewer round trips for a page that shows everything at once, and
+    (b) list_products()'s show_inactive is keyed to can_deactivate_article,
+    not can_edit_article — a user with only edit rights would never see
+    inactive articles via that endpoint. This endpoint uses a simpler,
+    correct rule instead: any article-management right on a category means
+    you see all of that category's articles, active or not.
+    """
+    user_id = current_user["id"]
+    event_id = active_event["id"]
+
+    with get_db() as db:
+        manageable_ids = _get_article_manageable_category_ids(db, user_id, event_id)
+        is_manager = manageable_ids is None
+
+        if is_manager:
+            cat_rows = db.execute(
+                "SELECT id, name, sort_order FROM category WHERE event_id=? AND deleted=0 ORDER BY sort_order",
+                (event_id,),
+            ).fetchall()
+        elif manageable_ids:
+            placeholders = ",".join("?" * len(manageable_ids))
+            cat_rows = db.execute(
+                f"""SELECT id, name, sort_order FROM category
+                    WHERE id IN ({placeholders}) AND event_id=? AND deleted=0 ORDER BY sort_order""",
+                [*manageable_ids, event_id],
+            ).fetchall()
+        else:
+            cat_rows = []
+
+        categories = []
+        for cat in cat_rows:
+            if is_manager:
+                access = {
+                    "can_create_article": True, "can_edit_article": True,
+                    "can_deactivate_article": True, "can_delete_article": True,
+                }
+            else:
+                access = _get_category_access(db, user_id, event_id, cat["id"]) or {}
+
+            product_rows = db.execute(
+                """SELECT id, name, price, category_id, sort_order, active, is_payout,
+                          exclude_from_stats, points, stock, requires_pager, group_id
+                   FROM product WHERE category_id=? AND deleted=0 ORDER BY sort_order""",
+                (cat["id"],),
+            ).fetchall()
+
+            categories.append(AdminCategoryResponse(
+                id=cat["id"], name=cat["name"], sort_order=cat["sort_order"],
+                can_create_article=bool(access.get("can_create_article", False)),
+                can_edit_article=bool(access.get("can_edit_article", False)),
+                can_deactivate_article=bool(access.get("can_deactivate_article", False)),
+                can_delete_article=bool(access.get("can_delete_article", False)),
+                products=[ProductResponse(**dict(r)) for r in product_rows],
+            ))
+
+    return AdminProductsResponse(categories=categories)
+
+
 @router.post("/", response_model=ProductResponse, status_code=201)
 def create_product(
     body: ProductCreate,
@@ -374,6 +491,7 @@ def create_product(
             raise HTTPException(status_code=404, detail="Kategorie nicht gefunden")
 
         _require_category_flag(db, user_id, event_id, body.category_id, "can_create_article")
+        _validate_group_id(db, body.group_id, body.category_id)
 
         max_row = db.execute(
             "SELECT COALESCE(MAX(sort_order), -1) AS m FROM product WHERE category_id=? AND deleted=0",
@@ -382,10 +500,10 @@ def create_product(
         next_sort = max_row["m"] + 1
 
         cursor = db.execute(
-            "INSERT INTO product (category_id, name, price, sort_order, is_payout, exclude_from_stats, points, stock, requires_pager) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO product (category_id, name, price, sort_order, is_payout, exclude_from_stats, points, stock, requires_pager, group_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (body.category_id, body.name, body.price, next_sort,
              1 if body.is_payout else 0, 1 if body.exclude_from_stats else 0, body.points, body.stock,
-             1 if body.requires_pager else 0),
+             1 if body.requires_pager else 0, body.group_id),
         )
         new_id = cursor.lastrowid
 
@@ -397,7 +515,7 @@ def create_product(
         id=new_id, name=body.name, price=body.price,
         category_id=body.category_id, sort_order=next_sort, active=True,
         is_payout=body.is_payout, exclude_from_stats=body.exclude_from_stats, points=body.points,
-        stock=body.stock, requires_pager=body.requires_pager,
+        stock=body.stock, requires_pager=body.requires_pager, group_id=body.group_id,
     )
 
 
@@ -425,6 +543,33 @@ def update_product(
 
         _require_category_flag(db, user_id, event_id, row["category_id"], "can_edit_article")
 
+        # Moving to a different category requires edit rights on BOTH the
+        # current and the destination category — otherwise a user could use
+        # a category they own as a one-way dumping ground into (or out of)
+        # one they have no rights to.
+        new_category_id = body.category_id if body.category_id is not None else row["category_id"]
+        if new_category_id != row["category_id"]:
+            # An option can only change category by moving its base article
+            # (which cascades to its options, below) — moving it directly
+            # would leave it in a different category than its base,
+            # violating the same-category invariant _validate_group_id
+            # enforces on creation. Ungrouping in the same request (either
+            # via an explicit group_id=null, or by pointing it at a new base
+            # already in the destination category) is still fine — only a
+            # bare category move while still grouped is rejected.
+            if row["group_id"] is not None and "group_id" not in body.model_fields_set:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Eine Option kann nicht direkt verschoben werden — verschiebe stattdessen ihren Basis-Artikel",
+                )
+            dest_cat = db.execute(
+                "SELECT id FROM category WHERE id=? AND event_id=? AND deleted=0",
+                (new_category_id, event_id),
+            ).fetchone()
+            if not dest_cat:
+                raise HTTPException(status_code=404, detail="Zielkategorie nicht gefunden")
+            _require_category_flag(db, user_id, event_id, new_category_id, "can_edit_article")
+
         new_name = body.name if body.name is not None else row["name"]
         new_price = body.price if body.price is not None else row["price"]
         new_sort = body.sort_order if body.sort_order is not None else row["sort_order"]
@@ -432,21 +577,43 @@ def update_product(
         new_exclude = body.exclude_from_stats if body.exclude_from_stats is not None else bool(row["exclude_from_stats"])
         new_points = body.points if body.points is not None else int(row["points"])
         new_requires_pager = body.requires_pager if body.requires_pager is not None else bool(row["requires_pager"])
-        # stock is the one field where "omitted" and "explicit null" must be
-        # told apart — null means "clear tracking", which the `!= None`
-        # pattern above can't express (it would just mean "unchanged" for a
-        # field that legitimately wants to *become* null).
+        # stock/group_id are the fields where "omitted" and "explicit null"
+        # must be told apart — null means "clear tracking"/"ungroup this
+        # article", which the `!= None` pattern above can't express.
         if "stock" in body.model_fields_set:
             new_stock = body.stock
         else:
             new_stock = row["stock"]
+        if "group_id" in body.model_fields_set:
+            new_group_id = body.group_id
+            if new_group_id is not None:
+                _validate_group_id(db, new_group_id, new_category_id, self_id=product_id)
+                has_children = db.execute(
+                    "SELECT 1 FROM product WHERE group_id=? AND deleted=0 LIMIT 1", (product_id,)
+                ).fetchone()
+                if has_children:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Ein Artikel mit eigenen Optionen kann nicht selbst zur Option werden",
+                    )
+        else:
+            new_group_id = row["group_id"]
 
         db.execute(
-            "UPDATE product SET name=?, price=?, sort_order=?, is_payout=?, exclude_from_stats=?, points=?, stock=?, requires_pager=?, updated_at=datetime('now') WHERE id=?",
-            (new_name, new_price, new_sort,
+            "UPDATE product SET name=?, price=?, category_id=?, sort_order=?, is_payout=?, exclude_from_stats=?, points=?, stock=?, requires_pager=?, group_id=?, updated_at=datetime('now') WHERE id=?",
+            (new_name, new_price, new_category_id, new_sort,
              1 if new_is_payout else 0, 1 if new_exclude else 0, new_points, new_stock,
-             1 if new_requires_pager else 0, product_id),
+             1 if new_requires_pager else 0, new_group_id, product_id),
         )
+
+        # Options move along with their base article — otherwise they'd be
+        # left referencing a base in a different category, violating the
+        # same-category invariant _validate_group_id enforces on creation.
+        if new_category_id != row["category_id"]:
+            db.execute(
+                "UPDATE product SET category_id=?, updated_at=datetime('now') WHERE group_id=? AND deleted=0",
+                (new_category_id, product_id),
+            )
 
     logger.info(
         "Product updated: product_id=%s name=%s price=%s by=%s",
@@ -454,9 +621,9 @@ def update_product(
     )
     return ProductResponse(
         id=product_id, name=new_name, price=new_price,
-        category_id=row["category_id"], sort_order=new_sort, active=bool(row["active"]),
+        category_id=new_category_id, sort_order=new_sort, active=bool(row["active"]),
         is_payout=new_is_payout, exclude_from_stats=new_exclude, points=new_points,
-        stock=new_stock, requires_pager=new_requires_pager,
+        stock=new_stock, requires_pager=new_requires_pager, group_id=new_group_id,
     )
 
 
@@ -473,7 +640,7 @@ def set_product_active(
     with get_db() as db:
         row = db.execute(
             """
-            SELECT p.id, p.name, p.price, p.category_id, p.sort_order, p.active, p.is_payout, p.exclude_from_stats, p.points, p.stock, p.requires_pager
+            SELECT p.id, p.name, p.price, p.category_id, p.sort_order, p.active, p.is_payout, p.exclude_from_stats, p.points, p.stock, p.requires_pager, p.group_id
             FROM product p
             JOIN category c ON p.category_id = c.id
             WHERE p.id=? AND c.event_id=? AND p.deleted=0
@@ -502,6 +669,7 @@ def set_product_active(
         points=int(row["points"]),
         stock=row["stock"],
         requires_pager=bool(row["requires_pager"]),
+        group_id=row["group_id"],
     )
 
 
@@ -530,6 +698,13 @@ def delete_product(
 
         db.execute(
             "UPDATE product SET deleted=1, updated_at=datetime('now') WHERE id=?",
+            (product_id,),
+        )
+        # Options have no standalone meaning once their base is gone (e.g.
+        # "mit Pommes" without "Currywurst") — cascade the soft-delete
+        # rather than leaving them as orphaned, ungrouped articles.
+        db.execute(
+            "UPDATE product SET deleted=1, updated_at=datetime('now') WHERE group_id=? AND deleted=0",
             (product_id,),
         )
 

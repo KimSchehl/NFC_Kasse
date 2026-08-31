@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -9,7 +7,9 @@ import '../models/user_preferences_model.dart';
 import '../providers/providers.dart';
 import '../services/app_logger.dart';
 import '../utils/formatters.dart';
-import 'dialogs/edit_product_dialog.dart';
+import 'dialogs/quick_edit_product_dialog.dart';
+import 'dialogs/variant_picker_dialog.dart';
+import 'product_tile.dart';
 
 // ---------------------------------------------------------------------------
 // Public widget
@@ -70,22 +70,36 @@ class _Grid extends ConsumerStatefulWidget {
 class _GridState extends ConsumerState<_Grid> {
   int? _draggingIndex;
 
+  /// Articles with their own grid tile — excludes options (an article
+  /// pointed at by another via `groupId`), which only ever surface inside
+  /// their base's variant picker, never as their own tile.
+  List<ProductModel> get _topLevelProducts =>
+      widget.products.where((p) => p.groupId == null).toList();
+
+  /// The options belonging to [product] (empty if it's a plain article).
+  List<ProductModel> _optionsOf(ProductModel product) =>
+      widget.products.where((p) => p.groupId == product.id).toList();
+
   /// Builds the ordered slot list from saved layout + any new products appended.
   /// Deleted product IDs are removed; user-added null gaps are preserved.
+  /// An article that became an option since the layout was last saved is
+  /// filtered out here the same way a deleted one would be — no separate
+  /// migration needed.
   List<int?> _buildSlots() {
+    final topLevel = _topLevelProducts;
     final saved = widget.prefs.getLayout(widget.category.id, widget.profile);
-    final existing = widget.products.map((p) => p.id).toSet();
+    final existing = topLevel.map((p) => p.id).toSet();
 
     if (saved == null) {
-      return widget.products.map((p) => p.id as int?).toList();
+      return topLevel.map((p) => p.id as int?).toList();
     }
 
-    // Remove IDs of products that were deleted since layout was saved.
+    // Remove IDs of products that were deleted (or became options) since layout was saved.
     final valid = saved.where((id) => id == null || existing.contains(id)).toList();
 
     // Append products added after the layout was last saved.
     final inLayout = valid.whereType<int>().toSet();
-    final appended = widget.products
+    final appended = topLevel
         .where((p) => !inLayout.contains(p.id))
         .map((p) => p.id as int?);
 
@@ -119,26 +133,25 @@ class _GridState extends ConsumerState<_Grid> {
           widget.category.id, widget.profile, slots);
   }
 
-  Future<void> _openEdit(BuildContext context, ProductModel? product) async {
-    AppLogger.trace(
-      'Artikel-Dialog geöffnet: ${product?.name ?? "Neuer Artikel"}',
-      logger: 'ui.pos',
-    );
+  /// Opens the narrow quick-edit popup (color + current stock only) for an
+  /// existing article — full editing (name, price, points, pager, options,
+  /// delete, new-article creation) lives on the article admin screen now,
+  /// reachable via the sidebar, not from here.
+  Future<void> _openQuickEdit(BuildContext context, ProductModel product) async {
+    AppLogger.trace('Schnell-Bearbeiten geöffnet: ${product.name}', logger: 'ui.pos');
 
-    // Editing an existing product: pull in any stock/price changes from
-    // sales made since the last sync poll first, so the dialog never shows
-    // a stale (e.g. pre-sale) stock count instead of the current remainder.
-    ProductModel? dialogProduct = product;
-    if (product != null) {
-      await ref.read(productSyncProvider.notifier).checkForChanges();
-      if (!mounted) return;
-      final fresh = ref.read(productsProvider(widget.category.id)).valueOrNull;
-      if (fresh != null) {
-        for (final p in fresh) {
-          if (p.id == product.id) {
-            dialogProduct = p;
-            break;
-          }
+    // Pull in any stock changes from sales made since the last sync poll
+    // first, so the dialog never shows a stale (e.g. pre-sale) stock count
+    // instead of the current remainder.
+    ProductModel dialogProduct = product;
+    await ref.read(productSyncProvider.notifier).checkForChanges();
+    if (!mounted) return;
+    final fresh = ref.read(productsProvider(widget.category.id)).valueOrNull;
+    if (fresh != null) {
+      for (final p in fresh) {
+        if (p.id == product.id) {
+          dialogProduct = p;
+          break;
         }
       }
     }
@@ -146,14 +159,36 @@ class _GridState extends ConsumerState<_Grid> {
     if (!context.mounted) return;
     await showDialog(
       context: context,
-      builder: (_) => EditProductDialog(
+      builder: (_) => QuickEditProductDialog(
         product: dialogProduct,
-        categoryId: widget.category.id,
-        canEditDetails: product == null ? true : widget.category.canEditArticle,
-        canDelete: widget.category.canDeleteArticle,
-        canDeactivate: widget.category.canDeactivateArticle,
+        canEditStock: widget.category.canEditArticle,
       ),
     );
+  }
+
+  /// Normal-mode tap: adds [product] directly, unless it has options (other
+  /// articles pointing back at it via `groupId`), in which case a mini-grid
+  /// picker opens first — e.g. tapping "Currywurst" offers "mit Pommes"/
+  /// "mit Brötchen"; picking one adds *that* article, exactly as if it had
+  /// been tapped directly.
+  Future<void> _addOrPickVariant(BuildContext context, ProductModel product) async {
+    if (!product.active || product.isOutOfStock) return;
+
+    final options = _optionsOf(product);
+    if (options.isEmpty) {
+      AppLogger.trace('Artikel zu Warenkorb: ${product.name}', logger: 'ui.pos');
+      ref.read(cartProvider.notifier).addProduct(product);
+      return;
+    }
+
+    AppLogger.trace('Options-Popup geöffnet: ${product.name}', logger: 'ui.pos');
+    final chosen = await showDialog<ProductModel>(
+      context: context,
+      builder: (_) => VariantPickerDialog(base: product, options: options),
+    );
+    if (chosen == null) return;
+    AppLogger.trace('Artikel zu Warenkorb: ${chosen.name}', logger: 'ui.pos');
+    ref.read(cartProvider.notifier).addProduct(chosen);
   }
 
 
@@ -166,11 +201,6 @@ class _GridState extends ConsumerState<_Grid> {
     final buttonMaxLines = ref.watch(buttonMaxLinesProvider);
     final tileH = ((50 + 30 * buttonMaxLines) * textScale).clamp(70.0, 220.0);
 
-    // In edit mode append the "Add new product" sentinel (-1).
-    final displaySlots = (widget.editMode && widget.category.canCreateArticle)
-        ? [...slots, -1]
-        : slots;
-
     return Stack(
       children: [
         GridView.builder(
@@ -181,14 +211,9 @@ class _GridState extends ConsumerState<_Grid> {
             crossAxisSpacing: 6,
             mainAxisSpacing: 6,
           ),
-          itemCount: displaySlots.length,
+          itemCount: slots.length,
           itemBuilder: (context, i) {
-            final slotId = displaySlots[i];
-
-            // "Add new product" tile
-            if (slotId == -1) {
-              return _AddTile(onTap: () => _openEdit(context, null));
-            }
+            final slotId = slots[i];
 
             // Empty slot
             if (slotId == null) {
@@ -213,25 +238,23 @@ class _GridState extends ConsumerState<_Grid> {
                 maxLines: buttonMaxLines,
                 color: widget.prefs.getProductColor(product.id),
                 dragging: _draggingIndex == i,
+                hasOptions: _optionsOf(product).isNotEmpty,
                 onDragStarted: () => setState(() => _draggingIndex = i),
                 onDragEnd: () => setState(() => _draggingIndex = null),
                 onAccept: (from) {
                   setState(() => _draggingIndex = null);
                   _swap(from, i);
                 },
-                onTap: () => _openEdit(context, product),
+                onTap: () => _openQuickEdit(context, product),
               );
             }
 
-            return _ProductTile(
+            return ProductTile(
               product: product,
               maxLines: buttonMaxLines,
               color: widget.prefs.getProductColor(product.id),
-              onTap: () {
-                if (!product.active || product.isOutOfStock) return;
-                AppLogger.trace('Artikel zu Warenkorb: ${product.name}', logger: 'ui.pos');
-                ref.read(cartProvider.notifier).addProduct(product);
-              },
+              hidePrice: _optionsOf(product).isNotEmpty,
+              onTap: () => _addOrPickVariant(context, product),
             );
           },
         ),
@@ -266,180 +289,10 @@ class _GridState extends ConsumerState<_Grid> {
 }
 
 // ---------------------------------------------------------------------------
-// Sold-out hazard-stripe frame — shared between _ProductTile and
-// _DraggableTile._editCard, both of which otherwise render independently.
-// ---------------------------------------------------------------------------
-
-/// Wraps [child] with a diagonal red/white hazard-stripe border frame
-/// (like warning tape) around its edge, leaving [child] itself untouched
-/// and fully visible in the center. Used to flag sold-out articles more
-/// prominently than the plain greyed-out/"Ausverkauft" label alone.
-///
-/// Implemented as a full-size striped layer *behind* an inset copy of
-/// [child] (rather than clipping a single striped painter down to a
-/// border-shaped region via `Path.combine`) because Flutter Web's canvas
-/// backend does not reliably support `Path.combine`/`clipPath` there — it
-/// silently painted the stripes across the whole tile instead of just the
-/// border on web, while rendering correctly on Android. Plain layering only
-/// needs a single rounded-rect clip, which is supported everywhere.
-class _SoldOutFrame extends StatelessWidget {
-  final Widget child;
-
-  const _SoldOutFrame({required this.child});
-
-  static const _frameThickness = 8.0;
-  static const _borderRadius = 12.0;
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(_borderRadius),
-            child: const CustomPaint(painter: _HazardStripePainter()),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(_frameThickness),
-          child: child,
-        ),
-      ],
-    );
-  }
-}
-
-class _HazardStripePainter extends CustomPainter {
-  static const _stripeWidth = 7.0;
-
-  const _HazardStripePainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    canvas.drawRect(Offset.zero & size, Paint()..color = Colors.white);
-
-    // Rotate the canvas 45° around the tile's center, then paint plain
-    // vertical bars spanning well beyond the (now-diagonal) visible bounds
-    // — simpler and more robust than computing rotated stripe geometry by hand.
-    canvas.save();
-    canvas.translate(size.width / 2, size.height / 2);
-    canvas.rotate(math.pi / 4);
-    final half = size.width + size.height;
-    final stripePaint = Paint()..color = const Color(0xFFE53935);
-    for (double x = -half; x < half; x += _stripeWidth * 2) {
-      canvas.drawRect(Rect.fromLTWH(x, -half, _stripeWidth, half * 2), stripePaint);
-    }
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant _HazardStripePainter oldDelegate) => false;
-}
-
-// ---------------------------------------------------------------------------
 // Tiles
 // ---------------------------------------------------------------------------
-
-class _ProductTile extends StatelessWidget {
-  final ProductModel product;
-  final int maxLines;
-  final Color? color;
-  final VoidCallback onTap;
-
-  const _ProductTile({
-    required this.product,
-    required this.maxLines,
-    required this.color,
-    required this.onTap,
-  });
-
-  static Color _contrast(Color bg) {
-    final l = 0.299 * bg.r + 0.587 * bg.g + 0.114 * bg.b;
-    return l > 0.5 ? Colors.black87 : Colors.white;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final inactive = !product.active;
-    final outOfStock = product.isOutOfStock;
-    final greyedOut = inactive || outOfStock;
-    final showFrame = outOfStock && !inactive;
-    final isRefund = product.isRefund;
-
-    // The plain "Inaktiv" tile blends its 50%-alpha grey against the
-    // ordinary grid background behind it. A sold-out tile instead sits on
-    // top of _SoldOutFrame's striped layer, so it needs a fully opaque
-    // background here — otherwise the stripes bleed through the text.
-    final cardColor = inactive
-        ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5)
-        : showFrame
-            ? theme.colorScheme.surfaceContainerHighest
-            : color ??
-                (isRefund
-                    ? theme.colorScheme.tertiaryContainer
-                    : theme.colorScheme.surfaceContainerHigh);
-
-    final onCard =
-        color != null && !greyedOut ? _contrast(color!) : null;
-
-    final card = Card(
-      clipBehavior: Clip.antiAlias,
-      color: cardColor,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Expanded(
-                child: Center(
-                  child: Text(
-                    product.name,
-                    textAlign: TextAlign.center,
-                    maxLines: maxLines,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontSize: 20,
-                      color: greyedOut
-                          ? theme.colorScheme.onSurface.withValues(alpha: 0.4)
-                          : onCard,
-                    ),
-                  ),
-                ),
-              ),
-              Text(
-                formatPrice(product.price),
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: greyedOut
-                      ? theme.colorScheme.onSurface.withValues(alpha: 0.4)
-                      : onCard ??
-                          (isRefund
-                              ? theme.colorScheme.tertiary
-                              : theme.colorScheme.primary),
-                ),
-              ),
-              if (greyedOut)
-                Text(
-                  inactive ? 'Inaktiv' : 'Ausverkauft',
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-
-    // Sold-out (but not deliberately deactivated) gets the hazard-stripe
-    // frame instead of just the plain grey/"Ausverkauft" treatment above.
-    return showFrame ? _SoldOutFrame(child: card) : card;
-  }
-}
+// ProductTile/SoldOutFrame live in product_tile.dart (shared with the
+// variant-picker mini-grid) — only the edit-mode draggable tile stays here.
 
 /// A product tile that can be dragged (edit mode).
 class _DraggableTile extends StatelessWidget {
@@ -448,6 +301,7 @@ class _DraggableTile extends StatelessWidget {
   final int maxLines;
   final Color? color;
   final bool dragging;
+  final bool hasOptions;
   final VoidCallback onDragStarted;
   final VoidCallback onDragEnd;
   final ValueChanged<int> onAccept;
@@ -459,6 +313,7 @@ class _DraggableTile extends StatelessWidget {
     required this.maxLines,
     required this.color,
     required this.dragging,
+    required this.hasOptions,
     required this.onDragStarted,
     required this.onDragEnd,
     required this.onAccept,
@@ -521,11 +376,7 @@ class _DraggableTile extends StatelessWidget {
             ? theme.colorScheme.tertiaryContainer
             : theme.colorScheme.surfaceContainerHigh);
 
-    Color? onCard;
-    if (color != null && !greyedOut && !hovered) {
-      final l = 0.299 * color!.r + 0.587 * color!.g + 0.114 * color!.b;
-      onCard = l > 0.5 ? Colors.black87 : Colors.white;
-    }
+    final onCard = (color != null && !greyedOut && !hovered) ? contrastColor(color!) : null;
 
     final card = Card(
       clipBehavior: Clip.antiAlias,
@@ -560,17 +411,18 @@ class _DraggableTile extends StatelessWidget {
                   ),
                 ),
               ),
-              Text(
-                formatPrice(product.price),
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: greyedOut
-                      ? theme.colorScheme.onSurface.withValues(alpha: 0.4)
-                      : onCard ?? (isRefund
-                          ? theme.colorScheme.tertiary
-                          : theme.colorScheme.primary),
+              if (!hasOptions)
+                Text(
+                  formatPrice(product.price),
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: greyedOut
+                        ? theme.colorScheme.onSurface.withValues(alpha: 0.4)
+                        : onCard ?? (isRefund
+                            ? theme.colorScheme.tertiary
+                            : theme.colorScheme.primary),
+                  ),
                 ),
-              ),
               if (greyedOut)
                 Text(
                   inactive ? 'Inaktiv' : 'Ausverkauft',
@@ -585,7 +437,7 @@ class _DraggableTile extends StatelessWidget {
       ),
     );
 
-    return (outOfStock && !inactive) ? _SoldOutFrame(child: card) : card;
+    return (outOfStock && !inactive) ? SoldOutFrame(child: card) : card;
   }
 }
 
@@ -633,30 +485,5 @@ class _InvisibleSlot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => const SizedBox.shrink();
-}
-
-class _AddTile extends StatelessWidget {
-  final VoidCallback onTap;
-
-  const _AddTile({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.add, size: 32, color: theme.colorScheme.primary),
-            const SizedBox(height: 4),
-            Text('Neu', style: TextStyle(color: theme.colorScheme.primary)),
-          ],
-        ),
-      ),
-    );
-  }
 }
 

@@ -6,6 +6,7 @@ import '../widgets/app_sidebar.dart';
 import '../widgets/dialogs/update_dialog.dart';
 import '../widgets/help_button.dart';
 import 'account_screen.dart';
+import 'article_admin_screen.dart';
 import 'log_viewer_screen.dart';
 import 'pos_screen.dart';
 import 'settings_screen.dart';
@@ -58,6 +59,7 @@ class _MainShellState extends ConsumerState<MainShell> {
       AppScreen.settings => 'Einstellungen',
       AppScreen.account => user?.displayLabel ?? 'Konto',
       AppScreen.logs => 'Protokolle',
+      AppScreen.articleAdmin => 'Artikelverwaltung',
     };
 
     final body = switch (currentScreen) {
@@ -67,6 +69,7 @@ class _MainShellState extends ConsumerState<MainShell> {
       AppScreen.settings => const SettingsScreen(),
       AppScreen.account => const AccountScreen(),
       AppScreen.logs => const LogViewerScreen(),
+      AppScreen.articleAdmin => const ArticleAdminScreen(),
     };
 
     final sidebarCollapsed = ref.watch(sidebarCollapsedProvider);

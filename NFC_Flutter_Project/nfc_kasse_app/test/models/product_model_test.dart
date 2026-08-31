@@ -14,6 +14,7 @@ void main() {
         'is_payout': false,
         'exclude_from_stats': false,
         'requires_pager': true,
+        'group_id': 42,
       });
       expect(p.id, 1);
       expect(p.name, 'Bier');
@@ -24,6 +25,7 @@ void main() {
       expect(p.isPayout, false);
       expect(p.excludeFromStats, false);
       expect(p.requiresPager, true);
+      expect(p.groupId, 42);
     });
 
     test('sort_order defaults to 0 when missing', () {
@@ -52,6 +54,13 @@ void main() {
         'id': 7, 'name': 'x', 'price': 1.0, 'category_id': 1,
       });
       expect(p.requiresPager, false);
+    });
+
+    test('groupId defaults to null when missing', () {
+      final p = ProductModel.fromJson({
+        'id': 8, 'name': 'x', 'price': 1.0, 'category_id': 1,
+      });
+      expect(p.groupId, null);
     });
   });
 

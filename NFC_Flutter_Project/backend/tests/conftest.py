@@ -9,6 +9,10 @@ import os
 # enough. Harmless for non-pager tests: PAGER_ENABLED only adds a route and
 # gates an `if` branch that's otherwise skipped when pager_number is omitted.
 os.environ.setdefault("PAGER", "true")
+# Same reasoning as PAGER above — points-resolution tests (booking through
+# an article option) need LEADERBOARD_ENABLED=True, which is likewise frozen
+# at config.py's first import.
+os.environ.setdefault("LEADERBOARD", "true")
 
 import pytest
 from starlette.testclient import TestClient
@@ -110,6 +114,31 @@ def other_user_auth_headers(client, auth_headers):
     assert login.status_code == 200, login.text
     token = login.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def option_product_ids(db):
+    """
+    Base article "Currywurst" (stock=10, points=5) + one option
+    "Currywurst mit Pommes" (group_id -> base, own price=6.00, no stock/
+    points of its own) in the same category. Returns (cat_id, base_id, option_id).
+    """
+    import database
+    with database.get_db() as conn:
+        event_id = conn.execute("SELECT id FROM event LIMIT 1").fetchone()["id"]
+        cat_id = conn.execute(
+            "INSERT INTO category (event_id, name) VALUES (?, ?)",
+            (event_id, "Test Kategorie"),
+        ).lastrowid
+        base_id = conn.execute(
+            "INSERT INTO product (category_id, name, price, stock, points) VALUES (?, ?, ?, ?, ?)",
+            (cat_id, "Currywurst", 5.00, 10, 5),
+        ).lastrowid
+        option_id = conn.execute(
+            "INSERT INTO product (category_id, name, price, group_id) VALUES (?, ?, ?, ?)",
+            (cat_id, "Currywurst mit Pommes", 6.00, base_id),
+        ).lastrowid
+    return cat_id, base_id, option_id
 
 
 @pytest.fixture

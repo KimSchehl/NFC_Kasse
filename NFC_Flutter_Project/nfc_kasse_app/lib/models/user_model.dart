@@ -62,6 +62,11 @@ class UserModel {
                p == 'categories.deactivate' || p == 'categories.delete',
       );
 
+  /// True when the user has at least one article-management right on at
+  /// least one category (or is a manager, who always does once they have
+  /// any category) — gates the "Artikelverwaltung" sidebar entry.
+  bool get canManageAnyArticles => categories.any((c) => c.canManageArticles);
+
   bool get isKiosk => hasPermission('kiosk.access');
 
   bool get canManageUsers => hasPermission('users.manage_permissions');
