@@ -1,0 +1,42 @@
+<service>
+  <id>NfcKasseBackend</id>
+  <name>NFC-Kasse Backend</name>
+  <description>Cashless NFC POS backend for events. Serves the API and web app to LAN devices.</description>
+
+  <executable>%BASE%\NfcKasseBackend.exe</executable>
+  <!-- %BASE% is WinSW's built-in variable for "the directory containing
+       this XML/exe": resolves to the install directory regardless of
+       where Inno Setup actually put it. -->
+  <workingdirectory>%BASE%</workingdirectory>
+  <!-- Not load-bearing for correctness (service_main.py resolves everything
+       via NFC_KASSE_DATA_DIR / __file__, never CWD); set anyway for
+       defense in depth, since a Windows service otherwise defaults to
+       C:\Windows\System32 as its working directory. -->
+
+  <startmode>Automatic</startmode>
+
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="restart" delay="30 sec"/>
+  <resetfailure>1 hour</resetfailure>
+  <!-- Maps onto the native Windows SCM "Recovery" settings
+       (ChangeServiceConfig2): genuine OS level crash recovery, not a
+       WinSW side polling loop. -->
+
+  <logpath>C:\ProgramData\NFC-Kasse\logs\winsw</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>8</keepFiles>
+  </log>
+  <!-- Deliberately separate from the app's own JSON logs
+       (C:\ProgramData\NFC-Kasse\logs\*.log): this is the safety net
+       channel for anything that goes wrong before setup_logging() finishes
+       installing the app's own file handler, e.g. a hand corrupted
+       config.env, which would otherwise be invisible with no console
+       attached. -->
+
+  <!-- No serviceaccount element, so this installs as LocalSystem (the
+       WinSW default). C:\ProgramData grants SYSTEM Full Control by
+       inheritance, so this is sufficient for writing kasse.db/logs/backups
+       with no extra ACL work, and is also standardly sufficient for
+       opening COM ports for the receipt printer. -->
+</service>

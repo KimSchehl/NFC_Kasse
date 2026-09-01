@@ -16,6 +16,7 @@ import contextvars
 import json
 import logging
 import logging.handlers
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -163,12 +164,13 @@ class _TopOfHourHandler(logging.handlers.TimedRotatingFileHandler):
 
 
 def log_dir() -> Path:
-    return Path(__file__).parent / "logs"
+    override = os.environ.get("NFC_KASSE_LOG_DIR")
+    return Path(override) if override else Path(__file__).parent / "logs"
 
 
 def setup_logging() -> None:
     d = log_dir()
-    d.mkdir(exist_ok=True)
+    d.mkdir(parents=True, exist_ok=True)
 
     file_handler = _TopOfHourHandler(log_dir=d, backup_count=168)
     file_handler.setFormatter(JsonFormatter())
