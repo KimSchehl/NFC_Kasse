@@ -3,6 +3,8 @@ config.env
 
 # Backend
 backend/kasse.db
+backend/kasse.db-shm
+backend/kasse.db-wal
 backend/__pycache__/
 backend/**/__pycache__/
 backend/*.pyc
