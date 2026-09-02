@@ -1,4 +1,15 @@
+import logging
 import os
+
+import licensing
+
+logger = logging.getLogger(__name__)
+
+# Stable per-installation identifier, generated once at config.env creation
+# time (start_backend.bat / service_main.py) and never changed afterward —
+# every license key is signed for one specific INSTALLATION_ID, so changing
+# it invalidates every license already issued for this install.
+INSTALLATION_ID: str = os.getenv("INSTALLATION_ID", "")
 
 # Chip deposit in EUR (e.g. 3.0 for 3 Euro).
 # Configured via CHIP_DEPOSIT in config.env.
@@ -29,15 +40,26 @@ BAR_CHIP_UID: str = os.getenv("BAR_CHIP_UID", "BAR")
 #
 # PRINTER_LINE_WIDTH: characters per line at normal font (80 mm paper = 42)
 
-# Leaderboard add-on (optional paid feature).
-# Set LEADERBOARD=true in config.env to enable.
-# When false, all leaderboard routes are inactive and no points are tracked.
-LEADERBOARD_ENABLED: bool = os.getenv("LEADERBOARD", "false").lower() in ("true", "1", "yes")
+# Leaderboard add-on (paid feature).
+# LEADERBOARD=true in config.env says the operator wants it on; it only
+# actually activates if LEADERBOARD_LICENSE_KEY is also a valid license for
+# this INSTALLATION_ID (see licensing.py). When inactive, all leaderboard
+# routes are inactive and no points are tracked.
+_leaderboard_requested = os.getenv("LEADERBOARD", "false").lower() in ("true", "1", "yes")
+LEADERBOARD_ENABLED: bool = _leaderboard_requested and licensing.verify_feature(
+    "leaderboard", INSTALLATION_ID, os.getenv("LEADERBOARD_LICENSE_KEY", "")
+)
+if _leaderboard_requested and not LEADERBOARD_ENABLED:
+    logger.warning("LEADERBOARD=true but no valid LEADERBOARD_LICENSE_KEY — feature stays disabled")
 
-# Pager add-on (optional feature).
-# Set PAGER=true in config.env to enable.
-# When false, the pager route/column is inactive and no pager data is tracked.
-PAGER_ENABLED: bool = os.getenv("PAGER", "false").lower() in ("true", "1", "yes")
+# Pager add-on (paid feature). Same licensing gate as above.
+# When inactive, the pager route/column is inactive and no pager data is tracked.
+_pager_requested = os.getenv("PAGER", "false").lower() in ("true", "1", "yes")
+PAGER_ENABLED: bool = _pager_requested and licensing.verify_feature(
+    "pager", INSTALLATION_ID, os.getenv("PAGER_LICENSE_KEY", "")
+)
+if _pager_requested and not PAGER_ENABLED:
+    logger.warning("PAGER=true but no valid PAGER_LICENSE_KEY — feature stays disabled")
 
 PRINTER_TYPE: str = os.getenv("PRINTER_TYPE", "serial")
 PRINTER_PORT: str = os.getenv("PRINTER_PORT", "COM4")

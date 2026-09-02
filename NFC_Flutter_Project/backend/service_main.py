@@ -19,6 +19,7 @@ import os
 import secrets
 import shutil
 import sqlite3
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -43,16 +44,21 @@ PORT=8000
 # IMPORTANT: changing this invalidates every existing login session.
 SECRET_KEY={secret_key}
 
+# Unique installation ID, generated once. Do not change -- every feature
+# license key is signed for this exact ID. Needed to request license keys
+# (PAGER, LEADERBOARD, ...).
+INSTALLATION_ID={installation_id}
+
 # Name of the event, shown in the UI and on printed receipts.
 EVENT_NAME=Hauptveranstaltung
 
 # Chip deposit in EUR (e.g. 3.00). 0 disables deposit logic.
 CHIP_DEPOSIT=0
 
-# Leaderboard add-on. true = enabled.
+# Leaderboard add-on (paid feature, needs LEADERBOARD_LICENSE_KEY). true = enabled.
 LEADERBOARD=false
 
-# Pager add-on. true = enabled.
+# Pager add-on (paid feature, needs PAGER_LICENSE_KEY). true = enabled.
 PAGER=false
 
 # URL path the Flutter web app is served under (only active if a webapp
@@ -62,14 +68,18 @@ WEBAPP_ROUTE=/webapp
 
 
 def _ensure_config() -> None:
-    """Creates config.env with a real random SECRET_KEY on first run. Never
-    touches an existing file — regenerating the secret on every start would
-    invalidate every logged-in session."""
+    """Creates config.env with a real random SECRET_KEY and a fresh
+    INSTALLATION_ID on first run. Never touches an existing file —
+    regenerating the secret would invalidate every logged-in session, and
+    regenerating the installation ID would invalidate every license key
+    already issued for this install."""
     if CONFIG_PATH.exists():
         return
     secret = secrets.token_urlsafe(32)
+    installation_id = str(uuid.uuid4())
     CONFIG_PATH.write_text(
-        _DEFAULT_CONFIG_TEMPLATE.format(secret_key=secret), encoding="utf-8"
+        _DEFAULT_CONFIG_TEMPLATE.format(secret_key=secret, installation_id=installation_id),
+        encoding="utf-8",
     )
 
 

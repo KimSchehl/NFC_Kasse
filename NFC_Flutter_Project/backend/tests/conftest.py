@@ -1,4 +1,13 @@
+import base64
+import json
 import os
+
+import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from starlette.testclient import TestClient
+
+import licensing
 
 # main.py registers the pager router conditionally at import time based on
 # config.PAGER_ENABLED, which itself reads this env var at config.py's
@@ -9,9 +18,41 @@ import os
 # enough. Harmless for non-pager tests: PAGER_ENABLED only adds a route and
 # gates an `if` branch that's otherwise skipped when pager_number is omitted.
 os.environ.setdefault("PAGER", "true")
+os.environ.setdefault("LEADERBOARD", "true")
 
-import pytest
-from starlette.testclient import TestClient
+# PAGER_ENABLED/LEADERBOARD_ENABLED now also require a valid signed license
+# key for this installation (see licensing.py) — the plain *_LICENSE flag
+# above is no longer sufficient by itself. Generate a disposable test
+# keypair and sign valid keys for both features, entirely independent of
+# the real production key in license_tool/. Swapping licensing.PUBLIC_KEY_B64
+# is a plain module-attribute assignment, not a monkeypatch fixture — that's
+# deliberate, since this has to happen at bare module scope (same ordering
+# constraint as PAGER/LEADERBOARD above), where no test function (and
+# therefore no fixture) is active yet.
+_TEST_INSTALLATION_ID = "test-installation-id"
+os.environ.setdefault("INSTALLATION_ID", _TEST_INSTALLATION_ID)
+
+_test_private_key = Ed25519PrivateKey.generate()
+_test_public_bytes = _test_private_key.public_key().public_bytes(
+    encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw
+)
+licensing.PUBLIC_KEY_B64 = base64.urlsafe_b64encode(_test_public_bytes).rstrip(b"=").decode("ascii")
+
+
+def _sign_test_license(feature: str) -> str:
+    def b64(data: bytes) -> str:
+        return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+    payload = json.dumps(
+        {"v": 1, "installation_id": _TEST_INSTALLATION_ID, "feature": feature},
+        separators=(",", ":"),
+    ).encode("utf-8")
+    signature = _test_private_key.sign(payload)
+    return f"{b64(payload)}.{b64(signature)}"
+
+
+os.environ.setdefault("PAGER_LICENSE_KEY", _sign_test_license("pager"))
+os.environ.setdefault("LEADERBOARD_LICENSE_KEY", _sign_test_license("leaderboard"))
 
 
 @pytest.fixture
