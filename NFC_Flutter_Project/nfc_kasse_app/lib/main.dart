@@ -148,7 +148,7 @@ class _AuthGate extends ConsumerWidget {
       error: (_, e) => const LoginScreen(),
       data: (user) {
         if (user == null) return const LoginScreen();
-        if (user.isKiosk) return const KioskScreen();
+        if (user.isKioskOnly) return const KioskScreen();
         return const MainShell();
       },
     );

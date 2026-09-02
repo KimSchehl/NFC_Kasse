@@ -532,8 +532,13 @@ def seed_default_data(conn):
     )
     admin_id = c.lastrowid
 
-    # Grant ALL leaf permissions to admin on this event
-    c.execute("SELECT id FROM permission_node WHERE node_type != 'group'")
+    # Grant ALL leaf permissions to admin on this event -- except kiosk.access.
+    # The Flutter app treats kiosk.access as an exclusive mode (main.dart's
+    # _AuthGate routes straight to KioskScreen and never back), so granting
+    # it here would permanently lock the freshly-seeded admin out of the
+    # normal app on first login. Kiosk is meant for a dedicated terminal
+    # account, not the admin account.
+    c.execute("SELECT id FROM permission_node WHERE node_type != 'group' AND (parent_id IS NULL OR parent_id != 'kiosk')")
     for (perm_id,) in c.fetchall():
         c.execute(
             "INSERT INTO user_permission (user_id, event_id, permission_id, granted_by) VALUES (?, ?, ?, ?)",

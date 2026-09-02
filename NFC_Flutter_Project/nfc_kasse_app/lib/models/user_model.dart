@@ -64,6 +64,15 @@ class UserModel {
 
   bool get isKiosk => hasPermission('kiosk.access');
 
+  /// True only for a "pure" kiosk terminal account — kiosk.access and
+  /// nothing else (no other global permission, no category access at all).
+  /// This, not [isKiosk], is what decides whether login forces the kiosk
+  /// screen: a user who also holds real admin/operator rights (e.g. an
+  /// admin account that happens to also have kiosk.access) must never get
+  /// permanently routed away from the normal app just because kiosk.access
+  /// is one of their many permissions.
+  bool get isKioskOnly => isKiosk && permissions.length == 1 && categories.isEmpty;
+
   bool get canManageUsers => hasPermission('users.manage_permissions');
 
   /// True for any statistics permission — stats screen and sidebar link are
