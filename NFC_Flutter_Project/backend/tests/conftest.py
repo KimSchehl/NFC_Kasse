@@ -18,12 +18,9 @@ import licensing
 # enough. Harmless for non-pager tests: PAGER_ENABLED only adds a route and
 # gates an `if` branch that's otherwise skipped when pager_number is omitted.
 os.environ.setdefault("PAGER", "true")
-<<<<<<< HEAD
-=======
 # Same reasoning as PAGER above — points-resolution tests (booking through
 # an article option) need LEADERBOARD_ENABLED=True, which is likewise frozen
 # at config.py's first import.
->>>>>>> new-article-management
 os.environ.setdefault("LEADERBOARD", "true")
 
 # PAGER_ENABLED/LEADERBOARD_ENABLED now also require a valid signed license
