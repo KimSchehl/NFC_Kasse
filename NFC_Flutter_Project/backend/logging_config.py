@@ -17,6 +17,7 @@ import json
 import logging
 import logging.handlers
 import os
+import queue
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -61,7 +62,12 @@ user_ctx: contextvars.ContextVar[dict | None] = contextvars.ContextVar("user", d
 class ContextFilter(logging.Filter):
     """Stamps request-scoped identifiers onto every record that doesn't
     already carry an explicit value (e.g. the /logs/ingest endpoint sets
-    origin/device_id/user_id explicitly per shipped entry — those win)."""
+    origin/device_id/user_id explicitly per shipped entry — those win).
+
+    Attached to the QueueHandler (see setup_logging), not to the file
+    handler — this must run on the original calling thread/task, where
+    the contextvars below are actually valid. The listener thread that
+    eventually writes the record to disk has no such context of its own."""
 
     def filter(self, record: logging.LogRecord) -> bool:
         user = user_ctx.get()
@@ -83,6 +89,11 @@ class ContextFilter(logging.Filter):
             record.status_code = None
         if not hasattr(record, "exception"):
             record.exception = None
+        # QueueHandler.prepare() clears record.exc_info before queuing (it's
+        # not always safely picklable/reusable across the queue hop) — format
+        # it into text now, on the calling thread, while it's still intact.
+        if record.exc_info and record.exception is None:
+            record.exception = logging.Formatter().formatException(record.exc_info)
         return True
 
 
@@ -174,10 +185,29 @@ def setup_logging() -> None:
 
     file_handler = _TopOfHourHandler(log_dir=d, backup_count=168)
     file_handler.setFormatter(JsonFormatter())
-    file_handler.addFilter(ContextFilter())
+
+    # Actual disk writing happens on a dedicated background thread, not on
+    # whatever thread/task called logger.log(...). A plain direct handler
+    # here means every log call blocks on file I/O and on Handler.lock,
+    # which every other thread writing a log line also blocks on — under
+    # this app's real thread-pool-based concurrency (FastAPI dispatches sync
+    # `def` endpoints, including /api/logs/ingest and /api/auth/login, onto
+    # a small shared worker pool), a burst of client-shipped log entries
+    # (up to 200 per ingest call, possibly several devices at once after a
+    # reconnect) can occupy every worker doing nothing but sequential file
+    # writes, starving unrelated endpoints like login of any worker to run
+    # on at all. A queue decouples "accept this log line" (now just an
+    # in-memory queue.put(), effectively instant) from "write it to disk"
+    # (still serialized, but off of every request-handling thread).
+    log_queue: queue.Queue = queue.Queue(-1)
+    queue_handler = logging.handlers.QueueHandler(log_queue)
+    queue_handler.addFilter(ContextFilter())
+
+    listener = logging.handlers.QueueListener(log_queue, file_handler, respect_handler_level=True)
+    listener.start()
 
     root = logging.getLogger()
-    root.addHandler(file_handler)
+    root.addHandler(queue_handler)
     root.setLevel(LEVEL_NAME_TO_INT.get(LOG_LEVEL, logging.INFO))
 
     # Client-shipped entries were already filtered against that device's own
