@@ -148,6 +148,11 @@ def init_db():
         points              INTEGER NOT NULL DEFAULT 0,  -- leaderboard points per booking
         requires_pager      INTEGER NOT NULL DEFAULT 0,  -- marks article as needing a kitchen pager when booked
         stock       INTEGER,  -- NULL = not stock-tracked (unlimited); decremented per booking
+        group_id    INTEGER REFERENCES product(id),  -- NULL = standalone; else this row is an
+                    -- "option" of the base article `group_id` points to (e.g. "Currywurst mit
+                    -- Pommes" -> base "Currywurst"). Options share their base's stock/points/
+                    -- requires_pager (never set on the option row itself) — see sales.py's
+                    -- _resolve_base_products()/_effective().
         updated_at  TEXT    DEFAULT (datetime('now')),  -- bumped on any change; drives /changed sync
         created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
     )""")

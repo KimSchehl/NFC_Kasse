@@ -1,3 +1,4 @@
+import '../models/admin_category_products.dart';
 import '../models/category_model.dart';
 import '../models/product_changes_result.dart';
 import '../models/product_model.dart';
@@ -31,6 +32,7 @@ class ProductService {
     int points = 0,
     int? stock,
     bool requiresPager = false,
+    int? groupId,
   }) async {
     final resp = await _client.dio.post('/api/products/', data: {
       'name': name,
@@ -41,6 +43,7 @@ class ProductService {
       'points': points,
       'stock': stock,
       'requires_pager': requiresPager,
+      'group_id': groupId,
     });
     return ProductModel.fromJson(resp.data as Map<String, dynamic>);
   }
@@ -49,6 +52,7 @@ class ProductService {
     int id, {
     String? name,
     double? price,
+    int? categoryId,
     bool? isPayout,
     bool? excludeFromStats,
     int? points,
@@ -58,6 +62,7 @@ class ProductService {
     final data = <String, dynamic>{};
     if (name != null) data['name'] = name;
     if (price != null) data['price'] = price;
+    if (categoryId != null) data['category_id'] = categoryId;
     if (isPayout != null) data['is_payout'] = isPayout;
     if (excludeFromStats != null) data['exclude_from_stats'] = excludeFromStats;
     if (points != null) data['points'] = points;
@@ -70,6 +75,30 @@ class ProductService {
     data['stock'] = stock;
     final resp = await _client.dio.put('/api/products/$id', data: data);
     return ProductModel.fromJson(resp.data as Map<String, dynamic>);
+  }
+
+  /// Moves an already-existing, top-level (never-grouped) article between
+  /// categories — the article admin screen's drag-and-drop action. Kept
+  /// separate from [updateProduct] so that method's simpler "send only
+  /// what changed" contract doesn't have to grow a third explicit-null
+  /// field (after `stock`) just for this one caller; always sends
+  /// `group_id` (even null) for an unambiguous "this is exactly where the
+  /// article now belongs" request.
+  Future<ProductModel> moveProduct(int id, {int? categoryId, int? groupId}) async {
+    final data = <String, dynamic>{'group_id': groupId};
+    if (categoryId != null) data['category_id'] = categoryId;
+    final resp = await _client.dio.put('/api/products/$id', data: data);
+    return ProductModel.fromJson(resp.data as Map<String, dynamic>);
+  }
+
+  /// Powers the article admin screen: every article (incl. inactive) across
+  /// every category the user can manage articles in.
+  Future<List<AdminCategoryProducts>> getAdminCategories() async {
+    final resp = await _client.dio.get('/api/products/admin');
+    final data = resp.data as Map<String, dynamic>;
+    return (data['categories'] as List)
+        .map((j) => AdminCategoryProducts.fromJson(j as Map<String, dynamic>))
+        .toList();
   }
 
   /// Powers cross-device catalog sync: returns only the products in

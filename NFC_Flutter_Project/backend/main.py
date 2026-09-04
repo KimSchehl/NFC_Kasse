@@ -140,6 +140,12 @@ def _migrate() -> None:
             db.execute("ALTER TABLE product ADD COLUMN requires_pager INTEGER NOT NULL DEFAULT 0")
         except Exception:
             pass
+        # group_id — self-referential "this row is an option of that base article"
+        # link (e.g. "Currywurst mit Pommes" -> "Currywurst"). See init_db.py.
+        try:
+            db.execute("ALTER TABLE product ADD COLUMN group_id INTEGER REFERENCES product(id)")
+        except Exception:
+            pass
         # leaderboard_score table — full add-on, separate from customer table
         db.execute("""
             CREATE TABLE IF NOT EXISTS leaderboard_score (

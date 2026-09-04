@@ -6,6 +6,7 @@ import '../../models/user_model.dart';
 import '../../providers/providers.dart';
 import '../../services/app_logger.dart';
 import '../../utils/formatters.dart';
+import '../tree_branch.dart';
 
 enum _CatFlag {
   book, storno5min, stornoUnlimited,
@@ -426,7 +427,7 @@ class _CategoryTreeTile extends StatelessWidget {
           if (_hasAccess)
             Padding(
               padding: const EdgeInsets.only(left: 16, top: 2, bottom: 4),
-              child: _TreeBranch(lineColor: lineColor, children: [
+              child: TreeBranch(lineColor: lineColor, children: [
                 // ── Buchungen ────────────────────────────────────────────
                 _CheckRow(
                   value: _bookingState,
@@ -437,7 +438,7 @@ class _CategoryTreeTile extends StatelessWidget {
                 ),
                 Padding(
                   padding: const EdgeInsets.only(left: 16, bottom: 4),
-                  child: _TreeBranch(lineColor: lineColor, children: [
+                  child: TreeBranch(lineColor: lineColor, children: [
                     _CheckRow(value: access!.canBook, label: 'Buchen', onChanged: (v) => _setLeaf(_CatFlag.book, v ?? false)),
                     _StornoRow(
                       enabled: access!.canStorno5min || access!.canStornoUnlimited,
@@ -458,7 +459,7 @@ class _CategoryTreeTile extends StatelessWidget {
                 ),
                 Padding(
                   padding: const EdgeInsets.only(left: 16, bottom: 2),
-                  child: _TreeBranch(lineColor: lineColor, children: [
+                  child: TreeBranch(lineColor: lineColor, children: [
                     _CheckRow(value: access!.canCreateArticle,     label: 'Erstellen',    onChanged: (v) => _setLeaf(_CatFlag.createArticle,     v ?? false)),
                     _CheckRow(value: access!.canEditArticle,       label: 'Bearbeiten',   onChanged: (v) => _setLeaf(_CatFlag.editArticle,       v ?? false)),
                     _CheckRow(value: access!.canDeactivateArticle, label: 'Deaktivieren', onChanged: (v) => _setLeaf(_CatFlag.deactivateArticle, v ?? false)),
@@ -475,24 +476,6 @@ class _CategoryTreeTile extends StatelessWidget {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Shared tree widgets
-// ---------------------------------------------------------------------------
-
-class _TreeBranch extends StatelessWidget {
-  final Color lineColor;
-  final List<Widget> children;
-  const _TreeBranch({required this.lineColor, required this.children});
-
-  @override
-  Widget build(BuildContext context) => Container(
-        decoration: BoxDecoration(
-          border: Border(left: BorderSide(color: lineColor, width: 1.5)),
-        ),
-        padding: const EdgeInsets.only(left: 8),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
-      );
-}
 
 class _CheckRow extends StatelessWidget {
   final bool? value;
@@ -686,7 +669,7 @@ class _PermissionGroup extends StatelessWidget {
           ),
           Padding(
             padding: const EdgeInsets.only(left: 16, top: 2, bottom: 4),
-            child: _TreeBranch(
+            child: TreeBranch(
               lineColor: lineColor,
               children: nodes
                   .map((n) => _CheckRow(

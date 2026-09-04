@@ -13,6 +13,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../config/api_config.dart';
 import '../services/app_storage.dart';
+import '../models/admin_category_products.dart';
 import '../models/cart_item.dart';
 import '../models/category_model.dart';
 import '../models/customer_model.dart';
@@ -1081,7 +1082,7 @@ void setPagerWidth(WidgetRef ref, double width) {
   ref.read(storageProvider).write(key: 'display_pagerWidth', value: width.toString());
 }
 
-enum AppScreen { pos, stats, users, settings, account, logs }
+enum AppScreen { pos, stats, users, settings, account, logs, articleAdmin }
 
 final currentScreenProvider = StateProvider<AppScreen>((ref) => AppScreen.pos);
 
@@ -1141,6 +1142,19 @@ final categoriesRefreshProvider = StateProvider<int>((ref) => 0);
 final categoriesProvider = FutureProvider<List<CategoryModel>>((ref) {
   ref.watch(categoriesRefreshProvider);
   return ref.read(productServiceProvider).getCategories();
+});
+
+// Incrementing this integer invalidates [adminCategoriesProvider].
+final adminCategoriesRefreshProvider = StateProvider<int>((ref) => 0);
+
+/// Every article (incl. inactive, incl. options) across every category the
+/// logged-in user can manage articles in — the article admin screen's data
+/// source. Plain refetch-on-demand (bump the refresh provider), matching
+/// how every other create/edit/delete flow in this app already works,
+/// rather than the timestamp-diff sync built for the much larger POS grid.
+final adminCategoriesProvider = FutureProvider<List<AdminCategoryProducts>>((ref) {
+  ref.watch(adminCategoriesRefreshProvider);
+  return ref.read(productServiceProvider).getAdminCategories();
 });
 
 // ---------------------------------------------------------------------------

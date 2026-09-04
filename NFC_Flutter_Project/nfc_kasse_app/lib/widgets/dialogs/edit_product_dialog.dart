@@ -7,17 +7,29 @@ import '../../services/app_logger.dart';
 import '../../utils/formatters.dart';
 import '../product_color_picker.dart';
 
-/// Dialog for creating a new product or editing an existing one.
+/// Dialog for creating a new product or editing an existing one. Opened
+/// from the article admin screen (`article_admin_screen.dart`) — the POS
+/// grid's own quick-edit popup uses the narrower `QuickEditProductDialog`
+/// instead.
 ///
 /// Pass [product] = null to create. [categoryId] is always required.
-/// [canDelete] / [canDeactivate] gate the delete button and active toggle.
+/// [canDelete] / [canDeactivate] gate the delete button and active toggle;
+/// [canCreateArticle] additionally gates the "Option hinzufügen" action
+/// (adding an option is creating a new article, same server-side
+/// permission as the top-level "Neuer Artikel" action).
 ///
-/// Button colors are now per-user preferences (long-press a tile on the POS
-/// screen to set a color). This dialog handles name, price, and flags only.
+/// [allCategoryProducts] must include every product in [categoryId]
+/// (including inactive ones and existing options) — used to seed the
+/// options sub-editor with [product]'s current options, if any.
+///
+/// Button colors are per-user preferences (long-press a tile on the POS
+/// screen to set a color), unrelated to any of the above permissions.
 class EditProductDialog extends ConsumerStatefulWidget {
   final ProductModel? product;
   final int categoryId;
+  final List<ProductModel> allCategoryProducts;
   final bool canEditDetails;
+  final bool canCreateArticle;
   final bool canDelete;
   final bool canDeactivate;
 
@@ -25,13 +37,32 @@ class EditProductDialog extends ConsumerStatefulWidget {
     super.key,
     this.product,
     required this.categoryId,
+    this.allCategoryProducts = const [],
     this.canEditDetails = true,
+    this.canCreateArticle = false,
     this.canDelete = false,
     this.canDeactivate = false,
   });
 
   @override
   ConsumerState<EditProductDialog> createState() => _EditProductDialogState();
+}
+
+/// One row in the options sub-editor. `id == null` means it isn't saved
+/// yet — created on next save rather than updated.
+class _OptionDraft {
+  final int? id;
+  final TextEditingController suffixCtrl;
+  final TextEditingController priceCtrl;
+
+  _OptionDraft({this.id, String suffix = '', String price = ''})
+      : suffixCtrl = TextEditingController(text: suffix),
+        priceCtrl = TextEditingController(text: price);
+
+  void dispose() {
+    suffixCtrl.dispose();
+    priceCtrl.dispose();
+  }
 }
 
 class _EditProductDialogState extends ConsumerState<EditProductDialog> {
@@ -47,6 +78,8 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
   Color? _color;
   bool _loading = false;
   String? _error;
+  List<_OptionDraft> _options = [];
+  final List<int> _deletedOptionIds = [];
 
   bool get isNew => widget.product == null;
 
@@ -68,6 +101,22 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
     _isPayout = p?.isPayout ?? false;
     _excludeFromStats = p?.excludeFromStats ?? false;
     _requiresPager = p?.requiresPager ?? false;
+
+    if (p != null) {
+      // Options store their full composed name ("Currywurst mit Pommes") —
+      // strip the base's own name back off for display, falling back to the
+      // raw name if it doesn't start with the expected prefix (e.g. the
+      // base was renamed after the option was created).
+      final prefix = '${p.name} ';
+      _options = widget.allCategoryProducts
+          .where((o) => o.groupId == p.id)
+          .map((o) => _OptionDraft(
+                id: o.id,
+                suffix: o.name.startsWith(prefix) ? o.name.substring(prefix.length) : o.name,
+                price: o.price.toStringAsFixed(2),
+              ))
+          .toList();
+    }
   }
 
   @override
@@ -76,6 +125,9 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
     _price.dispose();
     _points.dispose();
     _stock.dispose();
+    for (final o in _options) {
+      o.dispose();
+    }
     super.dispose();
   }
 
@@ -136,6 +188,26 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
       }
     }
 
+    // Options are hidden in the UI (and thus never touched by the user) for
+    // payout articles — see build() — so skip validating/syncing them here
+    // too rather than silently dropping or reinterpreting stale draft rows.
+    final parsedOptions = <({int? id, String suffix, double price})>[];
+    if (!savedIsPayout) {
+      for (final o in _options) {
+        final suffix = o.suffixCtrl.text.trim();
+        if (suffix.isEmpty) {
+          setState(() => _error = 'Options-Zusatztext darf nicht leer sein');
+          return;
+        }
+        final optPrice = double.tryParse(o.priceCtrl.text.trim().replaceAll(',', '.'));
+        if (optPrice == null) {
+          setState(() => _error = 'Ungültiger Options-Preis bei "$suffix"');
+          return;
+        }
+        parsedOptions.add((id: o.id, suffix: suffix, price: optPrice));
+      }
+    }
+
     setState(() {
       _loading = true;
       _error = null;
@@ -143,8 +215,9 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
 
     try {
       final svc = ref.read(productServiceProvider);
+      late final int baseId;
       if (isNew) {
-        await svc.createProduct(
+        final created = await svc.createProduct(
           name: name,
           price: savedPrice,
           categoryId: widget.categoryId,
@@ -154,6 +227,7 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
           stock: stockVal,
           requiresPager: savedRequiresPager,
         );
+        baseId = created.id;
       } else {
         await svc.updateProduct(
           widget.product!.id,
@@ -168,12 +242,36 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
         if (widget.product!.active != _active && widget.canDeactivate) {
           await svc.setActive(widget.product!.id, _active);
         }
+        baseId = widget.product!.id;
       }
+
+      if (!savedIsPayout) {
+        // Composed once here and stored as a normal product.name — see the
+        // class doc comment for why (many read sites, one write site).
+        for (final opt in parsedOptions) {
+          final optionName = '$name ${opt.suffix}';
+          if (opt.id == null) {
+            await svc.createProduct(
+              name: optionName,
+              price: opt.price,
+              categoryId: widget.categoryId,
+              groupId: baseId,
+            );
+          } else {
+            await svc.updateProduct(opt.id!, name: optionName, price: opt.price);
+          }
+        }
+        for (final deletedId in _deletedOptionIds) {
+          await svc.deleteProduct(deletedId);
+        }
+      }
+
       if (!mounted) return;
       if (!isNew) {
         ref.read(userPrefsProvider.notifier).setProductColor(widget.product!.id, _color);
       }
       ref.read(productsRefreshProvider.notifier).state++;
+      ref.read(adminCategoriesRefreshProvider.notifier).state++;
       Navigator.of(context).pop(true);
     } catch (e) {
       setState(() {
@@ -236,20 +334,34 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
                 textCapitalization: TextCapitalization.sentences,
               ),
               const SizedBox(height: 12),
-              TextField(
-                controller: _price,
-                enabled: widget.canEditDetails,
-                decoration: InputDecoration(
-                  labelText: _isTopup ? 'Auflade-Betrag (€)' : 'Preis (€)',
-                  helperText: _isTopup
-                      ? 'Positiver Betrag, der dem Guthaben gutgeschrieben wird'
-                      : 'Negativ für Rückgabe/Aufladen, z.B. -2.00',
+              // A base article with options is never booked directly (see
+              // the options section below) — its own price would never
+              // actually be charged, so showing an editable price field
+              // here would be misleading. Each option carries its own price
+              // instead.
+              if (_options.isEmpty)
+                TextField(
+                  controller: _price,
+                  enabled: widget.canEditDetails,
+                  decoration: InputDecoration(
+                    labelText: _isTopup ? 'Auflade-Betrag (€)' : 'Preis (€)',
+                    helperText: _isTopup
+                        ? 'Positiver Betrag, der dem Guthaben gutgeschrieben wird'
+                        : 'Negativ für Rückgabe/Aufladen, z.B. -2.00',
+                  ),
+                  keyboardType: TextInputType.numberWithOptions(
+                    decimal: true,
+                    signed: !_isTopup,
+                  ),
+                )
+              else
+                Text(
+                  'Preis wird pro Option unten festgelegt',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
                 ),
-                keyboardType: TextInputType.numberWithOptions(
-                  decimal: true,
-                  signed: !_isTopup,
-                ),
-              ),
               if (ref.watch(authProvider).valueOrNull?.leaderboardEnabled ?? false) ...[
                 const SizedBox(height: 12),
                 TextField(
@@ -334,6 +446,60 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
                       controlAffinity: ListTileControlAffinity.leading,
                     ),
                 ],
+              ],
+              if (!_isPayout && !isNew) ...[
+                const SizedBox(height: 16),
+                const Divider(),
+                Text('Optionen', style: Theme.of(context).textTheme.labelMedium),
+                const SizedBox(height: 4),
+                Text(
+                  'Varianten wie "mit Pommes" — teilen sich Bestand, Punkte und Pager mit diesem Artikel',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 8),
+                for (final o in _options)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: TextField(
+                            controller: o.suffixCtrl,
+                            enabled: widget.canEditDetails,
+                            decoration: const InputDecoration(labelText: 'Zusatz', isDense: true),
+                            textCapitalization: TextCapitalization.sentences,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          flex: 2,
+                          child: TextField(
+                            controller: o.priceCtrl,
+                            enabled: widget.canEditDetails,
+                            decoration: const InputDecoration(labelText: 'Preis (€)', isDense: true),
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                          ),
+                        ),
+                        if (widget.canDelete)
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline),
+                            tooltip: 'Option entfernen',
+                            onPressed: () => setState(() {
+                              _options.remove(o);
+                              if (o.id != null) _deletedOptionIds.add(o.id!);
+                              o.dispose();
+                            }),
+                          ),
+                      ],
+                    ),
+                  ),
+                if (widget.canCreateArticle)
+                  TextButton.icon(
+                    onPressed: () => setState(() => _options.add(_OptionDraft())),
+                    icon: const Icon(Icons.add),
+                    label: const Text('Option hinzufügen'),
+                  ),
               ],
               ], // end canEditDetails
               if (!isNew) ...[

@@ -108,6 +108,7 @@ class ProductResponse(BaseModel):
     points: int = 0
     stock: int | None = None  # None = not stock-tracked (unlimited)
     requires_pager: bool = False
+    group_id: int | None = None  # None = standalone; else an "option" of that base article
 
 
 class ProductCreate(BaseModel):
@@ -120,6 +121,7 @@ class ProductCreate(BaseModel):
     points: int = 0
     stock: int | None = None
     requires_pager: bool = False
+    group_id: int | None = None
 
     @field_validator("stock")
     @classmethod
@@ -132,6 +134,7 @@ class ProductCreate(BaseModel):
 class ProductUpdate(BaseModel):
     name: str | None = None
     price: float | None = None
+    category_id: int | None = None  # move to a different category; omitted = unchanged
     sort_order: int | None = None
     is_payout: bool | None = None
     exclude_from_stats: bool | None = None
@@ -139,6 +142,8 @@ class ProductUpdate(BaseModel):
     stock: int | None = None  # see products.py's update_product: distinguishes
     # "omitted" (model_fields_set) from "explicitly null" (clear tracking)
     requires_pager: bool | None = None
+    group_id: int | None = None  # same tri-state as stock: None can mean either
+    # "unchanged" or "explicitly ungroup" depending on model_fields_set
 
     @field_validator("stock")
     @classmethod
@@ -161,6 +166,25 @@ class ProductChangesResponse(BaseModel):
     products: list[ProductResponse]
     removed_ids: list[int]
     checked_at: str
+
+
+# ---------------------------------------------------------------------------
+# Article admin page — GET /api/products/admin
+# ---------------------------------------------------------------------------
+
+class AdminCategoryResponse(BaseModel):
+    id: int
+    name: str
+    sort_order: int
+    can_create_article: bool
+    can_edit_article: bool
+    can_deactivate_article: bool
+    can_delete_article: bool
+    products: list[ProductResponse]
+
+
+class AdminProductsResponse(BaseModel):
+    categories: list[AdminCategoryResponse]
 
 
 # ---------------------------------------------------------------------------

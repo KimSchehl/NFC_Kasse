@@ -69,6 +69,43 @@ def _get_or_create_customer(db, tenant_id: int, nfc_uid: str) -> tuple[int, bool
     return cursor.lastrowid, True
 
 
+def _resolve_base_products(db, products_by_id: dict) -> dict:
+    """
+    Fetches the base-article row for every distinct non-null group_id among
+    products_by_id's values, keyed by the base's own id. An "option" (e.g.
+    "Currywurst mit Pommes", group_id pointing at "Currywurst") never
+    carries its own stock/points/requires_pager — those always come from its
+    base, shared across every option of that base. Skips any base already
+    present in products_by_id (e.g. the base and one of its options were
+    both in the same booking) — that row is already loaded there.
+    """
+    base_ids = {p["group_id"] for p in products_by_id.values() if p["group_id"] is not None}
+    base_ids -= set(products_by_id.keys())
+    if not base_ids:
+        return {}
+    placeholders = ",".join("?" * len(base_ids))
+    rows = db.execute(
+        f"SELECT id, name, price, stock, points, requires_pager FROM product WHERE id IN ({placeholders})",
+        list(base_ids),
+    ).fetchall()
+    return {r["id"]: r for r in rows}
+
+
+def _effective(products_by_id: dict, base_rows: dict, product_id: int, field: str):
+    """
+    Returns the value of `field` that actually applies to `product_id` — the
+    base article's value if `product_id` is one of its options, else the
+    product's own value. The one place this "does this id defer to a base"
+    check lives, used for stock/points/pager resolution alike.
+    """
+    p = products_by_id[product_id]
+    gid = p["group_id"]
+    if gid is None:
+        return p[field]
+    base = base_rows.get(gid) or products_by_id[gid]
+    return base[field]
+
+
 def _build_pager_item_summary(product_ids: list[int], products_by_id: dict) -> str:
     """
     Builds the denormalized display string for a pager_order row, e.g.
@@ -163,7 +200,7 @@ def create_booking(
         placeholders = ",".join("?" * len(unique_ids))
         products = db.execute(
             f"""
-            SELECT p.id, p.name, p.price, p.active, p.category_id, p.is_payout, p.points, p.stock, p.requires_pager, c.event_id
+            SELECT p.id, p.name, p.price, p.active, p.category_id, p.is_payout, p.points, p.stock, p.requires_pager, p.group_id, c.event_id
             FROM product p
             JOIN category c ON p.category_id = c.id
             WHERE p.id IN ({placeholders}) AND p.deleted=0
@@ -180,12 +217,30 @@ def create_booking(
             if not p["active"]:
                 raise HTTPException(status_code=400, detail=f"Artikel {p['id']} ist nicht verfügbar")
 
+        products_by_id = {p["id"]: p for p in products}
+        base_rows = _resolve_base_products(db, products_by_id)
+
         # Validates sufficient stock and decrements it. Safe to run before the
         # payout/permission checks below: get_db() rolls back the *entire*
         # transaction on any later exception, so a subsequent rejection undoes
         # this decrement automatically (see stock.py's docstring).
-        products_by_id = {p["id"]: p for p in products}
-        low_stock_warnings = stock.check_stock_and_decrement(db, body.product_ids, products_by_id)
+        #
+        # An option's own stock is never set — its base's stock applies,
+        # shared across every option of that base — so each booked id is
+        # first remapped to its "stock owner" (its group_id if it has one,
+        # else itself) before handing off to stock.py, which stays
+        # completely unaware of the base/option concept.
+        stock_owner_ids_flat = []
+        stock_owners_by_id = {}
+        for pid in body.product_ids:
+            gid = products_by_id[pid]["group_id"]
+            owner_id = gid if gid is not None else pid
+            stock_owner_ids_flat.append(owner_id)
+            if owner_id not in stock_owners_by_id:
+                stock_owners_by_id[owner_id] = base_rows.get(gid) if gid is not None else products_by_id[pid]
+                if stock_owners_by_id[owner_id] is None:  # base already loaded in products_by_id
+                    stock_owners_by_id[owner_id] = products_by_id[owner_id]
+        low_stock_warnings = stock.check_stock_and_decrement(db, stock_owner_ids_flat, stock_owners_by_id)
 
         is_payout_booking = any(p["is_payout"] for p in products)
         if is_payout_booking and len(body.product_ids) > 1:
@@ -266,7 +321,6 @@ def create_booking(
                 (new_balance, customer_id),
             )
 
-            product_points_map = {p["id"]: p["points"] for p in products}
             sale_ids = []
             for product_id in body.product_ids:
                 cursor = db.execute(
@@ -285,7 +339,10 @@ def create_booking(
             # a misbehaving client doesn't create an empty-summary row —
             # the booking itself succeeds either way.
             if PAGER_ENABLED and body.pager_number is not None:
-                pager_product_ids = [pid for pid in body.product_ids if products_by_id[pid]["requires_pager"]]
+                pager_product_ids = [
+                    pid for pid in body.product_ids
+                    if _effective(products_by_id, base_rows, pid, "requires_pager")
+                ]
                 if pager_product_ids:
                     item_summary = _build_pager_item_summary(pager_product_ids, products_by_id)
                     pager_sale_ids = [
@@ -301,7 +358,9 @@ def create_booking(
                     )
 
             if LEADERBOARD_ENABLED:
-                total_pts = sum(product_points_map.get(pid, 0) for pid in body.product_ids)
+                total_pts = sum(
+                    _effective(products_by_id, base_rows, pid, "points") for pid in body.product_ids
+                )
                 if total_pts != 0:
                     db.execute("""
                         INSERT INTO leaderboard_score (customer_id, points, opt_in)
@@ -351,7 +410,7 @@ def cancel_booking(
     with get_db(exclusive=True) as db:
         sale = db.execute(
             """
-            SELECT s.*, p.category_id
+            SELECT s.*, p.category_id, p.group_id
             FROM sale s
             JOIN product p ON s.product_id = p.id
             WHERE s.id=? AND s.event_id=?
@@ -406,6 +465,13 @@ def cancel_booking(
                     )
 
         refunded = sale["price_at_sale"]
+        # An option (group_id set) never carries its own stock/points — its
+        # base does, shared across every option of that base. Restoring
+        # against sale["product_id"] directly would silently no-op on an
+        # option (its stock/points are always NULL/0), permanently
+        # under-counting the base's real stock/points. Mirrors the same
+        # group_id resolution create_booking() applies when booking.
+        stock_points_owner_id = sale["group_id"] if sale["group_id"] is not None else sale["product_id"]
 
         db.execute(
             """
@@ -424,11 +490,11 @@ def cancel_booking(
         db.execute(
             "UPDATE product SET stock = stock + 1, updated_at = datetime('now') "
             "WHERE id=? AND stock IS NOT NULL",
-            (sale["product_id"],),
+            (stock_points_owner_id,),
         )
         if LEADERBOARD_ENABLED:
             pts_row = db.execute(
-                "SELECT points FROM product WHERE id=?", (sale["product_id"],)
+                "SELECT points FROM product WHERE id=?", (stock_points_owner_id,)
             ).fetchone()
             cancelled_pts = pts_row["points"] if pts_row else 0
             if cancelled_pts != 0:

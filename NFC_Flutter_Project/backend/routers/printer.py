@@ -41,6 +41,7 @@ from config import (
 )
 from database import get_db
 from dependencies import RequestContext, require_permission
+from routers.sales import _resolve_base_products
 from schemas import PrintBonRequest, PrintBonResponse
 
 router = APIRouter(prefix="/api/print", tags=["print"])
@@ -369,7 +370,7 @@ def print_bon(
         unique_ids = list(set(product_ids_flat))
         ph = ",".join("?" * len(unique_ids))
         products = db.execute(
-            f"SELECT p.id, p.name, p.price, p.stock "
+            f"SELECT p.id, p.name, p.price, p.stock, p.group_id "
             f"FROM product p "
             f"JOIN category c ON p.category_id = c.id "
             f"WHERE p.id IN ({ph}) AND p.deleted = 0 AND p.active = 1 AND c.event_id = ?",
@@ -384,12 +385,31 @@ def print_bon(
                 detail=f"Unbekannte oder inaktive Artikel-IDs: {missing}",
             )
 
-        product_map = {p["id"]: {"name": p["name"], "price": p["price"], "stock": p["stock"]} for p in products}
+        product_map = {
+            p["id"]: {"name": p["name"], "price": p["price"], "stock": p["stock"], "group_id": p["group_id"]}
+            for p in products
+        }
         total_price = sum(product_map[pid]["price"] for pid in product_ids_flat)
+
+        # An option's own stock is never set — its base's stock applies,
+        # shared across every option of that base — so each booked id is
+        # first remapped to its "stock owner" before handing off to
+        # stock.py. Same reasoning/pattern as sales.py's create_booking().
+        base_rows = _resolve_base_products(db, product_map)
+        stock_owner_ids_flat = []
+        stock_owners_by_id = {}
+        for pid in product_ids_flat:
+            gid = product_map[pid]["group_id"]
+            owner_id = gid if gid is not None else pid
+            stock_owner_ids_flat.append(owner_id)
+            if owner_id not in stock_owners_by_id:
+                stock_owners_by_id[owner_id] = base_rows.get(gid) if gid is not None else product_map[pid]
+                if stock_owners_by_id[owner_id] is None:  # base already loaded in product_map
+                    stock_owners_by_id[owner_id] = product_map[owner_id]
 
         # Validates sufficient stock and decrements it — same helper and same
         # rollback-safety reasoning as sales.py's create_booking().
-        low_stock_warnings = stock.check_stock_and_decrement(db, product_ids_flat, product_map)
+        low_stock_warnings = stock.check_stock_and_decrement(db, stock_owner_ids_flat, stock_owners_by_id)
 
         # Debit BAR chip (balance intentionally goes negative — it's a cash-sales counter)
         db.execute(
