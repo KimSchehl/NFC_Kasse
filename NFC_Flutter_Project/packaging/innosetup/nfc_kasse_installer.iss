@@ -8,13 +8,25 @@
 ;   ..\winsw\NfcKasseService.xml
 
 #define MyAppName "NFC-Kasse Backend"
-#define MyAppVersion "1.0.0"
+; Overridden from build_installer.bat via "ISCC /DMyAppVersion=X.Y.Z ..." --
+; that value comes straight from nfc_kasse_app\pubspec.yaml, the same single
+; source of truth build_and_deploy.bat already names the APK after. This
+; fallback only matters for a manual/local ISCC run without that flag.
+#ifndef MyAppVersion
+  #define MyAppVersion "1.0.0"
+#endif
 #define MyAppPublisher "Kim Schehl"
+; Real single braces here (not the {{ escape [Setup] directives need for a
+; literal leading brace) -- ISPP substitutes {#MyAppId} as plain text before
+; Inno's own constant-escaping pass ever runs, so AppId={{#MyAppId} below
+; comes out exactly as "AppId={{2EF18757-...}", the form Inno requires. The
+; single-brace form is also what [Code] needs for the uninstall registry key.
+#define MyAppId "{2EF18757-6135-4143-991F-DA4D728CEE16}"
 
 [Setup]
 ; Fixed, never change once released -- this is how Inno Setup recognizes
 ; "this is an upgrade of the same app" across versions.
-AppId={{2EF18757-6135-4143-991F-DA4D728CEE16}
+AppId={{#MyAppId}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
@@ -86,6 +98,81 @@ Filename: "{app}\NfcKasseService.exe"; Parameters: "uninstall"; Flags: runhidden
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""NFC-Kasse Backend"""; Flags: runhidden waituntilterminated; RunOnceId: "RemoveFirewallRule"
 
 [Code]
+var
+  ModePage: TWizardPage;
+  InstallRadio, UpdateRadio, UninstallRadio: TNewRadioButton;
+
+function UninstallRegKey: String;
+begin
+  Result := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#MyAppId}_is1';
+end;
+
+function IsAlreadyInstalled: Boolean;
+begin
+  Result := RegKeyExists(HKLM, UninstallRegKey);
+end;
+
+// A plain re-run of Setup (e.g. double-clicking the download again to
+// update) would otherwise walk straight into the normal wizard with no
+// indication of whether this is a fresh install or an upgrade, and no way
+// to uninstall short of hunting it down in "Apps & Features". This page
+// makes that explicit and steers "Deinstallieren" to the existing
+// uninstaller instead of duplicating its logic here.
+procedure InitializeWizard;
+var
+  installed: Boolean;
+begin
+  installed := IsAlreadyInstalled;
+
+  ModePage := CreateCustomPage(wpWelcome, 'Installationsmodus',
+    'Was möchten Sie tun?');
+
+  InstallRadio := TNewRadioButton.Create(ModePage);
+  InstallRadio.Parent := ModePage.Surface;
+  InstallRadio.Caption := 'Installieren';
+  InstallRadio.Top := 0;
+  InstallRadio.Width := ModePage.SurfaceWidth;
+  InstallRadio.Enabled := not installed;
+  InstallRadio.Checked := not installed;
+
+  UpdateRadio := TNewRadioButton.Create(ModePage);
+  UpdateRadio.Parent := ModePage.Surface;
+  UpdateRadio.Caption := 'Aktualisieren';
+  UpdateRadio.Top := InstallRadio.Top + InstallRadio.Height + 12;
+  UpdateRadio.Width := ModePage.SurfaceWidth;
+  UpdateRadio.Enabled := installed;
+  UpdateRadio.Checked := installed;
+
+  UninstallRadio := TNewRadioButton.Create(ModePage);
+  UninstallRadio.Parent := ModePage.Surface;
+  UninstallRadio.Caption := 'Deinstallieren';
+  UninstallRadio.Top := UpdateRadio.Top + UpdateRadio.Height + 12;
+  UninstallRadio.Width := ModePage.SurfaceWidth;
+  UninstallRadio.Enabled := installed;
+end;
+
+function NextButtonClick(CurPageID: Integer): Boolean;
+var
+  uninstallString: String;
+  resultCode: Integer;
+begin
+  Result := True;
+  if (CurPageID <> ModePage.ID) or not UninstallRadio.Checked then
+    exit;
+
+  if RegQueryStringValue(HKLM, UninstallRegKey, 'UninstallString', uninstallString) then
+    Exec(RemoveQuotes(uninstallString), '', '', SW_SHOW, ewWaitUntilTerminated, resultCode)
+  else
+    MsgBox('Bestehende Installation konnte nicht gefunden werden.', mbError, MB_OK);
+
+  // Whatever happened above (uninstalled, or the uninstaller's own confirm
+  // prompt was cancelled), this Setup run is done -- continuing on to
+  // Select Destination/Ready/Install would just reinstall right over
+  // whatever was or wasn't just removed. Abort is Inno Setup's own
+  // documented "terminate Setup now" call (not the WinAPI/Delphi one).
+  Abort;
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   ResultCode: Integer;

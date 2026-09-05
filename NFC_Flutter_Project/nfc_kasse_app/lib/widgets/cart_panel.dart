@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/product_model.dart';
 import '../providers/providers.dart';
 import '../services/app_logger.dart';
 import '../utils/formatters.dart';
@@ -31,6 +32,21 @@ class CartPanel extends ConsumerStatefulWidget {
 
 class _CartPanelState extends ConsumerState<CartPanel> {
   bool _isBooking = false;
+
+  /// An option (`groupId != null`) never carries its own `requiresPager` —
+  /// same base-inheritance rule the backend applies via `_effective()` in
+  /// `routers/sales.py` — so it has to be resolved from the base article
+  /// here too, or the pager prompt would silently never fire for any option
+  /// even though the base has "Pager erforderlich" checked.
+  bool _requiresPager(ProductModel product) {
+    if (product.groupId == null) return product.requiresPager;
+    final categoryProducts = ref.read(productsProvider(product.categoryId)).valueOrNull;
+    if (categoryProducts == null) return false;
+    for (final p in categoryProducts) {
+      if (p.id == product.groupId) return p.requiresPager;
+    }
+    return false;
+  }
 
   void _pushDisplay() {
     final items = ref.read(cartProvider);
@@ -95,7 +111,7 @@ class _CartPanelState extends ConsumerState<CartPanel> {
     // avoids ever showing the popup for one regardless.
     int? pagerNumber;
     final pagerEnabled = ref.read(authProvider).valueOrNull?.pagerEnabled ?? false;
-    final pagerItems = cartItems.where((i) => i.product.requiresPager).toList();
+    final pagerItems = cartItems.where((i) => _requiresPager(i.product)).toList();
     if (pagerEnabled && pagerItems.isNotEmpty && !isPayout) {
       // No mounted-triggered setState here: if the widget was disposed mid-
       // flight there's no UI left to reset, and setState() after dispose()

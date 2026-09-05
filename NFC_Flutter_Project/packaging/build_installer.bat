@@ -8,19 +8,19 @@ echo ============================================
 echo.
 
 REM --- Step 1: stage the newest APK only (not the full updates/ history) ---
-echo [1/4] Staging update seed...
+echo [1/5] Staging update seed...
 python packaging\pyinstaller\stage_updates_seed.py
 if errorlevel 1 goto :error
 
 REM --- Step 2: PyInstaller onedir build ---
 echo.
-echo [2/4] Building frozen backend (PyInstaller)...
+echo [2/5] Building frozen backend (PyInstaller)...
 python -m PyInstaller packaging\pyinstaller\nfc_kasse_backend.spec --distpath packaging\pyinstaller\dist --workpath packaging\pyinstaller\build\work --noconfirm
 if errorlevel 1 goto :error
 
 REM --- Step 3: fetch WinSW if not already present ---
 echo.
-echo [3/4] Checking WinSW...
+echo [3/5] Checking WinSW...
 if not exist "packaging\winsw\NfcKasseService.exe" (
     echo   Downloading WinSW v2.12.0...
     powershell -NoProfile -Command "Invoke-WebRequest -Uri 'https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW-x64.exe' -OutFile 'packaging\winsw\NfcKasseService.exe'"
@@ -34,9 +34,19 @@ if not exist "packaging\winsw\NfcKasseService.exe" (
     echo   Already present, skipping download.
 )
 
-REM --- Step 4: compile the installer ---
+REM --- Step 4: read the release version from pubspec.yaml -------
 echo.
-echo [4/4] Compiling installer (Inno Setup)...
+echo [4/5] Reading version from nfc_kasse_app\pubspec.yaml...
+for /f "usebackq tokens=*" %%v in (`powershell -NoProfile -Command "(Select-String -Path 'nfc_kasse_app\pubspec.yaml' -Pattern '^version:').Line.Split(':')[1].Trim().Split('+')[0]"`) do set "APP_VERSION=%%v"
+if not defined APP_VERSION (
+    echo ERROR: Could not read version from nfc_kasse_app\pubspec.yaml.
+    goto :error
+)
+echo   Version: %APP_VERSION%
+
+REM --- Step 5: compile the installer -----------------------------
+echo.
+echo [5/5] Compiling installer (Inno Setup)...
 set ISCC="%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"
 if not exist %ISCC% set ISCC="%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe"
 if not exist %ISCC% (
@@ -44,12 +54,12 @@ if not exist %ISCC% (
     echo   winget install -e --id JRSoftware.InnoSetup
     goto :error
 )
-%ISCC% packaging\innosetup\nfc_kasse_installer.iss
+%ISCC% "/DMyAppVersion=%APP_VERSION%" packaging\innosetup\nfc_kasse_installer.iss
 if errorlevel 1 goto :error
 
 echo.
 echo ============================================
-echo  Done. Installer:
+echo  Done. Installer (v%APP_VERSION%):
 echo  packaging\innosetup\dist\NFC-Kasse-Setup.exe
 echo ============================================
 exit /b 0

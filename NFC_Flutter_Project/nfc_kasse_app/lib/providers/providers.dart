@@ -213,6 +213,21 @@ class AuthNotifier extends AsyncNotifier<UserModel?> {
     }
   }
 
+  /// Re-fetches `/me` and applies it to state, without going through the
+  /// login flow — used after an action that changes the current user's own
+  /// server-side permissions/categories (e.g. creating a category as a
+  /// manager), so UI derived from it (like `canManageAnyArticles`, which
+  /// otherwise only updates on next login/cold start) reflects it right away.
+  Future<void> refreshFromServer() async {
+    try {
+      final user = await ref.read(authServiceProvider).fetchMe();
+      state = AsyncData(user);
+    } catch (_) {
+      // Not critical — keep the current (stale) state; next login/cold
+      // start will pick up the correct value anyway.
+    }
+  }
+
   Future<void> logout() async {
     final token = await ref.read(storageProvider).read(key: 'refresh_token') ?? '';
     await ref.read(authServiceProvider).logout(token);
@@ -1154,6 +1169,10 @@ final adminCategoriesRefreshProvider = StateProvider<int>((ref) => 0);
 /// rather than the timestamp-diff sync built for the much larger POS grid.
 final adminCategoriesProvider = FutureProvider<List<AdminCategoryProducts>>((ref) {
   ref.watch(adminCategoriesRefreshProvider);
+  // Also watched so a category created/renamed/deleted from the sidebar
+  // (which only bumps categoriesRefreshProvider, not this screen's own
+  // refresh provider) shows up here immediately too.
+  ref.watch(categoriesRefreshProvider);
   return ref.read(productServiceProvider).getAdminCategories();
 });
 

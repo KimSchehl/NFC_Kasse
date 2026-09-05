@@ -146,26 +146,37 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
     }
 
     final name = _name.text.trim();
-    final priceText = _price.text.trim().replaceAll(',', '.');
-    final price = double.tryParse(priceText);
     final pointsVal = int.tryParse(_points.text.trim());
 
     if (name.isEmpty) {
       setState(() => _error = 'Name darf nicht leer sein');
       return;
     }
-    if (price == null || (_isTopup && price <= 0)) {
-      setState(() => _error = _isTopup
-          ? 'Ungültiger Betrag (Beispiel: 20.00)'
-          : 'Ungültiger Preis (Beispiel: 3.50 oder -2.00)');
-      return;
+
+    // Once the article has options, its own price field is hidden (see
+    // build()) and never actually charged — an option is always booked
+    // instead — so it doesn't need a real value here. Matters for a brand
+    // new article in particular: _price starts out empty, and previously
+    // this validation blocked saving until a throwaway price was entered.
+    double savedPrice;
+    if (_options.isNotEmpty) {
+      savedPrice = 0.0;
+    } else {
+      final priceText = _price.text.trim().replaceAll(',', '.');
+      final price = double.tryParse(priceText);
+      if (price == null || (_isTopup && price <= 0)) {
+        setState(() => _error = _isTopup
+            ? 'Ungültiger Betrag (Beispiel: 20.00)'
+            : 'Ungültiger Preis (Beispiel: 3.50 oder -2.00)');
+        return;
+      }
+      savedPrice = _isTopup ? -price.abs() : price;
     }
     if (pointsVal == null) {
       setState(() => _error = 'Ungültige Punkte (ganze Zahl, z.B. 5 oder -10)');
       return;
     }
 
-    final savedPrice = _isTopup ? -price.abs() : price;
     final savedExcludeFromStats = _isTopup ? true : _excludeFromStats;
     final savedIsPayout = _isTopup ? false : _isPayout;
     // Same reasoning as stock below — Aufladen/Auszahlungs-Artikel can't
@@ -447,7 +458,7 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
                     ),
                 ],
               ],
-              if (!_isPayout && !isNew) ...[
+              if (!_isPayout) ...[
                 const SizedBox(height: 16),
                 const Divider(),
                 Text('Optionen', style: Theme.of(context).textTheme.labelMedium),

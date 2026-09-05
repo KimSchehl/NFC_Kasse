@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -228,6 +230,7 @@ class AppSidebar extends ConsumerWidget {
     final categoriesRefreshNotifier = ref.read(categoriesRefreshProvider.notifier);
     final selectedCatNotifier = ref.read(selectedCategoryProvider.notifier);
     final currentScreenNotifier = ref.read(currentScreenProvider.notifier);
+    final authNotifier = ref.read(authProvider.notifier);
 
     String inputName = '';
     final result = await showDialog<bool>(
@@ -295,6 +298,12 @@ class AppSidebar extends ConsumerWidget {
       AppLogger.trace('Neue Kategorie erstellt: $name', logger: 'ui.sidebar');
       final cat = await productSvc.createCategory(name);
       categoriesRefreshNotifier.state++;
+      // Manager permissions/category access are only re-evaluated on the
+      // next /me call — without this, a manager who just created their
+      // first category wouldn't see "Artikelverwaltung" appear until the
+      // next login/app restart (canManageAnyArticles reads the stale
+      // pre-creation snapshot otherwise).
+      unawaited(authNotifier.refreshFromServer());
       // Auto-select the new category
       selectedCatNotifier.state = cat;
       currentScreenNotifier.state = AppScreen.pos;

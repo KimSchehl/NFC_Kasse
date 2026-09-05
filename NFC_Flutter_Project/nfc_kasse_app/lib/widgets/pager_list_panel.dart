@@ -79,6 +79,8 @@ class PagerListPanel extends ConsumerWidget {
                                 flex: 3,
                                 child: Text(
                                   order.itemSummary,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                   style: theme.textTheme.bodyMedium,
                                 ),
                               ),
