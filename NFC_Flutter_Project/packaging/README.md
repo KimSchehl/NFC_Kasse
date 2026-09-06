@@ -29,36 +29,57 @@ packaging\build_installer.bat
 
 Output: `packaging\innosetup\dist\NFC-Kasse-Setup.exe`.
 
-Bump `AppVersion` in `packaging\innosetup\nfc_kasse_installer.iss` before
-cutting a new release — Windows uses it to decide whether "Programs and
-Features" shows an update or a duplicate entry.
+`AppVersion` is read automatically from `nfc_kasse_app\pubspec.yaml` (passed
+to ISCC as `/DMyAppVersion=...`) — no manual bump needed.
+
+A fresh `config.env` (first install, or a deleted/renamed one in dev) is
+always generated from the single canonical `backend\config.env.template` —
+both `service_main.py` (production) and `start_backend.bat` (dev) substitute
+the same `{secret_key}`/`{installation_id}` placeholders into it, so the two
+entrypoints can no longer drift apart the way they used to. Every setting a
+customer might want to change — event name, chip deposit, printer, add-on
+licenses, receipt content toggles (`BON_*`) — lives in that one file, fully
+commented. `backend\config.py` is the single place in the codebase that
+reads these values; every other module imports them from there instead of
+reading the environment itself.
 
 ## What the installer does
 
 - Installs program files (backend exe, web app, WinSW) to
   `C:\Program Files\NFC-Kasse\`.
 - Creates `C:\ProgramData\NFC-Kasse\` for everything that changes at
-  runtime (`kasse.db`, `config.env`, `logs\`, `backups\`) — protected from
-  removal on uninstall (`uninsneveruninstall` in the `.iss`).
+  runtime (`kasse.db`, `config.env`, `bon.yaml`, `logs\`, `backups\`) —
+  protected from removal on uninstall (`uninsneveruninstall` in the `.iss`),
+  and — unlike the program files in `{app}` — never overwritten by an
+  installer upgrade either.
 - Registers and starts the `NfcKasseBackend` Windows service (auto-start,
   restarts on failure).
 - Adds a Windows Firewall inbound rule so LAN tablets can reach it.
 - Adds Desktop + Start Menu shortcuts ("NFC-Kasse öffnen", "Dienst
   starten"/"Dienst stoppen").
 - On first run, `backend/service_main.py` generates `config.env` with a
-  real random `SECRET_KEY` and initializes `kasse.db`. On every
-  subsequent start it takes a WAL-safe backup (rotated, 5 newest kept).
+  real random `SECRET_KEY`, seeds `bon.yaml` from the bundled
+  `bon.yaml.default`, and initializes `kasse.db`. On every subsequent start
+  it takes a WAL-safe backup (rotated, 5 newest kept).
 
 Re-running the installer over an existing install upgrades in place: the
-service is stopped before files are replaced, then restarted — `kasse.db`
-and `config.env` are never touched (the installer never lists
+service is stopped before files are replaced, then restarted — `kasse.db`,
+`config.env` and `bon.yaml` are never touched (the installer never lists
 `C:\ProgramData` as a copy destination in the first place).
 
 ## Operating an installed instance
 
 - **Edit config** (event name, chip deposit, feature flags, printer
-  settings): `C:\ProgramData\NFC-Kasse\config.env`, then "Dienst stoppen" +
-  "Dienst starten" from the Start Menu (or `services.msc`).
+  settings, receipt content toggles): `C:\ProgramData\NFC-Kasse\config.env`,
+  then "Dienst stoppen" + "Dienst starten" from the Start Menu (or
+  `services.msc`).
+- **Edit receipt layout** (separators, bold, uppercase, price
+  line-wrapping, paper feed — everything else about the receipt is a
+  `BON_*` setting in `config.env` above): `C:\ProgramData\NFC-Kasse\bon.yaml`,
+  takes effect on the next print, no restart needed. Full reference of
+  every possible key plus ready-to-copy example layouts:
+  `backend\bon_template.yaml` in the install folder (documentation only,
+  not read by the program) — pending a proper visual designer tool.
 - **Logs**: `C:\ProgramData\NFC-Kasse\logs\*.log` (app, JSON lines,
   hourly rotation) and `C:\ProgramData\NFC-Kasse\logs\winsw\` (raw
   stdout/stderr — the fallback if something goes wrong before the app's

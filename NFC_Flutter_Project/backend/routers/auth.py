@@ -12,6 +12,7 @@ from dependencies import (
     get_current_user,
     hash_refresh_token,
     verify_password,
+    ACCESS_TOKEN_EXPIRE_MINUTES,
     REFRESH_TOKEN_EXPIRE_DAYS,
 )
 from schemas import CategoryPermissionResponse, LoginRequest, MeResponse, RefreshRequest, TokenResponse
@@ -62,7 +63,7 @@ def login(body: LoginRequest):
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
-        expires_in=3600,
+        expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
 
 
@@ -82,7 +83,7 @@ def login_form(form_data: OAuth2PasswordRequestForm = Depends()):
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
-        expires_in=3600,
+        expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
 
 
@@ -132,7 +133,7 @@ def refresh(body: RefreshRequest):
     return TokenResponse(
         access_token=access_token,
         refresh_token=new_refresh_token,
-        expires_in=3600,
+        expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
 
 

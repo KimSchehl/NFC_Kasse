@@ -16,12 +16,14 @@ Supported printer types (PRINTER_TYPE in config.env):
   serial  — USB-to-Serial adapter, e.g. Epson TM-T88II on COM3 (default)
   network — TCP/IP socket, e.g. LAN printer or Bluetooth-to-Serial bridge
 
-The bon layout is driven by bon_template.yaml.  Editing that file takes
+The bon layout is driven by bon.yaml (see bon_template.yaml next to it for
+the full command reference and example layouts). Editing bon.yaml takes
 effect on the next print — no server restart needed.
 
 Requires the 'bon.drucken' user permission.
 """
 
+import os
 import threading
 import time
 from datetime import datetime, timezone
@@ -33,6 +35,13 @@ from fastapi import APIRouter, Depends, HTTPException
 import stock
 from config import (
     BAR_CHIP_UID,
+    BON_CASHIER_LABEL,
+    BON_FOOTER_TEXT,
+    BON_SHOW_CASHIER,
+    BON_SHOW_DATETIME,
+    BON_SHOW_EVENT_NAME,
+    BON_SHOW_PRICE,
+    PRINTER_AUTO_CUT,
     PRINTER_BAUDRATE,
     PRINTER_HOST,
     PRINTER_LINE_WIDTH,
@@ -46,13 +55,24 @@ from schemas import PrintBonRequest, PrintBonResponse
 
 router = APIRouter(prefix="/api/print", tags=["print"])
 
-_TEMPLATE_PATH = Path(__file__).parent.parent / "bon_template.yaml"
+
+def _bon_yaml_path() -> Path:
+    """Mirrors logging_config.py's log_dir() NFC_KASSE_LOG_DIR pattern:
+    production (service_main.py) sets NFC_KASSE_DATA_DIR before this module
+    is ever imported, so bon.yaml lives next to config.env/kasse.db/logs in
+    C:\\ProgramData\\NFC-Kasse and survives installer upgrades — unlike the
+    old location alongside the program files, which an upgrade overwrites.
+    Dev (start_backend.bat) never sets it, so this falls back to the
+    repo-relative path used since before this split existed."""
+    override = os.environ.get("NFC_KASSE_DATA_DIR")
+    return Path(override) / "bon.yaml" if override else Path(__file__).parent.parent / "bon.yaml"
+
+
+_TEMPLATE_PATH = _bon_yaml_path()
 _worker_started = False
 
 _DEFAULT_TEMPLATE: dict = {
     "header": {
-        "show_event_name": True,
-        "show_datetime": True,
         "separator_before": True,
         "separator_after": True,
         "separator_char": "-",
@@ -60,15 +80,10 @@ _DEFAULT_TEMPLATE: dict = {
     "article": {
         "bold": True,
         "uppercase": False,
-        "show_price": True,
         "price_same_line": True,
     },
     "footer": {
-        "custom_text": "",
-        "show_user": True,
-        "user_label": "Kassierer",
         "blank_lines": 3,
-        "cut": True,
     },
 }
 
@@ -78,7 +93,7 @@ _DEFAULT_TEMPLATE: dict = {
 # ---------------------------------------------------------------------------
 
 def _load_template() -> dict:
-    """Read bon_template.yaml on every call so edits take effect without restart."""
+    """Read bon.yaml on every call so edits take effect without restart."""
     if _TEMPLATE_PATH.exists():
         try:
             with open(_TEMPLATE_PATH, encoding="utf-8") as f:
@@ -137,11 +152,11 @@ def _print_bon(
         p.set(align="left", bold=False)
         p.text(sep + "\n")
 
-    if h.get("show_event_name", True):
+    if BON_SHOW_EVENT_NAME:
         p.set(align="center", bold=True)
         p.text(event_name[:line_width] + "\n")
 
-    if h.get("show_datetime", True):
+    if BON_SHOW_DATETIME:
         p.set(align="center", bold=False)
         p.text(dt.strftime("%d.%m.%Y") + "  " + dt.strftime("%H:%M Uhr") + "\n")
 
@@ -151,7 +166,7 @@ def _print_bon(
 
     # Article
     is_bold = bool(a.get("bold", True))
-    show_price = bool(a.get("show_price", True))
+    show_price = BON_SHOW_PRICE
     same_line = bool(a.get("price_same_line", True))
     display_name = product_name.upper() if a.get("uppercase", False) else product_name
 
@@ -179,19 +194,19 @@ def _print_bon(
     # Footer
     p.set(align="left", bold=False)
 
-    custom = str(f.get("custom_text", "")).strip()
+    custom = BON_FOOTER_TEXT.strip()
     if custom:
         p.text(custom + "\n")
 
-    if f.get("show_user", True) and username:
-        label = str(f.get("user_label", "Kassierer")).strip()
+    if BON_SHOW_CASHIER and username:
+        label = BON_CASHIER_LABEL.strip()
         user_line = f"{label}: {username}" if label else username
         p.text(user_line[:line_width] + "\n")
 
     blank_lines = max(0, int(f.get("blank_lines", 3)))
     p.text("\n" * blank_lines)
 
-    if f.get("cut", True):
+    if PRINTER_AUTO_CUT:
         p.cut()
 
 
@@ -263,14 +278,9 @@ def _print_worker() -> None:
                     dt = datetime.fromisoformat(job["created_at"]).replace(tzinfo=timezone.utc).astimezone()
                     template = _load_template()
 
-                    event_name = job["event_name"]
-                    override = str(template.get("header", {}).get("event_name_override", "")).strip()
-                    if override:
-                        event_name = override
-
                     _print_bon(
                         p, template,
-                        event_name, dt,
+                        job["event_name"], dt,
                         job["product_name"], job["price"],
                         PRINTER_LINE_WIDTH, job["username"],
                     )

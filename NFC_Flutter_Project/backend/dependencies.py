@@ -1,5 +1,4 @@
 import hashlib
-import os
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import TypedDict
@@ -9,20 +8,9 @@ from fastapi import Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 
+from config import ACCESS_TOKEN_EXPIRE_MINUTES, ALGORITHM, REFRESH_TOKEN_EXPIRE_DAYS, SECRET_KEY
 from database import get_db
 from logging_config import user_ctx
-
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
-
-SECRET_KEY = os.environ.get("SECRET_KEY", "CHANGE-THIS-BEFORE-PRODUCTION")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 1440  # 24 hours — suitable for all-day POS use
-REFRESH_TOKEN_EXPIRE_DAYS = 30
-
-if SECRET_KEY == "CHANGE-THIS-BEFORE-PRODUCTION":
-    print("WARNING: Using default SECRET_KEY. Set the SECRET_KEY environment variable in production.")
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login/form")
 

@@ -7,7 +7,6 @@ without a code change.  In development (e.g. Android emulator) the default
 covers localhost only.
 """
 
-import os
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -21,7 +20,7 @@ from database import get_db
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from config import BAR_CHIP_UID, EVENT_NAME, LEADERBOARD_ENABLED, PAGER_ENABLED
+from config import ALLOWED_ORIGINS, BAR_CHIP_UID, EVENT_NAME, LEADERBOARD_ENABLED, PAGER_ENABLED, WEBAPP_ROUTE
 from middleware import TraceIdMiddleware
 from routers import auth, customers, display, download, help, kiosk, logs as logs_router, preferences, printer, products, sales, stats, topup, update, users
 if LEADERBOARD_ENABLED:
@@ -225,15 +224,12 @@ app = FastAPI(
 
 # ---------------------------------------------------------------------------
 # CORS
-# Restrict to local network in production. Set ALLOWED_ORIGINS env var for
-# a comma-separated list, e.g. "http://192.168.1.1:8000,http://localhost:8000"
+# Restrict to local network in production. Set ALLOWED_ORIGINS in config.env
+# for a comma-separated list, e.g. "http://192.168.1.1:8000,http://localhost:8000"
 # ---------------------------------------------------------------------------
-_raw_origins = os.environ.get("ALLOWED_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000")
-allowed_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -295,9 +291,6 @@ def health(
 # To rebuild after changing the route:
 #   flutter build web --release --base-href /your-route/
 # ---------------------------------------------------------------------------
-_webapp_route = os.environ.get("WEBAPP_ROUTE", "/webapp").strip().rstrip("/")
-if not _webapp_route.startswith("/"):
-    _webapp_route = "/" + _webapp_route
 _webapp_dir = Path(__file__).parent / "webapp"
 if _webapp_dir.is_dir():
-    app.mount(_webapp_route, StaticFiles(directory=str(_webapp_dir), html=True), name="webapp")
+    app.mount(WEBAPP_ROUTE, StaticFiles(directory=str(_webapp_dir), html=True), name="webapp")

@@ -55,10 +55,13 @@ Name: "german"; MessagesFile: "compiler:Languages\German.isl"
 Name: "desktopicon"; Description: "Desktop-Symbol erstellen"; GroupDescription: "Zusätzliche Symbole:"
 
 [Dirs]
-; The single load-bearing piece keeping an uninstall from ever touching real
-; kasse.db/config.env/logs/backups: this directory (and only this one) is
-; flagged uninsneveruninstall. Program files in {app} do NOT get this flag
-; -- those are meant to disappear on uninstall.
+; Keeps kasse.db/config.env/bon.yaml/logs/backups untouched by Inno's own
+; uninstall-file-removal logic and by every UPGRADE install (Inno never
+; removes an uninsneveruninstall dir just because a newer version is being
+; installed over it). Program files in {app} do NOT get this flag -- those
+; are meant to disappear on uninstall. A real, standalone REMOVAL can still
+; delete this directory -- see [UninstallDelete]/InitializeUninstall below,
+; which ask the user first (opt-in, defaults to keeping the data).
 Name: "{commonappdata}\NFC-Kasse"; Flags: uninsneveruninstall
 
 [Files]
@@ -96,6 +99,14 @@ Filename: "http://localhost:8000/webapp"; Flags: postinstall shellexec skipifsil
 Filename: "{app}\NfcKasseService.exe"; Parameters: "stop"; Flags: runhidden waituntilterminated; RunOnceId: "StopService"
 Filename: "{app}\NfcKasseService.exe"; Parameters: "uninstall"; Flags: runhidden waituntilterminated; RunOnceId: "UninstallService"
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""NFC-Kasse Backend"""; Flags: runhidden waituntilterminated; RunOnceId: "RemoveFirewallRule"
+
+[UninstallDelete]
+; Opt-in only -- ShouldDeleteDataDir() (see [Code]) returns true only if the
+; user explicitly confirmed the data-loss warning in InitializeUninstall.
+; Left unconfirmed (the default), this entry is skipped entirely and
+; C:\ProgramData\NFC-Kasse\ -- config.env, kasse.db, bon.yaml, backups, logs
+; -- survives the uninstall untouched, same as today.
+Type: filesandordirs; Name: "{commonappdata}\NFC-Kasse"; Check: ShouldDeleteDataDir
 
 [Code]
 var
@@ -200,4 +211,47 @@ begin
     Exec(ExpandConstant('{app}\NfcKasseService.exe'), 'uninstall', '',
       SW_HIDE, ewWaitUntilTerminated, ResultCode);
   end;
+end;
+
+// ---------------------------------------------------------------------------
+// Uninstaller: optional removal of C:\ProgramData\NFC-Kasse\
+// ---------------------------------------------------------------------------
+
+var
+  DeleteDataDirConfirmed: Boolean;
+
+// InitializeUninstall runs before Inno's own "really remove NFC-Kasse
+// Backend?" confirmation, which is exactly what we want -- asking about
+// data loss up front, with "Nein" as the safe default (MB_DEFBUTTON2), so
+// hitting Enter without reading never destroys anything.
+function InitializeUninstall(): Boolean;
+var
+  DataDir, NL, Msg: String;
+begin
+  Result := True;
+  DataDir := ExpandConstant('{commonappdata}\NFC-Kasse');
+  DeleteDataDirConfirmed := False;
+  if DirExists(DataDir) then
+  begin
+    // Built via a local NL variable rather than inline #13#10 -- ISPP (the
+    // preprocessor, a separate pass over the raw text before Pascal Script
+    // ever sees it) treats a leading '#' on any line as a directive marker,
+    // so a continuation line starting with "#13#10 + ..." fails to compile
+    // with "Unknown preprocessor directive". This sidesteps it entirely.
+    NL := #13#10;
+    Msg := 'Sollen auch alle gespeicherten Daten gelöscht werden?' + NL + NL +
+      'ACHTUNG: Dies löscht unwiderruflich die Konfiguration (config.env), ' +
+      'die Datenbank (kasse.db) mit allen Kunden, Guthaben und Buchungen, ' +
+      'alle Backups, das Bon-Layout (bon.yaml) und alle Protokolle unter:' +
+      NL + DataDir + NL + NL +
+      'Bei einer späteren Neuinstallation stehen diese Daten dann NICHT ' +
+      'mehr zur Verfügung. Wählen Sie "Nein", um sie zu behalten.';
+    DeleteDataDirConfirmed := (MsgBox(Msg, mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES);
+  end;
+end;
+
+// Referenced by [UninstallDelete]'s Check: parameter above.
+function ShouldDeleteDataDir(): Boolean;
+begin
+  Result := DeleteDataDirConfirmed;
 end;

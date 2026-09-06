@@ -29,42 +29,13 @@ DB_PATH = DATA_DIR / "kasse.db"
 LOGS_DIR = DATA_DIR / "logs"
 BACKUPS_DIR = DATA_DIR / "backups"
 
-_DEFAULT_CONFIG_TEMPLATE = """\
-# NFC-Kasse Configuration
-# Edit this file, then restart the "NFC-Kasse Backend" Windows service for
-# changes to take effect.
+# Single canonical template, shared with start_backend.bat's dev-mode config
+# generation (both substitute the same {secret_key}/{installation_id}
+# placeholders) so the two entrypoints can never drift out of sync again.
+_CONFIG_TEMPLATE_PATH = Path(__file__).parent / "config.env.template"
 
-# Network interface to bind to (0.0.0.0 = all interfaces).
-HOST=0.0.0.0
-
-# Port the backend listens on.
-PORT=8000
-
-# Secret used to sign login tokens (JWT). Auto-generated on first install.
-# IMPORTANT: changing this invalidates every existing login session.
-SECRET_KEY={secret_key}
-
-# Unique installation ID, generated once. Do not change -- every feature
-# license key is signed for this exact ID. Needed to request license keys
-# (PAGER, LEADERBOARD, ...).
-INSTALLATION_ID={installation_id}
-
-# Name of the event, shown in the UI and on printed receipts.
-EVENT_NAME=Hauptveranstaltung
-
-# Chip deposit in EUR (e.g. 3.00). 0 disables deposit logic.
-CHIP_DEPOSIT=0
-
-# Leaderboard add-on (paid feature, needs LEADERBOARD_LICENSE_KEY). true = enabled.
-LEADERBOARD=false
-
-# Pager add-on (paid feature, needs PAGER_LICENSE_KEY). true = enabled.
-PAGER=false
-
-# URL path the Flutter web app is served under (only active if a webapp
-# folder is bundled next to this service).
-WEBAPP_ROUTE=/webapp
-"""
+BON_YAML_PATH = DATA_DIR / "bon.yaml"
+_BON_YAML_DEFAULT_PATH = Path(__file__).parent / "bon.yaml.default"
 
 
 def _ensure_config() -> None:
@@ -77,9 +48,21 @@ def _ensure_config() -> None:
         return
     secret = secrets.token_urlsafe(32)
     installation_id = str(uuid.uuid4())
+    template = _CONFIG_TEMPLATE_PATH.read_text(encoding="utf-8")
     CONFIG_PATH.write_text(
-        _DEFAULT_CONFIG_TEMPLATE.format(secret_key=secret, installation_id=installation_id),
+        template.format(secret_key=secret, installation_id=installation_id),
         encoding="utf-8",
+    )
+
+
+def _ensure_bon_yaml() -> None:
+    """Seeds bon.yaml from the bundled default on first run. Never touches
+    an existing file — same non-destructive reasoning as _ensure_config():
+    this is the customer's own persisted receipt-layout customization."""
+    if BON_YAML_PATH.exists():
+        return
+    BON_YAML_PATH.write_text(
+        _BON_YAML_DEFAULT_PATH.read_text(encoding="utf-8"), encoding="utf-8"
     )
 
 
@@ -111,12 +94,18 @@ def main() -> None:
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
     BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
     _ensure_config()
+    _ensure_bon_yaml()
 
     from dotenv import load_dotenv
 
     load_dotenv(dotenv_path=CONFIG_PATH, override=False)
     os.environ.setdefault("DB_PATH", str(DB_PATH))
     os.environ.setdefault("NFC_KASSE_LOG_DIR", str(LOGS_DIR))
+    # routers/printer.py reads this directly (bon.yaml lives in DATA_DIR, not
+    # next to the program files) — must be set even when NFC_KASSE_DATA_DIR
+    # wasn't already in the environment, since DATA_DIR may be the hardcoded
+    # default in that case.
+    os.environ.setdefault("NFC_KASSE_DATA_DIR", str(DATA_DIR))
 
     assert os.environ.get("SECRET_KEY") not in (None, "", "CHANGE-THIS-BEFORE-PRODUCTION"), (
         "SECRET_KEY was not loaded from config.env before main.py's import — "

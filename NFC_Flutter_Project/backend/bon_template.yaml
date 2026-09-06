@@ -1,25 +1,95 @@
-# bon_template.yaml — Thermodrucker Bon-Vorlage (ESC/POS)
+# bon_template.yaml — Referenz & Beispiele für das Bon-Layout
 # ==========================================================
-# Änderungen werden beim nächsten Druckauftrag übernommen — kein Neustart nötig.
+# NUR DOKUMENTATION — diese Datei wird von keinem Code gelesen.
+# Die tatsächlich aktive Datei heißt bon.yaml (im selben Ordner; in der
+# installierten Version unter C:\ProgramData\NFC-Kasse\bon.yaml). Ändere
+# dort etwas, nicht hier — Änderungen hier haben keine Wirkung.
+#
+# Inhalts-Schalter (Eventname/Datum/Preis anzeigen, Fußzeilentext,
+# Kassierer-Name/-Label anzeigen, automatisch abschneiden) stehen NICHT
+# hier, sondern in config.env als BON_*/PRINTER_AUTO_CUT-Variablen. Diese
+# Datei betrifft nur das reine Layout: Trennlinien, Fett, Großbuchstaben,
+# Preis-Zeilenumbruch, Papiervorschub.
+#
 # Maximale Zeilenbreite: PRINTER_LINE_WIDTH in config.env (Standard: 42 Zeichen)
 
-header:
-  event_name_override: ""     # Leer = Eventname aus DB; z.B. "Sommerfest 2026" überschreibt ihn
-  show_event_name: true       # Veranstaltungsname fett und zentriert drucken
-  show_datetime: true         # Datum + Uhrzeit zentriert (TT.MM.JJJJ  HH:MM Uhr)
-  separator_before: false      # Trennlinie VOR dem Kopfbereich drucken
-  separator_after: true       # Trennlinie NACH dem Datum/Uhrzeit drucken
-  separator_char: "-"         # Zeichen für Trennlinie: - = * ─
-
-article:
-  bold: true                  # Artikelname fett drucken
-  uppercase: false            # Artikelname in GROSSBUCHSTABEN (true/false)
-  show_price: true            # Preis anzeigen (true/false)
-  price_same_line: true       # Preis rechts in gleicher Zeile (false = neue Zeile)
-
-footer:
-  custom_text: ""             # Optionaler Text unter dem Artikel, z.B. "Vielen Dank!"
-  show_user: true             # Benutzernamen des Druckenden anzeigen (true/false)
-  user_label: "Kassierer"     # Bezeichnung vor dem Namen; leer lassen für nur den Namen
-  blank_lines: 0              # Leerzeilen vor dem Schnitt (Papiervorschub)
-  cut: true                   # Bon automatisch abschneiden
+# --------------------------------------------------------------------------
+# Vollständige Befehlsreferenz
+# --------------------------------------------------------------------------
+#
+# header:
+#   separator_before: true/false
+#       Trennlinie VOR dem Kopfbereich (Eventname/Datum) drucken.
+#   separator_after: true/false
+#       Trennlinie NACH dem Kopfbereich drucken, vor dem Artikel.
+#   separator_char: "<ein Zeichen>"
+#       Zeichen, aus dem die Trennlinie besteht, z.B. "-", "=", "*", "─".
+#       Wird auf die volle Zeilenbreite (PRINTER_LINE_WIDTH) wiederholt.
+#
+# article:
+#   bold: true/false
+#       Artikelname fett drucken.
+#   uppercase: true/false
+#       Artikelname in GROSSBUCHSTABEN drucken.
+#   price_same_line: true/false
+#       true  = Preis rechtsbündig in derselben Zeile wie der Artikelname
+#               (bei zu langem Namen automatisch eigene Zeile).
+#       false = Preis immer in einer eigenen, rechtsbündigen Zeile.
+#
+# footer:
+#   blank_lines: <Zahl >= 0>
+#       Anzahl Leerzeilen (Papiervorschub) vor dem Abschneiden.
+#
+# --------------------------------------------------------------------------
+# Beispiel 1: Standard (Werkseinstellung, = heutiger Inhalt von bon.yaml)
+# --------------------------------------------------------------------------
+#
+# header:
+#   separator_before: false
+#   separator_after: true
+#   separator_char: "-"
+#
+# article:
+#   bold: true
+#   uppercase: false
+#   price_same_line: true
+#
+# footer:
+#   blank_lines: 0
+#
+# --------------------------------------------------------------------------
+# Beispiel 2: Kompakt (wenig Papierverbrauch, für Events mit hohem
+# Bon-Aufkommen — keine Trennlinien, kein Fett, kein Vorschub)
+# --------------------------------------------------------------------------
+#
+# header:
+#   separator_before: false
+#   separator_after: false
+#   separator_char: "-"
+#
+# article:
+#   bold: false
+#   uppercase: false
+#   price_same_line: true
+#
+# footer:
+#   blank_lines: 0
+#
+# --------------------------------------------------------------------------
+# Beispiel 3: Auffällig (Trennlinien vor und nach dem Kopf, Doppellinie
+# aus "=", Artikelname in Großbuchstaben, mehr Vorschub zum leichteren
+# Abreißen von Hand)
+# --------------------------------------------------------------------------
+#
+# header:
+#   separator_before: true
+#   separator_after: true
+#   separator_char: "="
+#
+# article:
+#   bold: true
+#   uppercase: true
+#   price_same_line: true
+#
+# footer:
+#   blank_lines: 3

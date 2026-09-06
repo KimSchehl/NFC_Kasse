@@ -192,12 +192,28 @@
       "Read(//c/Program Files/NFC-Kasse/**)",
       "Read(//c/ProgramData/Microsoft/Windows/Start Menu/Programs//**)",
       "Bash(cat /c/Users/KimSc/Desktop/NFC_Kasse/.gitignore)",
-      "Bash(find /c/Users/KimSc/Desktop/NFC_Kasse -maxdepth 3 -iname \".gitignore\" 2>&1 *)"
+      "Bash(find /c/Users/KimSc/Desktop/NFC_Kasse -maxdepth 3 -iname \".gitignore\" 2>&1 *)",
+      "Bash(python -c \"import config; print\\('config OK'\\); print\\('WEBAPP_ROUTE=', config.WEBAPP_ROUTE\\); print\\('ALLOWED_ORIGINS=', config.ALLOWED_ORIGINS\\); print\\('BON_SHOW_EVENT_NAME=', config.BON_SHOW_EVENT_NAME\\)\")",
+      "Bash(SECRET_KEY=test-secret python -c ' *)",
+      "Bash(rm -f \"/c/Users/KimSc/AppData/Local/Temp/test_config.env\")",
+      "Bash(rm -rf /tmp/nfc_test_data)",
+      "Bash(NFC_KASSE_DATA_DIR=/tmp/nfc_test_data python -c ' *)",
+      "Read(//tmp/nfc_test_data/**)",
+      "Bash(find /c -maxdepth 3 -iname \"nfc_test_data\")",
+      "Bash(find /tmp -maxdepth 2)",
+      "Bash(ls -la /tmp/nfc_test_data/ 2>&1; pwd)",
+      "Read(//tmp/**)",
+      "Bash(SECRET_KEY=test python -c ' *)",
+      "Bash(SECRET_KEY=test BON_FOOTER_TEXT='Vielen Dank!' python -c ' *)",
+      "Bash(SECRET_KEY=test NFC_KASSE_DATA_DIR=/tmp/nfc_pd python -c ' *)",
+      "PowerShell(& \"$env:LOCALAPPDATA\\\\Programs\\\\Inno Setup 6\\\\ISCC.exe\" /DMyAppVersion=1.0.77 \"packaging\\\\innosetup\\\\nfc_kasse_installer.iss\" 2>&1 | Select-Object -Last 15)"
     ],
     "additionalDirectories": [
       "c:\\Users\\KimSc\\Desktop\\NFC_Kasse\\nfc-ble-reader",
       "c:\\Users\\KimSc\\Desktop\\NFC_Kasse",
-      "C:\\ProgramData\\NFC-Kasse"
+      "C:\\ProgramData\\NFC-Kasse",
+      "C:\\Users\\KimSc\\AppData\\Local\\Temp",
+      "\\tmp"
     ]
   }
 }

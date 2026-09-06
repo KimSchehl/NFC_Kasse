@@ -25,7 +25,13 @@ a = Analysis(
     binaries=[],
     datas=[
         (str(BACKEND / "bon_template.yaml"), "."),
-        # -> Path(__file__).parent.parent from routers/printer.py
+        # Reference/documentation only — not read by any code, just bundled
+        # next to the program for discoverability. The live file (bon.yaml)
+        # lives in NFC_KASSE_DATA_DIR (ProgramData), seeded from bon.yaml.default.
+        (str(BACKEND / "bon.yaml.default"), "."),
+        # -> Path(__file__).parent from service_main.py's _ensure_bon_yaml()
+        (str(BACKEND / "config.env.template"), "."),
+        # -> Path(__file__).parent from service_main.py's _ensure_config()
         (str(BACKEND / "webapp"), "webapp"),
         # -> Path(__file__).parent from main.py's webapp mount
         (str(REPO_ROOT / "packaging" / "pyinstaller" / "build" / "updates_seed"), "updates"),

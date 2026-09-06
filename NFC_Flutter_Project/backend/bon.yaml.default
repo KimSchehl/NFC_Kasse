@@ -1,0 +1,22 @@
+# bon.yaml — aktives Bon-Layout (ESC/POS)
+# ==========================================================
+# Das ist die Datei, aus der tatsächlich gedruckt wird. Änderungen werden
+# beim nächsten Druckauftrag übernommen — kein Neustart nötig.
+#
+# Volle Befehlsreferenz + Beispiel-Layouts: siehe bon_template.yaml daneben.
+# Inhalts-Schalter (Eventname/Datum/Preis/Fußzeile/Kassierer anzeigen) stehen
+# nicht hier, sondern in config.env (BON_*-Variablen).
+# Maximale Zeilenbreite: PRINTER_LINE_WIDTH in config.env (Standard: 42 Zeichen)
+
+header:
+  separator_before: false     # Trennlinie VOR dem Kopfbereich drucken
+  separator_after: true       # Trennlinie NACH dem Datum/Uhrzeit drucken
+  separator_char: "-"         # Zeichen für Trennlinie: - = * ─
+
+article:
+  bold: true                  # Artikelname fett drucken
+  uppercase: false            # Artikelname in GROSSBUCHSTABEN (true/false)
+  price_same_line: true       # Preis rechts in gleicher Zeile (false = neue Zeile)
+
+footer:
+  blank_lines: 0              # Leerzeilen vor dem Schnitt (Papiervorschub)
