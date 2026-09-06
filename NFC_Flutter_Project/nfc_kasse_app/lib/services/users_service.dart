@@ -34,7 +34,12 @@ class UsersService {
     return UserListItem.fromJson(resp.data as Map<String, dynamic>);
   }
 
-  Future<void> deactivateUser(int id) async {
+  Future<UserListItem> setActive(int id, bool active) async {
+    final resp = await _client.dio.patch('/api/users/$id/active', data: {'active': active});
+    return UserListItem.fromJson(resp.data as Map<String, dynamic>);
+  }
+
+  Future<void> deleteUser(int id) async {
     await _client.dio.delete('/api/users/$id');
   }
 

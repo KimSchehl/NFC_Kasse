@@ -306,6 +306,10 @@ class UserUpdate(BaseModel):
         return v
 
 
+class UserActiveUpdate(BaseModel):
+    active: bool
+
+
 class UserPermissionsResponse(BaseModel):
     user: UserResponse
     permissions: list[str]

@@ -145,6 +145,16 @@ def _migrate() -> None:
             db.execute("ALTER TABLE product ADD COLUMN group_id INTEGER REFERENCES product(id)")
         except Exception:
             pass
+        # deleted — soft-delete for users, mirrors product.deleted (rows stay
+        # for sale.booked_by/user_permission.granted_by/etc. audit trails).
+        # Deleting a user also renames it (see routers/users.py's delete_user)
+        # rather than relaxing the UNIQUE(tenant_id, username) constraint,
+        # which SQLite can't drop without rebuilding the table -- risky while
+        # foreign_keys=ON and half the schema references user(id).
+        try:
+            db.execute("ALTER TABLE user ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0")
+        except Exception:
+            pass
         # leaderboard_score table — full add-on, separate from customer table
         db.execute("""
             CREATE TABLE IF NOT EXISTS leaderboard_score (

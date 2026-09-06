@@ -10,6 +10,7 @@ from schemas import (
     CategoryPermissionResponse,
     PermissionsUpdate,
     RoleTemplateResponse,
+    UserActiveUpdate,
     UserCreate,
     UserPermissionsResponse,
     UserResponse,
@@ -24,12 +25,37 @@ logger = logging.getLogger(__name__)
 # User CRUD
 # ---------------------------------------------------------------------------
 
+def _blocks_last_manager(db, user_id: int, event_id: int) -> bool:
+    """True if deactivating/deleting `user_id` would leave nobody with
+    users.manage_permissions for this event -- otherwise no one could ever
+    fix a permissions mistake again short of direct DB access (same class of
+    self-lockout as the kiosk.access admin bug elsewhere in this project).
+    A no-op (returns False) if the user doesn't even hold that permission."""
+    holds_it = db.execute(
+        "SELECT 1 FROM user_permission WHERE user_id=? AND event_id=? AND permission_id='users.manage_permissions'",
+        (user_id, event_id),
+    ).fetchone()
+    if not holds_it:
+        return False
+    other = db.execute(
+        """
+        SELECT COUNT(*) as cnt
+        FROM user_permission up
+        JOIN user u ON u.id = up.user_id
+        WHERE up.permission_id = 'users.manage_permissions' AND up.event_id = ?
+          AND u.active = 1 AND u.deleted = 0 AND u.id != ?
+        """,
+        (event_id, user_id),
+    ).fetchone()
+    return other["cnt"] == 0
+
+
 @router.get("/", response_model=list[UserResponse])
 def list_users(ctx: RequestContext = Depends(require_permission("users.view"))):
     tenant_id = ctx["user"]["tenant_id"]
     with get_db() as db:
         rows = db.execute(
-            "SELECT id, username, display_name, active FROM user WHERE tenant_id=? ORDER BY username",
+            "SELECT id, username, display_name, active FROM user WHERE tenant_id=? AND deleted=0 ORDER BY username",
             (tenant_id,),
         ).fetchall()
     return [UserResponse(**dict(r)) for r in rows]
@@ -43,7 +69,7 @@ def create_user(
     tenant_id = ctx["user"]["tenant_id"]
     with get_db() as db:
         existing = db.execute(
-            "SELECT id FROM user WHERE tenant_id=? AND username=?",
+            "SELECT id FROM user WHERE tenant_id=? AND username=? AND deleted=0",
             (tenant_id, body.username),
         ).fetchone()
         if existing:
@@ -76,7 +102,7 @@ def update_user(
     tenant_id = ctx["user"]["tenant_id"]
     with get_db() as db:
         row = db.execute(
-            "SELECT * FROM user WHERE id=? AND tenant_id=?",
+            "SELECT * FROM user WHERE id=? AND tenant_id=? AND deleted=0",
             (user_id, tenant_id),
         ).fetchone()
         if not row:
@@ -85,7 +111,7 @@ def update_user(
         # Check for duplicate username if changing it
         if body.username and body.username != row["username"]:
             dup = db.execute(
-                "SELECT id FROM user WHERE tenant_id=? AND username=? AND id!=?",
+                "SELECT id FROM user WHERE tenant_id=? AND username=? AND id!=? AND deleted=0",
                 (tenant_id, body.username, user_id),
             ).fetchone()
             if dup:
@@ -112,28 +138,87 @@ def update_user(
     )
 
 
-@router.delete("/{user_id}", status_code=204)
-def deactivate_user(
+@router.patch("/{user_id}/active", response_model=UserResponse)
+def set_user_active(
     user_id: int,
+    body: UserActiveUpdate,
     ctx: RequestContext = Depends(require_permission("users.deactivate")),
 ):
+    """Toggles active in both directions -- deactivate AND reactivate go
+    through here, mirroring products.py's PATCH /{id}/active."""
     tenant_id = ctx["user"]["tenant_id"]
+    event_id = ctx["event"]["id"]
     current_user_id = ctx["user"]["id"]
 
-    if user_id == current_user_id:
+    if user_id == current_user_id and not body.active:
         raise HTTPException(status_code=400, detail="Eigenes Konto kann nicht deaktiviert werden")
 
     with get_db() as db:
         row = db.execute(
-            "SELECT id FROM user WHERE id=? AND tenant_id=?",
+            "SELECT id, username, display_name FROM user WHERE id=? AND tenant_id=? AND deleted=0",
             (user_id, tenant_id),
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
-        db.execute("UPDATE user SET active=0 WHERE id=?", (user_id,))
+
+        if not body.active and _blocks_last_manager(db, user_id, event_id):
+            raise HTTPException(
+                status_code=400,
+                detail="Letzter Benutzer mit Benutzerverwaltungs-Rechten kann nicht deaktiviert werden",
+            )
+
+        db.execute("UPDATE user SET active=? WHERE id=?", (1 if body.active else 0, user_id))
 
     logger.warning(
-        "User deactivated: user_id=%s by=%s", user_id, ctx["user"]["username"],
+        "User %s: user_id=%s by=%s",
+        "reactivated" if body.active else "deactivated",
+        user_id, ctx["user"]["username"],
+    )
+    return UserResponse(
+        id=user_id, username=row["username"], display_name=row["display_name"], active=body.active,
+    )
+
+
+@router.delete("/{user_id}", status_code=204)
+def delete_user(
+    user_id: int,
+    ctx: RequestContext = Depends(require_permission("users.delete")),
+):
+    """Soft-delete, mirroring products.py's delete_product -- the row stays
+    for sale.booked_by/user_permission.granted_by/etc. audit trails, just
+    hidden from every normal query (deleted=0 filter). The username is
+    renamed to free it up for reuse (see _blocks_last_manager's neighbor
+    comment in main.py's migration for why: relaxing the UNIQUE(tenant_id,
+    username) constraint isn't safely doable with foreign_keys=ON)."""
+    tenant_id = ctx["user"]["tenant_id"]
+    event_id = ctx["event"]["id"]
+    current_user_id = ctx["user"]["id"]
+
+    if user_id == current_user_id:
+        raise HTTPException(status_code=400, detail="Eigenes Konto kann nicht gelöscht werden")
+
+    with get_db() as db:
+        row = db.execute(
+            "SELECT id, username FROM user WHERE id=? AND tenant_id=? AND deleted=0",
+            (user_id, tenant_id),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+
+        if _blocks_last_manager(db, user_id, event_id):
+            raise HTTPException(
+                status_code=400,
+                detail="Letzter Benutzer mit Benutzerverwaltungs-Rechten kann nicht gelöscht werden",
+            )
+
+        renamed = f"{row['username']}__geloescht_{user_id}"
+        db.execute(
+            "UPDATE user SET deleted=1, active=0, username=? WHERE id=?",
+            (renamed, user_id),
+        )
+
+    logger.warning(
+        "User deleted: user_id=%s (was %s) by=%s", user_id, row["username"], ctx["user"]["username"],
     )
 
 

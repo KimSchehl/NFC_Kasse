@@ -206,7 +206,12 @@
       "Bash(SECRET_KEY=test python -c ' *)",
       "Bash(SECRET_KEY=test BON_FOOTER_TEXT='Vielen Dank!' python -c ' *)",
       "Bash(SECRET_KEY=test NFC_KASSE_DATA_DIR=/tmp/nfc_pd python -c ' *)",
-      "PowerShell(& \"$env:LOCALAPPDATA\\\\Programs\\\\Inno Setup 6\\\\ISCC.exe\" /DMyAppVersion=1.0.77 \"packaging\\\\innosetup\\\\nfc_kasse_installer.iss\" 2>&1 | Select-Object -Last 15)"
+      "PowerShell(& \"$env:LOCALAPPDATA\\\\Programs\\\\Inno Setup 6\\\\ISCC.exe\" /DMyAppVersion=1.0.77 \"packaging\\\\innosetup\\\\nfc_kasse_installer.iss\" 2>&1 | Select-Object -Last 15)",
+      "Bash(python -m pytest tests/test_users.py -v)",
+      "Bash(python -m pytest tests/test_users.py -q)",
+      "Bash(ls -la \"/c/ProgramData/NFC-Kasse\" 2>&1)",
+      "Read(//c/ProgramData/NFC-Kasse/logs/**)",
+      "Read(//c/ProgramData/NFC-Kasse/backups/**)"
     ],
     "additionalDirectories": [
       "c:\\Users\\KimSc\\Desktop\\NFC_Kasse\\nfc-ble-reader",

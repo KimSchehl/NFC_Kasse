@@ -66,6 +66,7 @@ def init_db():
         password_hash   TEXT    NOT NULL,
         display_name    TEXT,
         active          INTEGER NOT NULL DEFAULT 1,
+        deleted         INTEGER NOT NULL DEFAULT 0,
         created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
         UNIQUE(tenant_id, username)
     )""")

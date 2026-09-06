@@ -110,9 +110,15 @@ class UsersScreen extends ConsumerWidget {
       'Benutzer-Dialog geöffnet: ${user?.username ?? "Neuer Benutzer"}',
       logger: 'ui.users',
     );
+    final currentUser = ref.read(authProvider).valueOrNull;
     final result = await showDialog<bool>(
       context: context,
-      builder: (_) => EditUserDialog(user: user),
+      builder: (_) => EditUserDialog(
+        user: user,
+        canDeactivate: currentUser?.canDeactivateUsers ?? false,
+        canDelete: currentUser?.canDeleteUsers ?? false,
+        isSelf: user != null && currentUser != null && user.id == currentUser.id,
+      ),
     );
     if (result == true && context.mounted) {
       ref.invalidate(_usersListProvider);

@@ -13,9 +13,25 @@ enum _CatFlag {
   createArticle, editArticle, deactivateArticle, deleteArticle,
 }
 
+/// [canDeactivate]/[canDelete] gate the "Aktiv"-checkbox and "Löschen"
+/// button respectively — same shape as EditProductDialog's canDeactivate/
+/// canDelete. [isSelf] additionally hides both regardless of those
+/// permissions: the backend already refuses to deactivate/delete your own
+/// account (it would otherwise instantly invalidate the session making the
+/// request), so there's nothing to offer here for that case.
 class EditUserDialog extends ConsumerStatefulWidget {
   final UserListItem? user;
-  const EditUserDialog({super.key, this.user});
+  final bool canDeactivate;
+  final bool canDelete;
+  final bool isSelf;
+
+  const EditUserDialog({
+    super.key,
+    this.user,
+    this.canDeactivate = false,
+    this.canDelete = false,
+    this.isSelf = false,
+  });
 
   @override
   ConsumerState<EditUserDialog> createState() => _EditUserDialogState();
@@ -28,6 +44,7 @@ class _EditUserDialogState extends ConsumerState<EditUserDialog> {
 
   bool _loading = false;
   String? _error;
+  late bool _active;
 
   Set<String> _selectedPerms = {};
   Map<int, CategoryModel> _catAccess = {};
@@ -42,6 +59,7 @@ class _EditUserDialogState extends ConsumerState<EditUserDialog> {
     _username = TextEditingController(text: widget.user?.username ?? '');
     _displayName = TextEditingController(text: widget.user?.displayName ?? '');
     _password = TextEditingController();
+    _active = widget.user?.active ?? true;
     _loadData();
   }
 
@@ -140,12 +158,48 @@ class _EditUserDialogState extends ConsumerState<EditUserDialog> {
           displayName: displayName.isEmpty ? null : displayName,
         );
         userId = widget.user!.id;
+        if (widget.canDeactivate && _active != widget.user!.active) {
+          await svc.setActive(userId, _active);
+        }
       }
 
       await svc.setPermissions(userId, _selectedPerms.toList());
       await svc.setCategoryAccess(userId, _catAccess.values.toList());
 
       if (mounted) Navigator.of(context).pop(true);
+    } catch (e) {
+      setState(() {
+        _loading = false;
+        _error = formatApiError(e);
+      });
+    }
+  }
+
+  Future<void> _delete() async {
+    AppLogger.trace('Löschen-Dialog geöffnet: ${widget.user!.username}', logger: 'ui.users');
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Benutzer löschen?'),
+        content: Text('${widget.user!.displayLabel} endgültig löschen?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Abbrechen')),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Löschen'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    AppLogger.trace('Löschen bestätigt: ${widget.user!.username}', logger: 'ui.users');
+
+    setState(() => _loading = true);
+    try {
+      await ref.read(usersServiceProvider).deleteUser(widget.user!.id);
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
     } catch (e) {
       setState(() {
         _loading = false;
@@ -203,6 +257,15 @@ class _EditUserDialogState extends ConsumerState<EditUserDialog> {
                 ),
                 obscureText: true,
               ),
+              if (!isNew && widget.canDeactivate && !widget.isSelf)
+                CheckboxListTile(
+                  title: const Text('Aktiv'),
+                  subtitle: const Text('Deaktivierte Benutzer können sich nicht mehr anmelden'),
+                  value: _active,
+                  onChanged: (v) => setState(() => _active = v ?? _active),
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                ),
 
               const SizedBox(height: 20),
               Text('Globale Berechtigungen', style: theme.textTheme.titleSmall),
@@ -258,16 +321,28 @@ class _EditUserDialogState extends ConsumerState<EditUserDialog> {
           ),
         ),
       ),
+      actionsAlignment: MainAxisAlignment.spaceBetween,
       actions: [
-        TextButton(
-          onPressed: _loading ? null : () => Navigator.of(context).pop(),
-          child: const Text('Abbrechen'),
-        ),
-        FilledButton(
-          onPressed: _loading ? null : _save,
-          child: _loading
-              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-              : const Text('Speichern'),
+        if (!isNew && widget.canDelete && !widget.isSelf)
+          TextButton(
+            onPressed: _loading ? null : _delete,
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Löschen'),
+          ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextButton(
+              onPressed: _loading ? null : () => Navigator.of(context).pop(),
+              child: const Text('Abbrechen'),
+            ),
+            FilledButton(
+              onPressed: _loading ? null : _save,
+              child: _loading
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Text('Speichern'),
+            ),
+          ],
         ),
       ],
     );

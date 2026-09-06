@@ -80,6 +80,10 @@ class UserModel {
 
   bool get canManageUsers => hasPermission('users.manage_permissions');
 
+  bool get canDeactivateUsers => hasPermission('users.deactivate');
+
+  bool get canDeleteUsers => hasPermission('users.delete');
+
   /// True for any statistics permission — stats screen and sidebar link are
   /// shown as soon as the user has at least one of the three stats permissions.
   bool get canViewStats => permissions.any((p) => p.startsWith('statistics.'));
