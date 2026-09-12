@@ -11,11 +11,17 @@ import '../utils/formatters.dart';
 /// 1. **USB HID reader**: the reader emulates a keyboard and types the UID
 ///    followed by `\n` or `\r`. [_onChanged] detects the newline and submits.
 /// 2. **Native NFC** (Android): [NfcService.startSession] notifies us via
-///    callback when a tag is detected, and we call [_submit] directly.
+///    callback when a tag is detected, and we call [_submit] directly. This
+///    works purely at the OS level and doesn't need the field focused, so —
+///    like the BLE case below — the field defaults to read-only to stop
+///    Android's on-screen keyboard from popping up every time it regains
+///    focus (switching category, closing a dialog, ...). Unlike BLE, manual
+///    UID entry is still offered as a fallback here: tapping the field
+///    ([_onTap]) flips it editable until it loses focus again.
 /// 3. **BLE reader**: [bleReaderProvider] pushes each scan via GATT notify;
 ///    a `ref.listen` on its `lastUidSeq` counter submits it. While connected,
-///    the field is set read-only so tapping it doesn't pop up the Android
-///    soft keyboard (there's nothing to type - input comes over BLE).
+///    the field is always read-only (there's nothing to type - input comes
+///    over BLE exclusively, no manual-entry fallback).
 ///
 /// In all cases the UID is normalised to uppercase hex and kept visible in the
 /// field so staff can see which wristband is loaded. The next scan overwrites it.
@@ -33,11 +39,31 @@ class _NfcInputFieldState extends ConsumerState<NfcInputField> {
   final _focusNode = FocusNode();
   bool _nfcAvailable = false;
 
+  // True right after an explicit tap on the field while native NFC is
+  // available — temporarily lets the user type a UID by hand instead of
+  // scanning. Reset the moment focus is lost so the *next* unsolicited
+  // refocus (category switch, a dialog closing, ...) goes back to blocking
+  // the on-screen keyboard rather than popping it up again.
+  bool _manualEntryRequested = false;
+
   @override
   void initState() {
     super.initState();
     _controller.addListener(() => setState(() {}));
+    _focusNode.addListener(_onFocusChange);
     _initNfc();
+  }
+
+  void _onFocusChange() {
+    if (!_focusNode.hasFocus && _manualEntryRequested) {
+      setState(() => _manualEntryRequested = false);
+    }
+  }
+
+  void _onTap() {
+    if (_nfcAvailable && !_manualEntryRequested) {
+      setState(() => _manualEntryRequested = true);
+    }
   }
 
   Future<void> _initNfc() async {
@@ -77,6 +103,7 @@ class _NfcInputFieldState extends ConsumerState<NfcInputField> {
   void dispose() {
     if (_nfcAvailable) NfcService.stopSession();
     _controller.dispose();
+    _focusNode.removeListener(_onFocusChange);
     _focusNode.dispose();
     super.dispose();
   }
@@ -103,16 +130,26 @@ class _NfcInputFieldState extends ConsumerState<NfcInputField> {
       bleReaderProvider.select((s) => s.isConnected),
     );
 
+    // Blocks the on-screen keyboard while a hands-free scan path (BLE or
+    // native NFC) is the active input method — neither needs the field
+    // focused to work, so autofocus/refocus (category switch, a dialog
+    // closing, the post-booking requestFocus() below, ...) would otherwise
+    // pop the keyboard for no reason. Native NFC still allows a deliberate
+    // tap ([_onTap]) to type a UID by hand; BLE never does, there's no other
+    // way to feed it.
+    final readOnlyNow = bleConnected || (_nfcAvailable && !_manualEntryRequested);
+
     return TextField(
       controller: _controller,
       focusNode: _focusNode,
       autofocus: true,
-      readOnly: bleConnected,
-      showCursor: !bleConnected,
+      readOnly: readOnlyNow,
+      showCursor: !readOnlyNow,
       keyboardType:
-          bleConnected ? TextInputType.none : TextInputType.visiblePassword,
+          readOnlyNow ? TextInputType.none : TextInputType.visiblePassword,
       textInputAction: TextInputAction.done,
       textCapitalization: TextCapitalization.characters,
+      onTap: _onTap,
       decoration: InputDecoration(
         hintText: bleConnected
             ? 'BLE-Lesegerät verbunden - warte auf Scan...'
