@@ -3,7 +3,9 @@
 # NUR DOKUMENTATION — diese Datei wird von keinem Code gelesen.
 # Die tatsächlich aktive Datei heißt bon.yaml (im selben Ordner; in der
 # installierten Version unter C:\ProgramData\NFC-Kasse\bon.yaml). Ändere
-# dort etwas, nicht hier — Änderungen hier haben keine Wirkung.
+# dort etwas, nicht hier — Änderungen hier haben keine Wirkung. Änderungen
+# an bon.yaml selbst werden erst nach einem Neustart des Backends/Dienstes
+# übernommen — genau wie bei config.env.
 #
 # Inhalts-Schalter (Eventname/Datum/Preis anzeigen, Fußzeilentext,
 # Kassierer-Name/-Label anzeigen, automatisch abschneiden) stehen NICHT

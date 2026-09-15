@@ -76,10 +76,11 @@ service is stopped before files are replaced, then restarted — `kasse.db`,
 - **Edit receipt layout** (separators, bold, uppercase, price
   line-wrapping, paper feed — everything else about the receipt is a
   `BON_*` setting in `config.env` above): `C:\ProgramData\NFC-Kasse\bon.yaml`,
-  takes effect on the next print, no restart needed. Full reference of
-  every possible key plus ready-to-copy example layouts:
-  `backend\bon_template.yaml` in the install folder (documentation only,
-  not read by the program) — pending a proper visual designer tool.
+  then "Dienst stoppen" + "Dienst starten" — read once and cached at
+  startup, same as every other config file. Full reference of every
+  possible key plus ready-to-copy example layouts: `backend\bon_template.yaml`
+  in the install folder (documentation only, not read by the program) —
+  pending a proper visual designer tool.
 - **Logs**: `C:\ProgramData\NFC-Kasse\logs\*.log` (app, JSON lines,
   hourly rotation) and `C:\ProgramData\NFC-Kasse\logs\winsw\` (raw
   stdout/stderr — the fallback if something goes wrong before the app's

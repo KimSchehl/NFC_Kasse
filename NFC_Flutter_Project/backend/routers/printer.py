@@ -17,12 +17,14 @@ Supported printer types (PRINTER_TYPE in config.env):
   network — TCP/IP socket, e.g. LAN printer or Bluetooth-to-Serial bridge
 
 The bon layout is driven by bon.yaml (see bon_template.yaml next to it for
-the full command reference and example layouts). Editing bon.yaml takes
-effect on the next print — no server restart needed.
+the full command reference and example layouts). Read once and cached —
+like every other config file, editing bon.yaml requires a service restart
+to take effect.
 
 Requires the 'bon.drucken' user permission.
 """
 
+import logging
 import os
 import threading
 import time
@@ -53,6 +55,7 @@ from dependencies import RequestContext, require_permission
 from routers.sales import _resolve_base_products
 from schemas import PrintBonRequest, PrintBonResponse
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/print", tags=["print"])
 
 
@@ -92,16 +95,26 @@ _DEFAULT_TEMPLATE: dict = {
 # Template / Printer helpers
 # ---------------------------------------------------------------------------
 
+_cached_template: dict | None = None
+
+
 def _load_template() -> dict:
-    """Read bon.yaml on every call so edits take effect without restart."""
-    if _TEMPLATE_PATH.exists():
-        try:
-            with open(_TEMPLATE_PATH, encoding="utf-8") as f:
-                data = yaml.safe_load(f) or {}
-            return data
-        except Exception:
-            pass
-    return _DEFAULT_TEMPLATE
+    """Reads bon.yaml once and caches it for the lifetime of the process —
+    like every other config file (config.env, BON_*/PRINTER_* settings),
+    editing bon.yaml requires a service restart to take effect. Consistent
+    behavior across all config files beats a single file that quietly
+    reloads live while everything else doesn't."""
+    global _cached_template
+    if _cached_template is None:
+        if _TEMPLATE_PATH.exists():
+            try:
+                with open(_TEMPLATE_PATH, encoding="utf-8") as f:
+                    _cached_template = yaml.safe_load(f) or {}
+            except Exception:
+                _cached_template = _DEFAULT_TEMPLATE
+        else:
+            _cached_template = _DEFAULT_TEMPLATE
+    return _cached_template
 
 
 def _get_printer():
@@ -223,6 +236,30 @@ def _reset_stuck_jobs() -> None:
 def _print_worker() -> None:
     """
     Daemon thread — polls print_job for pending rows and prints them FIFO.
+    See _print_worker_iteration() for the actual per-iteration logic; this
+    outer loop's only job is to make sure NOTHING that happens inside can
+    ever kill the thread outright. Without this guard, a single unexpected
+    exception anywhere in an iteration (e.g. a transient "database is
+    locked" from an unrelated concurrent booking colliding with the fast-
+    path polling query below — observed in production) permanently stops
+    all future printing until the whole service is restarted, since Python
+    just lets an uncaught exception silently end a background thread.
+    """
+    _reset_stuck_jobs()
+
+    while True:
+        try:
+            _print_worker_iteration()
+        except Exception as exc:
+            logger.error("Print worker: unexpected error, continuing: %s", exc)
+            time.sleep(2.0)
+
+
+def _print_worker_iteration() -> None:
+    """
+    One unit of work for _print_worker(): if nothing is pending, sleep
+    briefly and return; otherwise open the printer once and drain the whole
+    queue through it before returning.
 
     The printer is opened ONCE per batch and kept open until the queue is empty
     or a print error occurs.  This avoids the PermissionError that arises when
@@ -234,95 +271,98 @@ def _print_worker() -> None:
     On mid-print failure the offending job is marked 'error', the port is
     closed, and the worker pauses 2 s before the next attempt.
     """
-    _reset_stuck_jobs()
+    # Fast-path: skip printer open if nothing is pending
+    with get_db() as db:
+        pending = db.execute(
+            "SELECT COUNT(*) FROM print_job WHERE status = 'pending'"
+        ).fetchone()[0]
 
-    while True:
-        # Fast-path: skip printer open if nothing is pending
-        with get_db() as db:
-            pending = db.execute(
-                "SELECT COUNT(*) FROM print_job WHERE status = 'pending'"
-            ).fetchone()[0]
+    if not pending:
+        time.sleep(0.3)
+        return
 
-        if not pending:
-            time.sleep(0.3)
-            continue
+    # Open printer once for the whole batch
+    try:
+        p = _get_printer()
+    except Exception as exc:
+        logger.warning("Print worker: could not open printer (%s): %s", PRINTER_TYPE, exc)
+        time.sleep(2.0)
+        return
 
-        # Open printer once for the whole batch
-        try:
-            p = _get_printer()
-        except Exception:
-            time.sleep(2.0)
-            continue
+    try:
+        while True:
+            with get_db() as db:
+                job = db.execute(
+                    "SELECT * FROM print_job WHERE status = 'pending' ORDER BY created_at, id LIMIT 1"
+                ).fetchone()
 
-        try:
-            while True:
+            if not job:
+                break  # Queue drained — close printer and go back to sleep
+
+            job = dict(job)
+            job_id = job["id"]
+
+            # Claim atomically
+            with get_db(exclusive=True) as db:
+                db.execute(
+                    "UPDATE print_job SET status = 'printing' WHERE id = ? AND status = 'pending'",
+                    (job_id,),
+                )
+
+            try:
+                dt = datetime.fromisoformat(job["created_at"]).replace(tzinfo=timezone.utc).astimezone()
+                template = _load_template()
+
+                _print_bon(
+                    p, template,
+                    job["event_name"], dt,
+                    job["product_name"], job["price"],
+                    PRINTER_LINE_WIDTH, job["username"],
+                )
+
                 with get_db() as db:
-                    job = db.execute(
-                        "SELECT * FROM print_job WHERE status = 'pending' ORDER BY created_at, id LIMIT 1"
-                    ).fetchone()
-
-                if not job:
-                    break  # Queue drained — close printer and go back to sleep
-
-                job = dict(job)
-                job_id = job["id"]
-
-                # Claim atomically
-                with get_db(exclusive=True) as db:
                     db.execute(
-                        "UPDATE print_job SET status = 'printing' WHERE id = ? AND status = 'pending'",
+                        "UPDATE print_job SET status = 'done', processed_at = datetime('now') WHERE id = ?",
                         (job_id,),
                     )
 
-                try:
-                    dt = datetime.fromisoformat(job["created_at"]).replace(tzinfo=timezone.utc).astimezone()
-                    template = _load_template()
-
-                    _print_bon(
-                        p, template,
-                        job["event_name"], dt,
-                        job["product_name"], job["price"],
-                        PRINTER_LINE_WIDTH, job["username"],
-                    )
-
-                    with get_db() as db:
+            except Exception as exc:
+                err_str = str(exc)
+                # Port busy / permission denied / device not found after a
+                # previous close: Windows hasn't released the COM port yet.
+                # Reset to pending so the outer loop retries after sleeping.
+                is_conn_err = any(k in err_str for k in (
+                    "PermissionError", "Access is denied",
+                    "Device not found", "SerialException",
+                    "could not open port",
+                ))
+                logger.warning(
+                    "Print worker: job %s failed (%s): %s",
+                    job_id, "retrying, treated as connection error" if is_conn_err else "marked as error",
+                    exc,
+                )
+                with get_db() as db:
+                    if is_conn_err:
                         db.execute(
-                            "UPDATE print_job SET status = 'done', processed_at = datetime('now') WHERE id = ?",
+                            "UPDATE print_job SET status = 'pending' WHERE id = ?",
                             (job_id,),
                         )
+                    else:
+                        db.execute(
+                            "UPDATE print_job SET status = 'error', error_msg = ? WHERE id = ?",
+                            (err_str[:500], job_id),
+                        )
+                time.sleep(2.0)
+                break  # Close printer; outer loop will reopen on next attempt
 
-                except Exception as exc:
-                    err_str = str(exc)
-                    # Port busy / permission denied / device not found after a
-                    # previous close: Windows hasn't released the COM port yet.
-                    # Reset to pending so the outer loop retries after sleeping.
-                    is_conn_err = any(k in err_str for k in (
-                        "PermissionError", "Access is denied",
-                        "Device not found", "SerialException",
-                        "could not open port",
-                    ))
-                    with get_db() as db:
-                        if is_conn_err:
-                            db.execute(
-                                "UPDATE print_job SET status = 'pending' WHERE id = ?",
-                                (job_id,),
-                            )
-                        else:
-                            db.execute(
-                                "UPDATE print_job SET status = 'error', error_msg = ? WHERE id = ?",
-                                (err_str[:500], job_id),
-                            )
-                    time.sleep(2.0)
-                    break  # Close printer; outer loop will reopen on next attempt
-
-        finally:
-            try:
-                p.close()
-            except Exception:
-                pass
-            # Give Windows time to fully release the COM port before the next open.
-            if PRINTER_TYPE != "network":
-                time.sleep(1.0)
+    finally:
+        try:
+            p.close()
+        except Exception:
+            pass
+        # Give Windows time to fully release the COM port before the next open.
+        if PRINTER_TYPE != "network":
+            time.sleep(1.0)
 
 
 def start_worker() -> None:

@@ -43,7 +43,6 @@ BLECharacteristic nfcUidChar(NFC_UID_CHAR_UUID);
 
 uint8_t lastUid[7];
 uint8_t lastUidLength = 0;
-uint8_t lastBatteryLevel = 0xFF;
 uint32_t lastBatteryUpdateMs = 0;
 
 float readBatteryVoltageMv() {
@@ -83,6 +82,15 @@ uint8_t readBatteryLevelPercent() {
   return batteryMillivoltsToPercent(batteryMillivolts);
 }
 
+// Doubles as the connected central's only liveness heartbeat (see
+// nfc_kasse_app's BleReaderNotifier._startWebHealthCheck, which has no other
+// way to detect a quietly-dead Web Bluetooth link) -- so this must notify on
+// every call past the rate limit, not just when the percentage has actually
+// moved. A battery sitting at the same rounded percent for several minutes
+// used to mean bleBas.write() (and therefore the BLE notify) never fired at
+// all after the first one at boot, silently starving every reconnect's
+// health check until it gave up at ~90-100s -- observed as a several-times-
+// per-hour disconnect/reconnect cycle on every reader, all day.
 void updateBatteryService(bool force = false) {
   uint32_t now = millis();
   if (!force && (now - lastBatteryUpdateMs) < 60000UL) {
@@ -90,12 +98,7 @@ void updateBatteryService(bool force = false) {
   }
 
   lastBatteryUpdateMs = now;
-  uint8_t batteryLevel = readBatteryLevelPercent();
-
-  if (force || batteryLevel != lastBatteryLevel) {
-    lastBatteryLevel = batteryLevel;
-    bleBas.write(batteryLevel);
-  }
+  bleBas.write(readBatteryLevelPercent());
 }
 
 // Diagnostic-only: prints connection/security lifecycle over USB serial so a

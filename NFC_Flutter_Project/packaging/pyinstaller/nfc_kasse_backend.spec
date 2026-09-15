@@ -10,9 +10,23 @@
 
 from pathlib import Path
 
+import escpos
+
 REPO_ROOT = Path(SPECPATH).parent.parent  # packaging/pyinstaller -> repo root
 BACKEND = REPO_ROOT / "backend"
 ICON = REPO_ROOT / "packaging" / "innosetup" / "assets" / "nfc_kasse.ico"
+# python-escpos loads this JSON data file at runtime (from inside the escpos
+# package directory itself, not backend/) every time ANY Escpos subclass is
+# instantiated -- Serial/Network/Usb all inherit __init__ from the same base
+# class. PyInstaller's static analysis only follows *imports*, so a
+# package's non-Python data files never get bundled automatically unless
+# listed here explicitly. Missing this produced a silent, always-fails
+# "[Errno 2] No such file or directory: '...\\escpos\\capabilities.json'"
+# for every printer type, not just serial -- observed in production only
+# once someone actually tried printing through the packaged installer for
+# the first time (dev/test runs use the normal pip install, which already
+# has this file, so the gap went unnoticed until then).
+ESCPOS_CAPABILITIES = Path(escpos.__file__).parent / "capabilities.json"
 
 a = Analysis(
     [str(BACKEND / "service_main.py")],
@@ -32,6 +46,10 @@ a = Analysis(
         # -> Path(__file__).parent from service_main.py's _ensure_bon_yaml()
         (str(BACKEND / "config.env.template"), "."),
         # -> Path(__file__).parent from service_main.py's _ensure_config()
+        (str(ESCPOS_CAPABILITIES), "escpos"),
+        # -> loaded by python-escpos itself from its own package directory
+        # (_internal/escpos/capabilities.json in the frozen build) -- see
+        # the comment above ESCPOS_CAPABILITIES's definition.
         (str(BACKEND / "webapp"), "webapp"),
         # -> Path(__file__).parent from main.py's webapp mount
         (str(REPO_ROOT / "packaging" / "pyinstaller" / "build" / "updates_seed"), "updates"),
