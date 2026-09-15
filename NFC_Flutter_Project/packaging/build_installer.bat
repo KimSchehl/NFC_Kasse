@@ -2,10 +2,30 @@
 setlocal enabledelayedexpansion
 cd /d "%~dp0.."
 
+REM Assumes backend\webapp\, backend\updates\, and nfc_kasse_admin\build\windows\
+REM are already up to date -- run build_and_deploy.bat first if not (see
+REM packaging\README.md). This script only builds the backend itself and
+REM bundles everything into the installer; it doesn't rebuild the Flutter
+REM side, which build_and_deploy.bat already owns.
 echo ============================================
 echo  NFC-Kasse Backend - Release Installer Build
 echo ============================================
 echo.
+
+REM --- Step 0: fail fast if the Verwaltungstool wasn't built yet ---
+REM Checked before Step 1 on purpose: PyInstaller alone takes several
+REM minutes, and there's nothing worse than that succeeding only for Inno
+REM Setup to reject the whole compile at the very last step over a missing
+REM file it could have flagged instantly.
+if not exist "nfc_kasse_admin\build\windows\x64\runner\Release\NfcKasseAdmin.exe" (
+    echo ERROR: nfc_kasse_admin wurde noch nicht gebaut.
+    echo   Fuehre zuerst build_and_deploy.bat aus ^(Option 1 oder 4^).
+    echo   Falls der Build dort mit "Unable to find suitable Visual Studio
+    echo   toolchain" fehlschlaegt: Visual Studio 2022 ^(auch die kostenlose
+    echo   Community-Edition^) mit dem Workload "Desktopentwicklung mit C++"
+    echo   installieren -- siehe packaging\README.md.
+    goto :error
+)
 
 REM --- Step 1: stage the newest APK only (not the full updates/ history) ---
 echo [1/5] Staging update seed...

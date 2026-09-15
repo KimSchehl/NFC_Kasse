@@ -17,11 +17,20 @@ winget install -e --id JRSoftware.InnoSetup
 WinSW itself does not need manual installation — `build_installer.bat`
 downloads and SHA256-verifies it automatically on first build.
 
+Building the Verwaltungstool (`nfc_kasse_admin`, a Flutter Windows desktop
+app) additionally needs Visual Studio 2022 — the free Community edition is
+fine — with the "Desktop development with C++" workload installed. Flutter
+uses its CMake/MSVC toolchain to compile the native Windows runner; without
+it, `flutter build windows` fails with "Unable to find suitable Visual
+Studio toolchain" (run `flutter doctor` to confirm). No such requirement
+exists for the backend (PyInstaller) or the Android/web builds.
+
 ## Building a release
 
-Before building, make sure `backend/webapp/` (Flutter web release build) and
-`backend/updates/` (at least one `nfc-kasse_X.Y.Z.apk`) are up to date —
-run `build_and_deploy.bat` from the repo root first if not.
+Before building, make sure `backend/webapp/` (Flutter web release build),
+`backend/updates/` (at least one `nfc-kasse_X.Y.Z.apk`), and
+`nfc_kasse_admin/build/windows/x64/runner/Release/` (the Verwaltungstool)
+are up to date — run `build_and_deploy.bat` from the repo root first if not.
 
 ```
 packaging\build_installer.bat

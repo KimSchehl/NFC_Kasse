@@ -19,6 +19,11 @@ class AppStorage {
 
   Future<String?> read({required String key}) async => _prefs.getString(key);
 
+  Future<void> writeList({required String key, required List<String> value}) async =>
+      _prefs.setStringList(key, value);
+
+  Future<List<String>?> readList({required String key}) async => _prefs.getStringList(key);
+
   Future<void> delete({required String key}) async => _prefs.remove(key);
 
   Future<void> deleteAll() async => _prefs.clear();

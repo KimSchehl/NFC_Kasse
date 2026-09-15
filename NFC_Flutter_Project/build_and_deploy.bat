@@ -27,17 +27,23 @@ set "BASE_HREF=!WEBAPP_ROUTE!/"
 :: ---- Auswahl: Was soll gebaut werden? -----------------------
 echo  Was soll gebaut werden?
 echo.
-echo    [1]  APK + Web App  (beides)
+echo    [1]  APK + Web App + Verwaltungstool  (alles)
 echo    [2]  Nur APK
 echo    [3]  Nur Web App
+echo    [4]  Nur Verwaltungstool
 echo.
-choice /C 123 /N /M "  Auswahl (1/2/3): "
+choice /C 1234 /N /M "  Auswahl (1/2/3/4): "
 set "SEL=%errorlevel%"
 echo.
 
-if "%SEL%"=="1" ( set "BUILD_APK=1" & set "BUILD_WEB=1" )
-if "%SEL%"=="2" ( set "BUILD_APK=1" & set "BUILD_WEB=0" )
-if "%SEL%"=="3" ( set "BUILD_APK=0" & set "BUILD_WEB=1" )
+if "%SEL%"=="1" ( set "BUILD_APK=1" & set "BUILD_WEB=1" & set "BUILD_ADMIN=1" )
+if "%SEL%"=="2" ( set "BUILD_APK=1" & set "BUILD_WEB=0" & set "BUILD_ADMIN=0" )
+if "%SEL%"=="3" ( set "BUILD_APK=0" & set "BUILD_WEB=1" & set "BUILD_ADMIN=0" )
+if "%SEL%"=="4" ( set "BUILD_APK=0" & set "BUILD_WEB=0" & set "BUILD_ADMIN=1" )
+
+:: nfc_kasse_admin has its own, independent pubspec.yaml/version -- none of
+:: the nfc_kasse_app version bump below applies to an admin-only build.
+if "!BUILD_APK!"=="0" if "!BUILD_WEB!"=="0" goto :build_admin_only
 
 :: ---- 1. Version lesen ----------------------------------------
 if not exist "%PUBSPEC%" (
@@ -135,7 +141,31 @@ if "!BUILD_WEB!"=="1" (
     )
 )
 
-:: ---- 5. Dateien kopieren ------------------------------------
+:build_admin_only
+:: ---- 5. Verwaltungstool Build (optional) ---------------------
+:: Own project, own pubspec/version -- nothing above (version bump, clean)
+:: applies to it. Builds straight into nfc_kasse_admin\build\windows\..., no
+:: copy step needed: packaging\innosetup\nfc_kasse_installer.iss picks it up
+:: directly from there when packaging\build_installer.bat runs afterwards.
+set "ADMIN_OK=0"
+if "!BUILD_ADMIN!"=="1" (
+    echo  [ADMIN] Baue NFC-Kasse Verwaltung (Flutter Windows^) ...
+    cd nfc_kasse_admin
+    call flutter clean >nul
+    call flutter pub get >nul
+    call flutter build windows --release
+    set "ADMIN_EC=!errorlevel!"
+    cd ..
+
+    if "!ADMIN_EC!" neq "0" (
+        echo  [WARNUNG] Verwaltungstool-Build fehlgeschlagen.
+        set "ADMIN_OK=0"
+    ) else (
+        set "ADMIN_OK=1"
+    )
+)
+
+:: ---- 6. Dateien kopieren ------------------------------------
 echo  [COPY] Kopiere Dateien ...
 
 if "!APK_OK!"=="1" (
@@ -163,14 +193,26 @@ echo.
 echo  ================================================
 echo   Fertig!
 echo.
-echo   Version:  !NEW_SEMVER!+!BUILD_NEW!
+if "!BUILD_APK!"=="1" echo   Version:  !NEW_SEMVER!+!BUILD_NEW!
+if "!BUILD_WEB!"=="1" if "!BUILD_APK!"=="0" echo   Version:  !NEW_SEMVER!+!BUILD_NEW!
 if "!APK_OK!"=="1"  echo   APK:      %UPDATES_DIR%\!APK_NAME!
 if "!BUILD_APK!"=="1" if "!APK_OK!"=="0" echo   APK:      [fehlgeschlagen]
 if "!WEB_OK!"=="1"  echo   Web App:  %WEB_DEST%\  ^(Route: !WEBAPP_ROUTE!^)
 if "!BUILD_WEB!"=="1" if "!WEB_OK!"=="0" echo   Web App:  [fehlgeschlagen]
+if "!ADMIN_OK!"=="1" echo   Verwaltung: nfc_kasse_admin\build\windows\x64\runner\Release\
+if "!BUILD_ADMIN!"=="1" if "!ADMIN_OK!"=="0" echo   Verwaltung: [fehlgeschlagen]
 echo.
-echo   Starte das Backend neu, damit die Aenderungen
-echo   fuer die Nutzer sichtbar werden.
+if "!BUILD_APK!"=="1" echo   Starte das Backend neu, damit die Aenderungen
+if "!BUILD_APK!"=="1" echo   fuer die Nutzer sichtbar werden.
+if "!BUILD_WEB!"=="1" if "!BUILD_APK!"=="0" echo   Starte das Backend neu, damit die Aenderungen
+if "!BUILD_WEB!"=="1" if "!BUILD_APK!"=="0" echo   fuer die Nutzer sichtbar werden.
 echo  ================================================
 echo.
+
+choice /C YN /N /M "  Jetzt packaging\build_installer.bat ausfuehren? (Y/N): "
+if errorlevel 2 goto :end
+echo.
+call packaging\build_installer.bat
+
+:end
 pause

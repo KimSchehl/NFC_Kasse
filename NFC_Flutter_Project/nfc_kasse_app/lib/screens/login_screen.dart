@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/providers.dart';
 import '../services/app_logger.dart';
+import '../services/server_history_service.dart';
 import '../utils/formatters.dart';
 
 /// Unauthenticated entry point. Submits credentials to [authProvider.login].
@@ -18,27 +19,37 @@ class LoginScreen extends ConsumerStatefulWidget {
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _username = TextEditingController();
   final _password = TextEditingController();
-  final _serverUrl = TextEditingController();
   bool _obscure = true;
+
+  // Set by Autocomplete's fieldViewBuilder — the actual server-URL text
+  // lives in this controller (Autocomplete owns it, not us), captured here
+  // purely so _login() can read the current value out of it.
+  TextEditingController? _serverUrlController;
+  List<String> _serverOptions = const [];
 
   @override
   void initState() {
     super.initState();
-    _serverUrl.text = ref.read(serverUrlProvider);
+    _loadServerOptions();
+  }
+
+  Future<void> _loadServerOptions() async {
+    final options = await ServerHistoryService.load(ref.read(storageProvider));
+    if (mounted) setState(() => _serverOptions = options);
   }
 
   @override
   void dispose() {
     _username.dispose();
     _password.dispose();
-    _serverUrl.dispose();
     super.dispose();
   }
 
   Future<void> _login() async {
     final u = _username.text.trim();
     final p = _password.text;
-    final url = _serverUrl.text.trim();
+    final controller = _serverUrlController;
+    final url = (controller != null ? controller.text : ref.read(serverUrlProvider)).trim();
     if (u.isEmpty || p.isEmpty) return;
 
     AppLogger.trace('Anmelden geklickt: username=$u', logger: 'ui.login');
@@ -48,6 +59,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       AppLogger.trace('Server-URL geändert: $url', logger: 'ui.login');
       await ref.read(storageProvider).write(key: 'server_url', value: url);
       ref.read(serverUrlProvider.notifier).state = url;
+    }
+    if (url.isNotEmpty) {
+      await ServerHistoryService.remember(ref.read(storageProvider), url);
     }
 
     await ref.read(authProvider.notifier).login(u, p);
@@ -146,23 +160,38 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 const Divider(),
                 const SizedBox(height: 12),
 
-                // Server URL — shown small so it doesn't dominate the screen
-                TextField(
-                  controller: _serverUrl,
-                  decoration: InputDecoration(
-                    labelText: 'Server-URL',
-                    hintText: 'http://192.168.1.x:8000',
-                    prefixIcon: const Icon(Icons.dns_outlined),
-                    border: const OutlineInputBorder(),
-                    labelStyle: TextStyle(
-                      color: theme.colorScheme.onSurfaceVariant,
-                      fontSize: 13,
-                    ),
-                  ),
-                  style: const TextStyle(fontSize: 13),
-                  keyboardType: TextInputType.url,
-                  textInputAction: TextInputAction.done,
-                  onSubmitted: (_) => _login(),
+                // Server URL — shown small so it doesn't dominate the screen.
+                // Autocomplete instead of a plain TextField: suggests recently
+                // used + predefined addresses (ServerHistoryService) while
+                // still allowing free text entry for a server not seen before.
+                Autocomplete<String>(
+                  initialValue: TextEditingValue(text: ref.read(serverUrlProvider)),
+                  optionsBuilder: (value) {
+                    if (value.text.isEmpty) return _serverOptions;
+                    final query = value.text.toLowerCase();
+                    return _serverOptions.where((o) => o.toLowerCase().contains(query));
+                  },
+                  fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+                    _serverUrlController = controller;
+                    return TextField(
+                      controller: controller,
+                      focusNode: focusNode,
+                      decoration: InputDecoration(
+                        labelText: 'Server-URL',
+                        hintText: 'http://192.168.1.x:8000',
+                        prefixIcon: const Icon(Icons.dns_outlined),
+                        border: const OutlineInputBorder(),
+                        labelStyle: TextStyle(
+                          color: theme.colorScheme.onSurfaceVariant,
+                          fontSize: 13,
+                        ),
+                      ),
+                      style: const TextStyle(fontSize: 13),
+                      keyboardType: TextInputType.url,
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) => _login(),
+                    );
+                  },
                 ),
               ],
             ),
