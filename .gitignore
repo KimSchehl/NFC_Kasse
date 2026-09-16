@@ -1,2 +1,7 @@
 NFC_Flutter_Project/backend/backups/*
 NFC_Flutter_Project/backend/logs/*
+
+# VS Code "local history" style extensions sometimes init their own git repo
+# inside this folder to snapshot every save -- that makes it an embedded git
+# repo, which git then flags as a dirty gitlink on every status check.
+.history/
