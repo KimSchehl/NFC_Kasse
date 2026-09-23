@@ -1,3 +1,13 @@
 {
-    "cmake.sourceDirectory": "C:/Users/KimSc/Desktop/NFC_Kasse/NFC_Flutter_Project/nfc_kasse_admin/windows"
+    "cmake.sourceDirectory": "C:/Users/KimSc/Desktop/NFC_Kasse/NFC_Flutter_Project/nfc_kasse_admin/windows",
+    "files.watcherExclude": {
+        "**/build/**": true,
+        "**/.dart_tool/**": true,
+        "**/.history/**": true
+    },
+    "search.exclude": {
+        "**/build": true,
+        "**/.dart_tool": true,
+        "**/.history": true
+    }
 }
