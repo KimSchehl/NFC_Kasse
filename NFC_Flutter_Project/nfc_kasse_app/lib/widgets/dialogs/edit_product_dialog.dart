@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/product_model.dart';
 import '../../providers/providers.dart';
 import '../../services/app_logger.dart';
+import '../../utils/color_hex.dart';
 import '../../utils/formatters.dart';
 import '../product_color_picker.dart';
 
@@ -22,8 +23,8 @@ import '../product_color_picker.dart';
 /// (including inactive ones and existing options) — used to seed the
 /// options sub-editor with [product]'s current options, if any.
 ///
-/// Button colors are per-user preferences (long-press a tile on the POS
-/// screen to set a color), unrelated to any of the above permissions.
+/// The default button color is set here (needs [canEditDetails]). A cashier's
+/// own override is set separately, by long-pressing a tile on the POS screen.
 class EditProductDialog extends ConsumerStatefulWidget {
   final ProductModel? product;
   final int categoryId;
@@ -73,6 +74,7 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
   bool _active = true;
   bool _isTopup = false;
   bool _isPayout = false;
+  bool _isPfand = false;
   bool _excludeFromStats = false;
   bool _requiresPager = false;
   Color? _color;
@@ -87,10 +89,9 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
   void initState() {
     super.initState();
     final p = widget.product;
-    if (p != null) {
-      _color = ref.read(userPrefsProvider).getProductColor(p.id);
-    }
-    _isTopup = p != null && p.price < 0 && p.excludeFromStats && !p.isPayout;
+    _color = p?.defaultColor;
+    _isPfand = p?.isPfand ?? false;
+    _isTopup = p != null && p.price < 0 && p.excludeFromStats && !p.isPayout && !p.isPfand;
     _name = TextEditingController(text: p?.name ?? '');
     _price = TextEditingController(
       text: p != null ? (_isTopup ? p.price.abs() : p.price).toStringAsFixed(2) : '',
@@ -136,11 +137,8 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
       '${isNew ? "Artikel erstellen" : "Artikel speichern"} geklickt: ${_name.text.trim()}',
       logger: 'ui.pos',
     );
-    // No edit rights — only save the color preference.
+    // No edit rights — nothing in this dialog may be saved.
     if (!widget.canEditDetails) {
-      if (!isNew) {
-        ref.read(userPrefsProvider.notifier).setProductColor(widget.product!.id, _color);
-      }
       if (mounted) Navigator.of(context).pop(true);
       return;
     }
@@ -177,18 +175,21 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
       return;
     }
 
-    final savedExcludeFromStats = _isTopup ? true : _excludeFromStats;
-    final savedIsPayout = _isTopup ? false : _isPayout;
+    // Pfand and Aufladen both move money outside the stats, and neither gets
+    // a pager or stock — the checkboxes are mutually exclusive (see build()).
+    final savedIsPfand = _isPfand;
+    final savedExcludeFromStats = (_isTopup || _isPfand) ? true : _excludeFromStats;
+    final savedIsPayout = (_isTopup || _isPfand) ? false : _isPayout;
     // Same reasoning as stock below — Aufladen/Auszahlungs-Artikel can't
     // sensibly need a pager either.
-    final savedRequiresPager = (_isTopup || savedIsPayout) ? false : _requiresPager;
+    final savedRequiresPager = (_isTopup || savedIsPayout || _isPfand) ? false : _requiresPager;
 
     // Aufladen/Auszahlungs-Artikel represent no physical inventory — the
     // stock field is hidden for them (see build()), so force it to
     // "untracked" here too rather than trusting whatever the (hidden) text
     // field still holds from before the checkbox was toggled.
     int? stockVal;
-    if (!_isTopup && !savedIsPayout) {
+    if (!_isTopup && !savedIsPayout && !savedIsPfand) {
       final stockText = _stock.text.trim();
       if (stockText.isNotEmpty) {
         stockVal = int.tryParse(stockText);
@@ -224,6 +225,8 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
       _error = null;
     });
 
+    final savedColor = _color == null ? null : colorToHex(_color!);
+
     try {
       final svc = ref.read(productServiceProvider);
       late final int baseId;
@@ -233,10 +236,12 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
           price: savedPrice,
           categoryId: widget.categoryId,
           isPayout: savedIsPayout,
+          isPfand: savedIsPfand,
           excludeFromStats: savedExcludeFromStats,
           points: pointsVal,
           stock: stockVal,
           requiresPager: savedRequiresPager,
+          color: savedColor,
         );
         baseId = created.id;
       } else {
@@ -245,10 +250,13 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
           name: name,
           price: savedPrice,
           isPayout: savedIsPayout,
+          isPfand: savedIsPfand,
           excludeFromStats: savedExcludeFromStats,
           points: pointsVal,
           stock: stockVal,
           requiresPager: savedRequiresPager,
+          color: savedColor,
+          updateColor: true,
         );
         if (widget.product!.active != _active && widget.canDeactivate) {
           await svc.setActive(widget.product!.id, _active);
@@ -278,9 +286,6 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
       }
 
       if (!mounted) return;
-      if (!isNew) {
-        ref.read(userPrefsProvider.notifier).setProductColor(widget.product!.id, _color);
-      }
       ref.read(productsRefreshProvider.notifier).state++;
       ref.read(adminCategoriesRefreshProvider.notifier).state++;
       Navigator.of(context).pop(true);
@@ -358,7 +363,9 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
                     labelText: _isTopup ? 'Auflade-Betrag (€)' : 'Preis (€)',
                     helperText: _isTopup
                         ? 'Positiver Betrag, der dem Guthaben gutgeschrieben wird'
-                        : 'Negativ für Rückgabe/Aufladen, z.B. -2.00',
+                        : _isPfand
+                            ? 'Pfand +: positiver Preis (Zu) · Pfand −: negativer Preis (Ab)'
+                            : 'Negativ für Rückgabe/Aufladen, z.B. -2.00',
                   ),
                   keyboardType: TextInputType.numberWithOptions(
                     decimal: true,
@@ -406,6 +413,7 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
                     _isTopup = isTopup;
                     if (isTopup) {
                       _isPayout = false;
+                      _isPfand = false;
                       _excludeFromStats = true;
                       final current = double.tryParse(
                           _price.text.trim().replaceAll(',', '.'));
@@ -418,7 +426,22 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
                 contentPadding: EdgeInsets.zero,
                 controlAffinity: ListTileControlAffinity.leading,
               ),
-              if (!_isTopup) ...[
+              CheckboxListTile(
+                title: const Text('Pfand-Artikel'),
+                subtitle: const Text('Pfand + (Zu) und Pfand − (Ab), ohne Aufladen-Recht'),
+                value: _isPfand,
+                onChanged: (v) => setState(() {
+                  _isPfand = v ?? _isPfand;
+                  if (_isPfand) {
+                    _isTopup = false;
+                    _isPayout = false;
+                    _excludeFromStats = true;
+                  }
+                }),
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
+              if (!_isTopup && !_isPfand) ...[
                 CheckboxListTile(
                   title: const Text('Auszahlungs-Artikel'),
                   subtitle: const Text('Buchung zahlt Gesamtguthaben aus'),
@@ -513,9 +536,14 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
                   ),
               ],
               ], // end canEditDetails
-              if (!isNew) ...[
+              if (widget.canEditDetails) ...[
                 const SizedBox(height: 12),
-                Text('Button-Farbe', style: Theme.of(context).textTheme.labelMedium),
+                Text('Standard-Farbe', style: Theme.of(context).textTheme.labelMedium),
+                const SizedBox(height: 4),
+                Text(
+                  'Gilt für alle Kassen. Ein Bediener kann den Button zusätzlich selbst umfärben.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
                 const SizedBox(height: 8),
                 ProductColorPicker(
                   selected: _color,

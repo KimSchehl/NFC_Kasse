@@ -32,7 +32,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 import stock
 from config import (
@@ -51,9 +51,9 @@ from config import (
     PRINTER_TYPE,
 )
 from database import get_db
-from dependencies import RequestContext, require_permission
+from dependencies import RequestContext, raise_if_missing_permission, require_permission
 from routers.sales import _resolve_base_products
-from schemas import PrintBonRequest, PrintBonResponse
+from schemas import PrintBonRequest, PrintBonResponse, PrintJobStatus, PrintJobsStatusResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/print", tags=["print"])
@@ -398,6 +398,7 @@ def print_bon(
     username: str = ctx["user"].get("display_name") or ctx["user"]["username"]
 
     sale_ids: list[int] = []
+    print_job_ids: list[int] = []
     product_map: dict[int, dict] = {}
 
     with get_db(exclusive=True) as db:
@@ -420,7 +421,7 @@ def print_bon(
         unique_ids = list(set(product_ids_flat))
         ph = ",".join("?" * len(unique_ids))
         products = db.execute(
-            f"SELECT p.id, p.name, p.price, p.stock, p.group_id "
+            f"SELECT p.id, p.name, p.price, p.stock, p.group_id, p.is_payout, p.is_pfand "
             f"FROM product p "
             f"JOIN category c ON p.category_id = c.id "
             f"WHERE p.id IN ({ph}) AND p.deleted = 0 AND p.active = 1 AND c.event_id = ?",
@@ -434,6 +435,13 @@ def print_bon(
                 status_code=404,
                 detail=f"Unbekannte oder inaktive Artikel-IDs: {missing}",
             )
+
+        # Same rights as sales.py's booking endpoint — the BAR-cash print path
+        # moves the same balances, so it must not be a way around them.
+        if any(p["is_payout"] for p in products):
+            raise_if_missing_permission(db, user_id, event_id, "guthaben.payout")
+        if any(p["price"] < 0 and not p["is_pfand"] and not p["is_payout"] for p in products):
+            raise_if_missing_permission(db, user_id, event_id, "guthaben.topup")
 
         product_map = {
             p["id"]: {"name": p["name"], "price": p["price"], "stock": p["stock"], "group_id": p["group_id"]}
@@ -481,16 +489,46 @@ def print_bon(
                 sale_id = cursor.lastrowid
                 sale_ids.append(sale_id)
 
-                db.execute(
+                job_cursor = db.execute(
                     "INSERT INTO print_job "
                     "(event_id, sale_id, username, event_name, product_name, price) "
                     "VALUES (?, ?, ?, ?, ?, ?)",
                     (event_id, sale_id, username, event_name, info["name"], info["price"]),
                 )
+                print_job_ids.append(job_cursor.lastrowid)
                 jobs_queued += 1
                 sale_idx += 1
 
     return PrintBonResponse(
         success=True, bons_printed=jobs_queued, sale_ids=sale_ids,
-        low_stock_warnings=low_stock_warnings,
+        low_stock_warnings=low_stock_warnings, print_job_ids=print_job_ids,
     )
+
+
+@router.get("/jobs", response_model=PrintJobsStatusResponse)
+def get_print_job_status(
+    ids: str = Query(..., description="Kommagetrennte print_job-IDs aus der Bon-Antwort"),
+    ctx: RequestContext = Depends(require_permission("bon.drucken")),
+):
+    """
+    Lets the cashier's device find out whether its just-queued bons came out
+    of the printer. The worker sets each job to done or error; the app polls
+    this until every job has settled or it gives up waiting.
+    """
+    try:
+        job_ids = [int(x) for x in ids.split(",") if x.strip()]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Ungültige Job-IDs")
+    if not job_ids or len(job_ids) > 200:
+        raise HTTPException(status_code=400, detail="Es werden 1 bis 200 Job-IDs erwartet")
+
+    placeholders = ",".join("?" * len(job_ids))
+    with get_db() as db:
+        rows = db.execute(
+            f"SELECT id, status, error_msg FROM print_job WHERE event_id = ? AND id IN ({placeholders})",
+            [ctx["event"]["id"], *job_ids],
+        ).fetchall()
+
+    return PrintJobsStatusResponse(jobs=[
+        PrintJobStatus(id=r["id"], status=r["status"], error_msg=r["error_msg"]) for r in rows
+    ])

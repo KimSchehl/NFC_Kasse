@@ -116,6 +116,30 @@ class RequestContext(TypedDict):
     event: dict
 
 
+def user_has_permission(db, user_id: int, event_id: int, permission_id: str) -> bool:
+    return db.execute(
+        "SELECT 1 FROM user_permission WHERE user_id=? AND event_id=? AND permission_id=?",
+        (user_id, event_id, permission_id),
+    ).fetchone() is not None
+
+
+def raise_if_missing_permission(db, user_id: int, event_id: int, permission_id: str) -> None:
+    if user_has_permission(db, user_id, event_id, permission_id):
+        return
+    # permission_node.label is the same German display label the
+    # permission-tree endpoint already exposes to the UI — reuse it
+    # here so a 403 shows a real name instead of a raw ID like
+    # "guthaben.topup".
+    label_row = db.execute(
+        "SELECT label FROM permission_node WHERE id=?", (permission_id,)
+    ).fetchone()
+    label = label_row["label"] if label_row else permission_id
+    raise HTTPException(
+        status_code=403,
+        detail=f"Berechtigung '{label}' erforderlich",
+    )
+
+
 def require_permission(permission_id: str):
     """
     Dependency factory. Returns a dependency that:
@@ -128,27 +152,7 @@ def require_permission(permission_id: str):
         active_event: dict = Depends(get_active_event),
     ) -> RequestContext:
         with get_db() as db:
-            row = db.execute(
-                """
-                SELECT 1 FROM user_permission
-                WHERE user_id=? AND event_id=? AND permission_id=?
-                """,
-                (current_user["id"], active_event["id"], permission_id),
-            ).fetchone()
-            if row:
-                return RequestContext(user=current_user, event=active_event)
-
-            # permission_node.label is the same German display label the
-            # permission-tree endpoint already exposes to the UI — reuse it
-            # here so a 403 shows a real name instead of a raw ID like
-            # "guthaben.topup".
-            label_row = db.execute(
-                "SELECT label FROM permission_node WHERE id=?", (permission_id,)
-            ).fetchone()
-            label = label_row["label"] if label_row else permission_id
-            raise HTTPException(
-                status_code=403,
-                detail=f"Berechtigung '{label}' erforderlich",
-            )
+            raise_if_missing_permission(db, current_user["id"], active_event["id"], permission_id)
+        return RequestContext(user=current_user, event=active_event)
 
     return checker

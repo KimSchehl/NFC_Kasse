@@ -13,6 +13,11 @@ def _bool_env(name: str, default: bool) -> bool:
     return raw.strip().lower() in ("true", "1", "yes")
 
 
+def _float_env(name: str, default: float) -> float:
+    raw = os.getenv(name, "").strip()
+    return float(raw.replace(",", ".")) if raw else default
+
+
 # Stable per-installation identifier, generated once at config.env creation
 # time (start_backend.bat / service_main.py) and never changed afterward —
 # every license key is signed for one specific INSTALLATION_ID, so changing
@@ -23,7 +28,7 @@ INSTALLATION_ID: str = os.getenv("INSTALLATION_ID", "")
 # Configured via CHIP_DEPOSIT in config.env.
 # Applied automatically on first chip issuance; refunded automatically on payout.
 # Set to 0 to disable deposit logic entirely.
-CHIP_DEPOSIT: float = float(os.getenv("CHIP_DEPOSIT", "0"))
+CHIP_DEPOSIT: float = _float_env("CHIP_DEPOSIT", 0.0)
 
 # Name of the event shown in the UI and on bon slips.
 # Configured via EVENT_NAME in config.env.

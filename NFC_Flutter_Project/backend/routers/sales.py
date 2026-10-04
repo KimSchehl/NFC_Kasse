@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 import stock
 from config import CHIP_DEPOSIT, LEADERBOARD_ENABLED, PAGER_ENABLED
 from database import get_db
-from dependencies import RequestContext, get_active_event, get_current_user
+from dependencies import RequestContext, get_active_event, get_current_user, raise_if_missing_permission
 from schemas import BalanceResponse, BookingRequest, BookingResponse, CancelResponse
 
 if LEADERBOARD_ENABLED:
@@ -200,7 +200,7 @@ def create_booking(
         placeholders = ",".join("?" * len(unique_ids))
         products = db.execute(
             f"""
-            SELECT p.id, p.name, p.price, p.active, p.category_id, p.is_payout, p.points, p.stock, p.requires_pager, p.group_id, c.event_id
+            SELECT p.id, p.name, p.price, p.active, p.category_id, p.is_payout, p.is_pfand, p.points, p.stock, p.requires_pager, p.group_id, c.event_id
             FROM product p
             JOIN category c ON p.category_id = c.id
             WHERE p.id IN ({placeholders}) AND p.deleted=0
@@ -248,6 +248,15 @@ def create_booking(
                 status_code=400,
                 detail="Eine Auszahlungsbuchung darf nur genau einen Artikel enthalten",
             )
+
+        # Both of these move money on/off a chip beyond a normal sale, so each
+        # needs its own right on top of category access. Pfand articles are the
+        # deliberate exception to the topup rule ("Pfand -" is a negative price
+        # without being an Aufladung).
+        if is_payout_booking:
+            raise_if_missing_permission(db, user_id, event_id, "guthaben.payout")
+        if any(p["price"] < 0 and not p["is_pfand"] and not p["is_payout"] for p in products):
+            raise_if_missing_permission(db, user_id, event_id, "guthaben.topup")
 
         # Per-category booking permission check.
         # Managers (any categories.* permission) and payout bookings bypass this.

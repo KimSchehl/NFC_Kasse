@@ -28,22 +28,26 @@ class ProductService {
     required double price,
     required int categoryId,
     bool isPayout = false,
+    bool isPfand = false,
     bool excludeFromStats = false,
     int points = 0,
     int? stock,
     bool requiresPager = false,
     int? groupId,
+    String? color,
   }) async {
     final resp = await _client.dio.post('/api/products/', data: {
       'name': name,
       'price': price,
       'category_id': categoryId,
       'is_payout': isPayout,
+      'is_pfand': isPfand,
       'exclude_from_stats': excludeFromStats,
       'points': points,
       'stock': stock,
       'requires_pager': requiresPager,
       'group_id': groupId,
+      'color': color,
     });
     return ProductModel.fromJson(resp.data as Map<String, dynamic>);
   }
@@ -54,19 +58,26 @@ class ProductService {
     double? price,
     int? categoryId,
     bool? isPayout,
+    bool? isPfand,
     bool? excludeFromStats,
     int? points,
     int? stock,
     bool? requiresPager,
+    String? color,
+    bool updateColor = false,
   }) async {
     final data = <String, dynamic>{};
     if (name != null) data['name'] = name;
     if (price != null) data['price'] = price;
     if (categoryId != null) data['category_id'] = categoryId;
     if (isPayout != null) data['is_payout'] = isPayout;
+    if (isPfand != null) data['is_pfand'] = isPfand;
     if (excludeFromStats != null) data['exclude_from_stats'] = excludeFromStats;
     if (points != null) data['points'] = points;
     if (requiresPager != null) data['requires_pager'] = requiresPager;
+    // Explicit-null semantics like `stock` below: updateColor=true with a null
+    // color clears the default. Without the flag, the color stays as it is.
+    if (updateColor) data['color'] = color;
     // Unlike every other field here, `stock` is always sent explicitly, even
     // when null — the only caller (the edit dialog) always resends the full
     // current stock state, and null legitimately means "clear tracking", not

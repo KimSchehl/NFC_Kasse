@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/bon_yaml_file.dart';
 import '../services/config_env_file.dart';
 import '../services/nfc_kasse_paths.dart';
+import '../services/serial_ports.dart';
 import '../services/service_control.dart';
 
 /// Polls the Windows service status every 3s so the Dashboard stays live
@@ -30,3 +31,5 @@ final bonLayoutProvider = FutureProvider<BonLayout>((ref) {
   ref.watch(configRefreshProvider);
   return BonYamlFile.load(NfcKassePaths.bonYamlPath);
 });
+
+final serialPortsProvider = FutureProvider<List<SerialPortInfo>>((ref) => SerialPorts.list());

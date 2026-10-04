@@ -40,6 +40,7 @@ import '../services/sales_service.dart';
 import '../services/stats_service.dart';
 import '../services/update_service.dart';
 import '../services/users_service.dart';
+import '../utils/color_hex.dart';
 import '../utils/formatters.dart';
 
 // ---------------------------------------------------------------------------
@@ -275,11 +276,9 @@ class UserPrefsNotifier extends Notifier<UserPreferences> {
           .read(preferencesServiceProvider)
           .delete('product.color.$productId', profile: '*'));
     } else {
-      final hex =
-          '#${(color.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
       unawaited(ref
           .read(preferencesServiceProvider)
-          .upsert('product.color.$productId', '*', hex));
+          .upsert('product.color.$productId', '*', colorToHex(color)));
     }
   }
 }

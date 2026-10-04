@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../utils/color_hex.dart';
+
 class PreferenceItem {
   final String key;
   final String profile;
@@ -23,8 +25,8 @@ class PreferenceItem {
 /// Layouts: key = 'layout.cat_{id}', profile = 'P' or 'L'
 ///   value = `List<int?>` where null is an intentional empty slot
 ///
-/// Colors: key = 'product.color.{id}', profile = '*'
-///   value = '#RRGGBB' hex string
+/// Color overrides: key = 'product.color.{id}', profile = '*'
+///   value = '#RRGGBB' hex string; absent = use the product's default color
 class UserPreferences {
   final Map<String, Map<String, dynamic>> _store;
 
@@ -47,11 +49,11 @@ class UserPreferences {
     return (raw as List).map((e) => e as int?).toList();
   }
 
-  /// Returns the per-user button color for [productId], or null for default.
+  /// Returns this user's color override for [productId], or null if none is set.
   Color? getProductColor(int productId) {
     final raw = _store['product.color.$productId']?['*'];
     if (raw == null) return null;
-    return _hexToColor(raw as String);
+    return hexToColor(raw as String);
   }
 
   UserPreferences withLayout(int categoryId, String profile, List<int?> layout) {
@@ -67,7 +69,7 @@ class UserPreferences {
     if (color == null) {
       newStore.remove(key);
     } else {
-      newStore[key] = {'*': _colorToHex(color)};
+      newStore[key] = {'*': colorToHex(color)};
     }
     return UserPreferences(newStore);
   }
@@ -75,13 +77,4 @@ class UserPreferences {
   Map<String, Map<String, dynamic>> _deepCopy() => Map.fromEntries(
         _store.entries.map((e) => MapEntry(e.key, Map<String, dynamic>.from(e.value))),
       );
-
-  static Color? _hexToColor(String hex) {
-    final clean = hex.replaceAll('#', '');
-    final value = int.tryParse('FF$clean', radix: 16);
-    return value != null ? Color(value) : null;
-  }
-
-  static String _colorToHex(Color color) =>
-      '#${(color.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
 }

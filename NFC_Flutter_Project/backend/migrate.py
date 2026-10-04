@@ -27,6 +27,7 @@ def migrate():
 
     _add_column_if_missing(conn, "product", "color", "TEXT DEFAULT NULL")
     _add_column_if_missing(conn, "product", "exclude_from_stats", "INTEGER NOT NULL DEFAULT 0")
+    _add_column_if_missing(conn, "product", "is_pfand", "INTEGER NOT NULL DEFAULT 0")
 
     # stats_period table (new in this migration)
     conn.execute("""

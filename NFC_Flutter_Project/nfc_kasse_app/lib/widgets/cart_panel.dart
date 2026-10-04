@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/product_model.dart';
 import '../providers/providers.dart';
 import '../services/app_logger.dart';
+import '../services/print_service.dart';
 import '../utils/formatters.dart';
 import 'dialogs/cancel_booking_dialog.dart';
 import 'dialogs/pager_assign_dialog.dart';
@@ -247,27 +248,62 @@ class _CartPanelState extends ConsumerState<CartPanel> {
       final svc = ref.read(printServiceProvider);
       final result = await svc.printBons(items);
       final printed = (result['bons_printed'] as num?)?.toInt() ?? 0;
+      final jobIds = ((result['print_job_ids'] as List?) ?? const []).cast<int>();
+      final bonWord = printed == 1 ? 'Bon' : 'Bons';
 
       cart.clear();
       lastBookingNotifier.state = null;
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const Icon(Icons.print_outlined, color: Colors.white, size: 20),
-              const SizedBox(width: 8),
-              Text('$printed Bon${printed == 1 ? '' : 's'} gedruckt'),
-            ],
-          ),
-          backgroundColor: Colors.green.shade700,
-          duration: const Duration(seconds: 2),
-          behavior: SnackBarBehavior.floating,
-          margin: const EdgeInsets.only(top: 8, left: 8, right: 8),
-          dismissDirection: DismissDirection.up,
+      final messenger = ScaffoldMessenger.of(context);
+      final theme = Theme.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(_printSnack(
+        icon: const SizedBox(
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
         ),
-      );
+        text: '$printed $bonWord ${printed == 1 ? 'wird' : 'werden'} gedruckt …',
+        color: Colors.blueGrey.shade700,
+        duration: const Duration(seconds: 30),
+      ));
+
+      final printResult = jobIds.isEmpty
+          ? const PrintResult(PrintOutcome.done)
+          : await svc.waitForPrintJobs(jobIds);
+      if (!mounted) return;
+
+      messenger.hideCurrentSnackBar();
+      switch (printResult.outcome) {
+        case PrintOutcome.done:
+          messenger.showSnackBar(_printSnack(
+            icon: const Icon(Icons.print_outlined, color: Colors.white, size: 20),
+            text: '$printed $bonWord gedruckt',
+            color: Colors.green.shade700,
+            duration: const Duration(seconds: 2),
+          ));
+        case PrintOutcome.failed:
+          AppLogger.trace(
+            'Druck fehlgeschlagen: ${printResult.errorMessage}',
+            logger: 'ui.pos',
+          );
+          messenger.showSnackBar(_printSnack(
+            icon: const Icon(Icons.print_disabled_outlined, color: Colors.white, size: 20),
+            text: 'Druck fehlgeschlagen – bitte Drucker prüfen',
+            color: theme.colorScheme.error,
+            duration: const Duration(seconds: 6),
+          ));
+        case PrintOutcome.timeout:
+          messenger.showSnackBar(_printSnack(
+            icon: const Icon(Icons.print_disabled_outlined, color: Colors.white, size: 20),
+            text: 'Druck fehlgeschlagen – Drucker prüfen. Die Bons bleiben in der '
+                'Warteschlange und werden gedruckt, sobald der Drucker wieder da ist. '
+                'Nicht erneut drücken!',
+            color: theme.colorScheme.error,
+            duration: const Duration(seconds: 12),
+          ));
+      }
       _showLowStockWarnings(context, result);
     } on Exception catch (e) {
       if (!mounted) return;
@@ -566,6 +602,28 @@ class _CartPanelState extends ConsumerState<CartPanel> {
       ),
     );
   }
+}
+
+SnackBar _printSnack({
+  required Widget icon,
+  required String text,
+  required Color color,
+  required Duration duration,
+}) {
+  return SnackBar(
+    content: Row(
+      children: [
+        icon,
+        const SizedBox(width: 8),
+        Flexible(child: Text(text)),
+      ],
+    ),
+    backgroundColor: color,
+    duration: duration,
+    behavior: SnackBarBehavior.floating,
+    margin: const EdgeInsets.only(top: 8, left: 8, right: 8),
+    dismissDirection: DismissDirection.up,
+  );
 }
 
 /// A locked, non-removable virtual line item shown for automatic Pfand

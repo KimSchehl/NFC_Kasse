@@ -145,6 +145,14 @@ def _migrate() -> None:
             db.execute("ALTER TABLE product ADD COLUMN group_id INTEGER REFERENCES product(id)")
         except Exception:
             pass
+        try:
+            db.execute("ALTER TABLE product ADD COLUMN color TEXT")
+        except Exception:
+            pass
+        try:
+            db.execute("ALTER TABLE product ADD COLUMN is_pfand INTEGER NOT NULL DEFAULT 0")
+        except Exception:
+            pass
         # deleted — soft-delete for users, mirrors product.deleted (rows stay
         # for sale.booked_by/user_permission.granted_by/etc. audit trails).
         # Deleting a user also renames it (see routers/users.py's delete_user)

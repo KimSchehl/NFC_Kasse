@@ -313,13 +313,13 @@ def list_products(
 
         if show_inactive:
             rows = db.execute(
-                """SELECT id, name, price, category_id, sort_order, active, is_payout, exclude_from_stats, points, stock, requires_pager, group_id
+                """SELECT id, name, price, category_id, sort_order, active, is_payout, is_pfand, exclude_from_stats, points, stock, requires_pager, group_id, color
                    FROM product WHERE category_id=? AND deleted=0 ORDER BY sort_order""",
                 (category_id,),
             ).fetchall()
         else:
             rows = db.execute(
-                """SELECT id, name, price, category_id, sort_order, active, is_payout, exclude_from_stats, stock, requires_pager, group_id
+                """SELECT id, name, price, category_id, sort_order, active, is_payout, is_pfand, exclude_from_stats, stock, requires_pager, group_id, color
                    FROM product WHERE category_id=? AND deleted=0 AND active=1 ORDER BY sort_order""",
                 (category_id,),
             ).fetchall()
@@ -376,8 +376,8 @@ def get_changed_products(
         show_inactive = is_manager or bool((access or {}).get("can_deactivate_article", False))
 
         rows = db.execute(
-            """SELECT id, name, price, category_id, sort_order, active, is_payout,
-                      exclude_from_stats, points, stock, requires_pager, group_id, deleted, updated_at
+            """SELECT id, name, price, category_id, sort_order, active, is_payout, is_pfand,
+                      exclude_from_stats, points, stock, requires_pager, group_id, color, deleted, updated_at
                FROM product WHERE category_id=?""",
             (category_id,),
         ).fetchall()
@@ -455,8 +455,8 @@ def list_admin_products(
                 access = _get_category_access(db, user_id, event_id, cat["id"]) or {}
 
             product_rows = db.execute(
-                """SELECT id, name, price, category_id, sort_order, active, is_payout,
-                          exclude_from_stats, points, stock, requires_pager, group_id
+                """SELECT id, name, price, category_id, sort_order, active, is_payout, is_pfand,
+                          exclude_from_stats, points, stock, requires_pager, group_id, color
                    FROM product WHERE category_id=? AND deleted=0 ORDER BY sort_order""",
                 (cat["id"],),
             ).fetchall()
@@ -499,11 +499,12 @@ def create_product(
         ).fetchone()
         next_sort = max_row["m"] + 1
 
+        exclude_from_stats = body.exclude_from_stats or body.is_pfand
         cursor = db.execute(
-            "INSERT INTO product (category_id, name, price, sort_order, is_payout, exclude_from_stats, points, stock, requires_pager, group_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO product (category_id, name, price, sort_order, is_payout, is_pfand, exclude_from_stats, points, stock, requires_pager, group_id, color) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (body.category_id, body.name, body.price, next_sort,
-             1 if body.is_payout else 0, 1 if body.exclude_from_stats else 0, body.points, body.stock,
-             1 if body.requires_pager else 0, body.group_id),
+             1 if body.is_payout else 0, 1 if body.is_pfand else 0, 1 if exclude_from_stats else 0,
+             body.points, body.stock, 1 if body.requires_pager else 0, body.group_id, body.color),
         )
         new_id = cursor.lastrowid
 
@@ -514,8 +515,9 @@ def create_product(
     return ProductResponse(
         id=new_id, name=body.name, price=body.price,
         category_id=body.category_id, sort_order=next_sort, active=True,
-        is_payout=body.is_payout, exclude_from_stats=body.exclude_from_stats, points=body.points,
-        stock=body.stock, requires_pager=body.requires_pager, group_id=body.group_id,
+        is_payout=body.is_payout, is_pfand=body.is_pfand, exclude_from_stats=exclude_from_stats,
+        points=body.points, stock=body.stock, requires_pager=body.requires_pager,
+        group_id=body.group_id, color=body.color,
     )
 
 
@@ -574,7 +576,12 @@ def update_product(
         new_price = body.price if body.price is not None else row["price"]
         new_sort = body.sort_order if body.sort_order is not None else row["sort_order"]
         new_is_payout = body.is_payout if body.is_payout is not None else bool(row["is_payout"])
+        new_is_pfand = body.is_pfand if body.is_pfand is not None else bool(row["is_pfand"])
         new_exclude = body.exclude_from_stats if body.exclude_from_stats is not None else bool(row["exclude_from_stats"])
+        if new_is_pfand:
+            new_exclude = True
+        # Same tri-state as stock: an explicit null clears the default color.
+        new_color = body.color if "color" in body.model_fields_set else row["color"]
         new_points = body.points if body.points is not None else int(row["points"])
         new_requires_pager = body.requires_pager if body.requires_pager is not None else bool(row["requires_pager"])
         # stock/group_id are the fields where "omitted" and "explicit null"
@@ -600,10 +607,10 @@ def update_product(
             new_group_id = row["group_id"]
 
         db.execute(
-            "UPDATE product SET name=?, price=?, category_id=?, sort_order=?, is_payout=?, exclude_from_stats=?, points=?, stock=?, requires_pager=?, group_id=?, updated_at=datetime('now') WHERE id=?",
+            "UPDATE product SET name=?, price=?, category_id=?, sort_order=?, is_payout=?, is_pfand=?, exclude_from_stats=?, points=?, stock=?, requires_pager=?, group_id=?, color=?, updated_at=datetime('now') WHERE id=?",
             (new_name, new_price, new_category_id, new_sort,
-             1 if new_is_payout else 0, 1 if new_exclude else 0, new_points, new_stock,
-             1 if new_requires_pager else 0, new_group_id, product_id),
+             1 if new_is_payout else 0, 1 if new_is_pfand else 0, 1 if new_exclude else 0, new_points, new_stock,
+             1 if new_requires_pager else 0, new_group_id, new_color, product_id),
         )
 
         # Options move along with their base article — otherwise they'd be
@@ -622,8 +629,9 @@ def update_product(
     return ProductResponse(
         id=product_id, name=new_name, price=new_price,
         category_id=new_category_id, sort_order=new_sort, active=bool(row["active"]),
-        is_payout=new_is_payout, exclude_from_stats=new_exclude, points=new_points,
-        stock=new_stock, requires_pager=new_requires_pager, group_id=new_group_id,
+        is_payout=new_is_payout, is_pfand=new_is_pfand, exclude_from_stats=new_exclude,
+        points=new_points, stock=new_stock, requires_pager=new_requires_pager,
+        group_id=new_group_id, color=new_color,
     )
 
 
@@ -640,7 +648,7 @@ def set_product_active(
     with get_db() as db:
         row = db.execute(
             """
-            SELECT p.id, p.name, p.price, p.category_id, p.sort_order, p.active, p.is_payout, p.exclude_from_stats, p.points, p.stock, p.requires_pager, p.group_id
+            SELECT p.id, p.name, p.price, p.category_id, p.sort_order, p.active, p.is_payout, p.is_pfand, p.exclude_from_stats, p.points, p.stock, p.requires_pager, p.group_id, p.color
             FROM product p
             JOIN category c ON p.category_id = c.id
             WHERE p.id=? AND c.event_id=? AND p.deleted=0
@@ -665,11 +673,13 @@ def set_product_active(
         id=product_id, name=row["name"], price=row["price"],
         category_id=row["category_id"], sort_order=row["sort_order"], active=body.active,
         is_payout=bool(row["is_payout"]),
+        is_pfand=bool(row["is_pfand"]),
         exclude_from_stats=bool(row["exclude_from_stats"]),
         points=int(row["points"]),
         stock=row["stock"],
         requires_pager=bool(row["requires_pager"]),
         group_id=row["group_id"],
+        color=row["color"],
     )
 
 

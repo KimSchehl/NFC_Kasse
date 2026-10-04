@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/providers.dart';
 import '../services/config_env_file.dart';
 import '../services/nfc_kasse_paths.dart';
+import '../services/serial_ports.dart';
 import '../services/service_control.dart';
 
 /// Structured form for config.env, grouped exactly like the file itself.
@@ -60,10 +61,44 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
     super.dispose();
   }
 
+  /// First problem found in the form, as a message for the user. Checked
+  /// before anything is written, so a typo can't stop the service from starting.
+  String? _validationError() {
+    if (_controllers['CHIP_DEPOSIT']!.text.trim().isNotEmpty &&
+        double.tryParse(_controllers['CHIP_DEPOSIT']!.text.trim().replaceAll(',', '.')) == null) {
+      return 'Chip-Pfand: bitte eine Zahl eingeben, z. B. 2,50';
+    }
+    if (!_isIntIn(_controllers['PORT']!.text, 1, 65535)) {
+      return 'Port: Zahl zwischen 1 und 65535';
+    }
+    if (_printerType == 'network') {
+      if (!_isIntIn(_controllers['PRINTER_PORT']!.text, 1, 65535)) {
+        return 'TCP-Port: Zahl zwischen 1 und 65535';
+      }
+    } else {
+      if (!RegExp(r'^COM\d+$', caseSensitive: false).hasMatch(_controllers['PRINTER_PORT']!.text.trim())) {
+        return 'COM-Port: Format wie COM3';
+      }
+      if (!_isIntIn(_controllers['PRINTER_BAUDRATE']!.text, 1, 1000000)) {
+        return 'Baudrate: nur Zahlen, z. B. 9600';
+      }
+    }
+    if (!_isIntIn(_controllers['PRINTER_LINE_WIDTH']!.text, 1, 200)) {
+      return 'Zeichen pro Zeile: Zahl zwischen 1 und 200';
+    }
+    return null;
+  }
+
   Future<void> _save({required bool restart}) async {
+    final error = _validationError();
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+      return;
+    }
     setState(() => _saving = true);
     final updates = <String, String>{
       for (final key in _textKeys) key: _controllers[key]!.text.trim(),
+      'CHIP_DEPOSIT': _controllers['CHIP_DEPOSIT']!.text.trim().replaceAll(',', '.'),
       for (final key in _boolKeys) key: _bools[key]!.toString(),
       'PRINTER_TYPE': _printerType,
       'LOG_LEVEL': _logLevel,
@@ -107,7 +142,8 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
 
                     const _SectionHeader('Veranstaltung'),
                     _TextRow('Name der Veranstaltung', _controllers['EVENT_NAME']!),
-                    _TextRow('Chip-Pfand (€)', _controllers['CHIP_DEPOSIT']!, keyboardType: TextInputType.number),
+                    _TextRow('Chip-Pfand (€)', _controllers['CHIP_DEPOSIT']!,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true)),
                     _TextRow('Virtuelle Bar-Chip-UID', _controllers['BAR_CHIP_UID']!),
 
                     const _SectionHeader('Kostenpflichtige Zusatz-Features'),
@@ -141,10 +177,10 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
                       options: const ['serial', 'network'],
                       onChanged: (v) => setState(() => _printerType = v),
                     ),
-                    _TextRow(
-                      _printerType == 'network' ? 'TCP-Port' : 'COM-Port',
-                      _controllers['PRINTER_PORT']!,
-                    ),
+                    if (_printerType == 'network')
+                      _TextRow('TCP-Port', _controllers['PRINTER_PORT']!, keyboardType: TextInputType.number)
+                    else
+                      _ComPortRow(_controllers['PRINTER_PORT']!),
                     if (_printerType != 'network')
                       _TextRow('Baudrate', _controllers['PRINTER_BAUDRATE']!, keyboardType: TextInputType.number),
                     if (_printerType == 'network')
@@ -208,6 +244,60 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
           ],
         );
       },
+    );
+  }
+}
+
+bool _isIntIn(String text, int min, int max) {
+  final value = int.tryParse(text.trim());
+  return value != null && value >= min && value <= max;
+}
+
+/// Free text, plus a dropdown of the COM ports this PC actually has, so the
+/// printer's port can be picked without opening Device Manager.
+class _ComPortRow extends ConsumerWidget {
+  final TextEditingController controller;
+
+  const _ComPortRow(this.controller);
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final portsAsync = ref.watch(serialPortsProvider);
+    final ports = portsAsync.valueOrNull ?? const <SerialPortInfo>[];
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: TextField(
+        controller: controller,
+        decoration: InputDecoration(
+          labelText: 'COM-Port',
+          isDense: true,
+          helperText: portsAsync.isLoading
+              ? 'Erkenne angeschlossene Ports …'
+              : ports.isEmpty
+                  ? 'Keine COM-Ports gefunden – Wert von Hand eingeben'
+                  : null,
+          suffixIcon: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.refresh),
+                tooltip: 'Ports neu suchen',
+                onPressed: () => ref.invalidate(serialPortsProvider),
+              ),
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.usb),
+                tooltip: 'Erkannte COM-Ports',
+                enabled: ports.isNotEmpty,
+                onSelected: (port) => controller.text = port,
+                itemBuilder: (_) => [
+                  for (final p in ports) PopupMenuItem(value: p.port, child: Text(p.label)),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

@@ -146,6 +146,8 @@ def init_db():
         deleted     INTEGER NOT NULL DEFAULT 0,  -- soft-delete, keeps historical sales valid
         is_payout           INTEGER NOT NULL DEFAULT 0,  -- marks article as full-balance payout
         exclude_from_stats  INTEGER NOT NULL DEFAULT 0,  -- exclude from revenue statistics
+        is_pfand            INTEGER NOT NULL DEFAULT 0,  -- deposit article ("Pfand +"/"Pfand -"): no guthaben.topup needed, always excluded from stats
+        color               TEXT,  -- default button color '#RRGGBB'; NULL = theme default. Per-user overrides live in user_setting
         points              INTEGER NOT NULL DEFAULT 0,  -- leaderboard points per booking
         requires_pager      INTEGER NOT NULL DEFAULT 0,  -- marks article as needing a kitchen pager when booked
         stock       INTEGER,  -- NULL = not stock-tracked (unlimited); decremented per booking

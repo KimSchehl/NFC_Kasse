@@ -11,9 +11,20 @@ Design notes:
   set in a single transaction.
 """
 
+import re
 from typing import Any
 
 from pydantic import BaseModel, field_validator
+
+_HEX_COLOR = re.compile(r"#[0-9A-Fa-f]{6}")
+
+
+def _normalize_color(v: str | None) -> str | None:
+    if v is None:
+        return None
+    if not _HEX_COLOR.fullmatch(v):
+        raise ValueError("Farbe muss im Format #RRGGBB angegeben werden")
+    return v.upper()
 
 
 # ---------------------------------------------------------------------------
@@ -104,11 +115,13 @@ class ProductResponse(BaseModel):
     sort_order: int
     active: bool
     is_payout: bool = False
+    is_pfand: bool = False
     exclude_from_stats: bool = False
     points: int = 0
     stock: int | None = None  # None = not stock-tracked (unlimited)
     requires_pager: bool = False
     group_id: int | None = None  # None = standalone; else an "option" of that base article
+    color: str | None = None  # default button color '#RRGGBB'; None = theme default
 
 
 class ProductCreate(BaseModel):
@@ -117,11 +130,13 @@ class ProductCreate(BaseModel):
     category_id: int
     sort_order: int = 0
     is_payout: bool = False
+    is_pfand: bool = False
     exclude_from_stats: bool = False
     points: int = 0
     stock: int | None = None
     requires_pager: bool = False
     group_id: int | None = None
+    color: str | None = None
 
     @field_validator("stock")
     @classmethod
@@ -129,6 +144,11 @@ class ProductCreate(BaseModel):
         if v is not None and v < 0:
             raise ValueError("Bestand darf nicht negativ sein")
         return v
+
+    @field_validator("color")
+    @classmethod
+    def color_format(cls, v: str | None) -> str | None:
+        return _normalize_color(v)
 
 
 class ProductUpdate(BaseModel):
@@ -137,6 +157,7 @@ class ProductUpdate(BaseModel):
     category_id: int | None = None  # move to a different category; omitted = unchanged
     sort_order: int | None = None
     is_payout: bool | None = None
+    is_pfand: bool | None = None
     exclude_from_stats: bool | None = None
     points: int | None = None
     stock: int | None = None  # see products.py's update_product: distinguishes
@@ -144,6 +165,7 @@ class ProductUpdate(BaseModel):
     requires_pager: bool | None = None
     group_id: int | None = None  # same tri-state as stock: None can mean either
     # "unchanged" or "explicitly ungroup" depending on model_fields_set
+    color: str | None = None  # same tri-state as stock: explicit null clears the default color
 
     @field_validator("stock")
     @classmethod
@@ -151,6 +173,11 @@ class ProductUpdate(BaseModel):
         if v is not None and v < 0:
             raise ValueError("Bestand darf nicht negativ sein")
         return v
+
+    @field_validator("color")
+    @classmethod
+    def color_format(cls, v: str | None) -> str | None:
+        return _normalize_color(v)
 
 
 class ProductActiveUpdate(BaseModel):
@@ -451,6 +478,17 @@ class PrintBonResponse(BaseModel):
     bons_printed: int
     sale_ids: list[int]
     low_stock_warnings: list[LowStockWarning] = []
+    print_job_ids: list[int] = []
+
+
+class PrintJobStatus(BaseModel):
+    id: int
+    status: str  # pending | printing | done | error
+    error_msg: str | None = None
+
+
+class PrintJobsStatusResponse(BaseModel):
+    jobs: list[PrintJobStatus]
 
 
 # ---------------------------------------------------------------------------

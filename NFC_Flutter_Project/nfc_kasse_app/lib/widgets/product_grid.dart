@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/category_model.dart';
 import '../models/product_model.dart';
+import '../models/user_model.dart';
 import '../models/user_preferences_model.dart';
 import '../providers/providers.dart';
 import '../services/app_logger.dart';
@@ -15,6 +16,15 @@ import 'product_tile.dart';
 // Public widget
 // ---------------------------------------------------------------------------
 
+/// Auszahlung and Aufladung articles are hidden from users without the matching
+/// right. The backend enforces the same rule on booking; this only keeps those
+/// tiles from showing up at all.
+bool _canSeeArticle(ProductModel p, UserModel? user) {
+  if (p.isPayout) return user?.hasPermission('guthaben.payout') ?? false;
+  if (p.isTopup) return user?.hasPermission('guthaben.topup') ?? false;
+  return true;
+}
+
 class ProductGrid extends ConsumerWidget {
   final CategoryModel category;
 
@@ -25,6 +35,7 @@ class ProductGrid extends ConsumerWidget {
     final productsAsync = ref.watch(productsProvider(category.id));
     final editMode = ref.watch(editModeProvider);
     final prefs = ref.watch(userPrefsProvider);
+    final user = ref.watch(authProvider).valueOrNull;
     // P = narrow (phone/portrait), L = wide (tablet/landscape)
     final profile = MediaQuery.sizeOf(context).width >= 600 ? 'L' : 'P';
 
@@ -33,7 +44,7 @@ class ProductGrid extends ConsumerWidget {
       error: (e, _) => Center(child: Text('Fehler: ${formatApiError(e)}')),
       data: (products) => _Grid(
         key: ValueKey('grid-${category.id}-$profile'),
-        products: products,
+        products: products.where((p) => _canSeeArticle(p, user)).toList(),
         category: category,
         editMode: editMode,
         prefs: prefs,
@@ -79,6 +90,10 @@ class _GridState extends ConsumerState<_Grid> {
   /// The options belonging to [product] (empty if it's a plain article).
   List<ProductModel> _optionsOf(ProductModel product) =>
       widget.products.where((p) => p.groupId == product.id).toList();
+
+  /// This device's override if the user set one, else the article's default.
+  Color? _tileColor(ProductModel product) =>
+      widget.prefs.getProductColor(product.id) ?? product.defaultColor;
 
   /// Builds the ordered slot list from saved layout + any new products appended.
   /// Deleted product IDs are removed; user-added null gaps are preserved.
@@ -236,7 +251,7 @@ class _GridState extends ConsumerState<_Grid> {
                 index: i,
                 product: product,
                 maxLines: buttonMaxLines,
-                color: widget.prefs.getProductColor(product.id),
+                color: _tileColor(product),
                 dragging: _draggingIndex == i,
                 hasOptions: _optionsOf(product).isNotEmpty,
                 onDragStarted: () => setState(() => _draggingIndex = i),
@@ -252,7 +267,7 @@ class _GridState extends ConsumerState<_Grid> {
             return ProductTile(
               product: product,
               maxLines: buttonMaxLines,
-              color: widget.prefs.getProductColor(product.id),
+              color: _tileColor(product),
               hidePrice: _optionsOf(product).isNotEmpty,
               onTap: () => _addOrPickVariant(context, product),
             );
