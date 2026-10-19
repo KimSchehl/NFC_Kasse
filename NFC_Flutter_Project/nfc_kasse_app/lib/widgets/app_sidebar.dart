@@ -108,7 +108,12 @@ class AppSidebar extends ConsumerWidget {
                             ref.read(currentScreenProvider.notifier).state = AppScreen.pos;
                             _closeDrawer(context);
                           },
-                          onEdit: () => _editCategory(context, cat, user?.hasPermission('categories.delete') ?? false),
+                          onEdit: () => _editCategory(
+                            context,
+                            cat,
+                            canDelete: user?.hasPermission('categories.delete') ?? false,
+                            canDeactivate: user?.hasPermission('categories.deactivate') ?? false,
+                          ),
                         )),
                     // "New category" button
                     if (canCreateCategory)
@@ -198,13 +203,19 @@ class AppSidebar extends ConsumerWidget {
     );
   }
 
-  void _editCategory(BuildContext context, CategoryModel category, bool canDelete) {
+  void _editCategory(
+    BuildContext context,
+    CategoryModel category, {
+    required bool canDelete,
+    required bool canDeactivate,
+  }) {
     AppLogger.trace('Kategorie-Dialog geöffnet: ${category.name}', logger: 'ui.sidebar');
     showDialog(
       context: context,
       builder: (_) => EditCategoryDialog(
         category: category,
         canDelete: canDelete,
+        canDeactivate: canDeactivate,
       ),
     );
   }

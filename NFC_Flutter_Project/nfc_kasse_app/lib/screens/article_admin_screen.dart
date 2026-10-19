@@ -19,6 +19,10 @@ import '../widgets/tree_branch.dart';
 /// The POS grid's own edit mode only offers the narrow quick-edit popup
 /// (color + stock) — this screen is the only place articles are created,
 /// renamed, re-priced, or moved between categories.
+///
+/// Categories and articles belong to the Veranstalter; this screen lists all
+/// of them and is where they are switched on/off for the running fest
+/// ("Im Fest" switches).
 class ArticleAdminScreen extends ConsumerWidget {
   const ArticleAdminScreen({super.key});
 
@@ -77,6 +81,47 @@ class _CategorySection extends ConsumerWidget {
     }
   }
 
+  /// Reloads everything that shows what the running fest offers: this
+  /// screen, the till's category list (/me) and the article grids.
+  Future<void> _afterFestChange(WidgetRef ref) async {
+    ref.read(adminCategoriesRefreshProvider.notifier).state++;
+    ref.invalidate(productsProvider);
+    await ref.read(authProvider.notifier).refreshFromServer();
+  }
+
+  Future<void> _setCategoryInEvent(BuildContext context, WidgetRef ref, bool active) async {
+    AppLogger.trace(
+      'Kategorie ${active ? "eingeschaltet" : "ausgeschaltet"}: ${data.category.name}',
+      logger: 'ui.admin',
+    );
+    try {
+      await ref.read(productServiceProvider).setCategoryInEvent(data.category.id, active);
+      if (!active && ref.read(selectedCategoryProvider)?.id == data.category.id) {
+        ref.read(selectedCategoryProvider.notifier).state = null;
+      }
+      await _afterFestChange(ref);
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(formatApiError(e))));
+      }
+    }
+  }
+
+  Future<void> _setProductInEvent(BuildContext context, WidgetRef ref, ProductModel product, bool active) async {
+    AppLogger.trace(
+      'Artikel ${active ? "eingeschaltet" : "ausgeschaltet"}: ${product.name}',
+      logger: 'ui.admin',
+    );
+    try {
+      await ref.read(productServiceProvider).setInEvent(product.id, active);
+      await _afterFestChange(ref);
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(formatApiError(e))));
+      }
+    }
+  }
+
   Future<void> _openDialog(BuildContext context, WidgetRef ref, ProductModel? product) async {
     AppLogger.trace(
       'Artikelverwaltung-Dialog geöffnet: ${product?.name ?? "Neuer Artikel"}',
@@ -103,6 +148,9 @@ class _CategorySection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final topLevel = data.topLevel;
+    final canSwitchCategory =
+        ref.watch(authProvider).valueOrNull?.hasPermission('categories.deactivate') ?? false;
+    final categoryOn = data.category.activeInEvent;
 
     return DragTarget<ProductModel>(
       onWillAcceptWithDetails: (details) => details.data.categoryId != data.category.id,
@@ -120,8 +168,20 @@ class _CategorySection extends ConsumerWidget {
                 Row(
                   children: [
                     Expanded(
-                      child: Text(data.category.name, style: theme.textTheme.titleSmall),
+                      child: Text(
+                        categoryOn ? data.category.name : '${data.category.name} · nicht in diesem Fest',
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          color: categoryOn ? null : theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
                     ),
+                    if (canSwitchCategory) ...[
+                      Text('Im Fest', style: theme.textTheme.labelSmall),
+                      Switch(
+                        value: categoryOn,
+                        onChanged: (v) => _setCategoryInEvent(context, ref, v),
+                      ),
+                    ],
                     if (data.category.canCreateArticle)
                       TextButton.icon(
                         onPressed: () => _openDialog(context, ref, null),
@@ -148,6 +208,9 @@ class _CategorySection extends ConsumerWidget {
                           product: p,
                           optionCount: data.optionsOf(p.id).length,
                           onTap: () => _openDialog(context, ref, p),
+                          onInEventChanged: data.category.canDeactivateArticle
+                              ? (v) => _setProductInEvent(context, ref, p, v)
+                              : null,
                         ),
                     ],
                   ),
@@ -165,7 +228,15 @@ class _ArticleRow extends StatelessWidget {
   final int optionCount;
   final VoidCallback onTap;
 
-  const _ArticleRow({required this.product, required this.optionCount, required this.onTap});
+  /// Switches the article on/off for the running fest; null = no right.
+  final ValueChanged<bool>? onInEventChanged;
+
+  const _ArticleRow({
+    required this.product,
+    required this.optionCount,
+    required this.onTap,
+    this.onInEventChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -174,13 +245,15 @@ class _ArticleRow extends StatelessWidget {
       formatPrice(product.price),
       if (optionCount > 0) '$optionCount ${optionCount == 1 ? "Option" : "Optionen"}',
       if (product.stock != null) 'Bestand: ${product.stock}',
+      if (!product.inEvent) 'nicht in diesem Fest',
     ];
+    final dimmed = !product.active || !product.inEvent;
 
     final row = ListTile(
       dense: true,
       title: Text(
         product.name,
-        style: TextStyle(color: product.active ? null : theme.colorScheme.onSurfaceVariant),
+        style: TextStyle(color: dimmed ? theme.colorScheme.onSurfaceVariant : null),
       ),
       subtitle: Text(subtitleParts.join(' · ')),
       trailing: Row(
@@ -194,6 +267,11 @@ class _ArticleRow extends StatelessWidget {
             ),
             const SizedBox(width: 8),
           ],
+          if (onInEventChanged != null)
+            Tooltip(
+              message: 'In diesem Fest anbieten',
+              child: Switch(value: product.inEvent, onChanged: onInEventChanged),
+            ),
           Icon(Icons.drag_indicator, size: 18, color: theme.colorScheme.onSurfaceVariant),
         ],
       ),

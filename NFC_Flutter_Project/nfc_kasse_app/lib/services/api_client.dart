@@ -21,16 +21,21 @@ import 'app_storage.dart';
 /// 4. **Request logging**: one buffered [AppLogger] entry per response —
 ///    `/health` (polled every 10s) is dropped to TRACE to avoid drowning the
 ///    buffer, mirroring the server's own middleware.
+/// 5. **Fest switch**: a 409 with `code: "event_changed"` (the backend's
+///    EventChangedError — a fest was started/ended in the admin tool and
+///    this device is still on the old one) calls [onEventChanged]. The error
+///    itself still reaches the caller, which shows its `detail` as usual.
 class ApiClient {
   final AppStorage _storage;
   final String _baseUrl;
+  final void Function()? onEventChanged;
   late final Dio dio;
 
   // Shared refresh future — concurrent 401s all await the same refresh attempt
   // instead of each spawning their own (which would burn the refresh token).
   Future<void>? _refreshFuture;
 
-  ApiClient(this._storage, {required String baseUrl}) : _baseUrl = baseUrl {
+  ApiClient(this._storage, {required String baseUrl, this.onEventChanged}) : _baseUrl = baseUrl {
     dio = Dio(BaseOptions(
       baseUrl: _baseUrl,
       connectTimeout: const Duration(seconds: 10),
@@ -72,6 +77,15 @@ class ApiClient {
           AppLogger.warning(message, logger: 'http', traceId: traceId);
         } else {
           AppLogger.error(message, logger: 'http', traceId: traceId, error: error);
+        }
+
+        final data = error.response?.data;
+        if (status == 409 && data is Map && data['code'] == 'event_changed') {
+          try {
+            onEventChanged?.call();
+          } catch (_) {
+            // Reloading is a convenience; the caller still gets the error.
+          }
         }
 
         // Only attempt refresh once per request (extra flag prevents retry loops).

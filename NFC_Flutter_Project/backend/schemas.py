@@ -67,6 +67,11 @@ class MeResponse(BaseModel):
     categories: list[CategoryPermissionResponse]
     leaderboard_enabled: bool = False
     pager_enabled: bool = False
+    event_name: str
+    event_is_intern: bool
+    # Article management is reachable even when no category of the user is
+    # switched on in the running event — that's where it gets switched on.
+    can_manage_articles: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -84,6 +89,7 @@ class CategoryWithPermissionsResponse(BaseModel):
     can_edit_article: bool
     can_deactivate_article: bool
     can_delete_article: bool
+    active_in_event: bool = True  # switched on in the running fest
 
 
 class CategoryResponse(BaseModel):
@@ -122,6 +128,7 @@ class ProductResponse(BaseModel):
     requires_pager: bool = False
     group_id: int | None = None  # None = standalone; else an "option" of that base article
     color: str | None = None  # default button color '#RRGGBB'; None = theme default
+    in_event: bool = True  # switched on in the running fest (an option follows its base)
 
 
 class ProductCreate(BaseModel):
@@ -184,6 +191,11 @@ class ProductActiveUpdate(BaseModel):
     active: bool
 
 
+class EventActiveUpdate(BaseModel):
+    """Switches a category or article on/off for the running fest."""
+    active: bool
+
+
 class LowStockWarning(BaseModel):
     product_name: str
     remaining: int
@@ -207,6 +219,7 @@ class AdminCategoryResponse(BaseModel):
     can_edit_article: bool
     can_deactivate_article: bool
     can_delete_article: bool
+    active_in_event: bool = True
     products: list[ProductResponse]
 
 
@@ -389,6 +402,53 @@ class PeriodCloseResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Festvorlage — file format for the admin tool's export/import
+# (event_lifecycle.py, admin_cli.py; see project_event_model_plan.md)
+# ---------------------------------------------------------------------------
+
+class EventPresetCategory(BaseModel):
+    ref: int  # index into the preset's own category list — never a real DB id
+    name: str
+    sort_order: int = 0
+
+
+class EventPresetProduct(BaseModel):
+    ref: int  # index into the preset's own product list — never a real DB id
+    category_ref: int
+    name: str
+    price: float
+    sort_order: int = 0
+    is_payout: bool = False
+    is_pfand: bool = False
+    exclude_from_stats: bool = False
+    points: int = 0
+    requires_pager: bool = False
+    color: str | None = None
+    stock: int | None = None
+    group_ref: int | None = None  # ref of the base article this option belongs to, if any
+
+
+class EventPreset(BaseModel):
+    """
+    A Festvorlage — the file format for Export/Import (see
+    project_event_model_plan.md). Deliberately excludes everything the plan
+    says must never be exported: Guthaben, Chips, Buchungen, Benutzer,
+    Lizenzen/Secrets. categories/products use local `ref` indices instead of
+    real DB ids so a preset file never depends on — or collides with —
+    whatever ids happen to exist on the importing installation.
+    """
+    schema_version: int = 1
+    created_at: str | None = None
+    source_event_name: str | None = None
+    chip_deposit: float = 0.0
+    categories: list[EventPresetCategory] = []
+    products: list[EventPresetProduct] = []
+    bon_layout: dict[str, Any] | None = None
+    printer: dict[str, Any] | None = None
+    bon_text: dict[str, Any] | None = None
+
+
+# ---------------------------------------------------------------------------
 # Statistics
 # ---------------------------------------------------------------------------
 
@@ -448,7 +508,7 @@ class ChipSummaryResponse(BaseModel):
     total_chips: int
     active_chips: int       # is_available=0 — currently with a guest
     total_balance: float    # sum of all balances
-    pending_pfand: float    # active_chips × CHIP_DEPOSIT
+    pending_pfand: float    # sum of deposit_paid over chips currently with a guest
     total_topup: float      # sum of positive topup rows for this event
     total_payout: float     # sum of payout rows (abs) for this event
 

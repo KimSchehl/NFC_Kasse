@@ -58,6 +58,31 @@ os.environ.setdefault("PAGER_LICENSE_KEY", _sign_test_license("pager"))
 os.environ.setdefault("LEADERBOARD_LICENSE_KEY", _sign_test_license("leaderboard"))
 
 
+def add_category(conn, name: str, event_id: int | None = None) -> int:
+    """A category of tenant 1, switched on in `event_id` (default: the
+    active event). Categories belong to the tenant since schema v3."""
+    if event_id is None:
+        event_id = conn.execute("SELECT id FROM event WHERE active = 1").fetchone()[0]
+    cat_id = conn.execute("INSERT INTO category (tenant_id, name) VALUES (1, ?)", (name,)).lastrowid
+    conn.execute("INSERT INTO event_category (event_id, category_id) VALUES (?, ?)", (event_id, cat_id))
+    return cat_id
+
+
+def add_product(conn, cat_id: int, name: str, price: float, event_id: int | None = None, **cols) -> int:
+    """An article in `cat_id`; a base article is switched on in `event_id`
+    (default: the active event), an option (group_id=...) follows its base."""
+    names = ["category_id", "name", "price", *cols]
+    p_id = conn.execute(
+        f"INSERT INTO product ({', '.join(names)}) VALUES ({', '.join('?' * len(names))})",
+        (cat_id, name, price, *cols.values()),
+    ).lastrowid
+    if cols.get("group_id") is None:
+        if event_id is None:
+            event_id = conn.execute("SELECT id FROM event WHERE active = 1").fetchone()[0]
+        conn.execute("INSERT INTO event_product (event_id, product_id) VALUES (?, ?)", (event_id, p_id))
+    return p_id
+
+
 @pytest.fixture
 def db(tmp_path, monkeypatch):
     """Fresh isolated SQLite database for each test."""
@@ -74,6 +99,25 @@ def db(tmp_path, monkeypatch):
     idb.seed_default_data(conn)
     conn.close()
 
+    return db_file
+
+
+@pytest.fixture
+def legacy_v2_db(tmp_path, monkeypatch):
+    """An isolated database in the frozen v2 schema (before Veranstalter
+    owned categories and rights) — for the migration tests."""
+    db_file = str(tmp_path / "legacy.db")
+
+    import database
+    from tests import legacy_init_db_v2 as legacy
+
+    monkeypatch.setattr(database, "DB_PATH", db_file)
+    monkeypatch.setattr(legacy, "DB_PATH", db_file)
+
+    conn = legacy.init_db()
+    legacy.seed_permissions(conn)
+    legacy.seed_default_data(conn)
+    conn.close()
     return db_file
 
 
@@ -96,15 +140,8 @@ def product_id(db):
     """Inserts a test category + product into the DB and returns the product ID."""
     import database
     with database.get_db() as conn:
-        event_id = conn.execute("SELECT id FROM event LIMIT 1").fetchone()["id"]
-        cat_id = conn.execute(
-            "INSERT INTO category (event_id, name) VALUES (?, ?)",
-            (event_id, "Test Kategorie"),
-        ).lastrowid
-        p_id = conn.execute(
-            "INSERT INTO product (category_id, name, price) VALUES (?, ?, ?)",
-            (cat_id, "Bier", 2.50),
-        ).lastrowid
+        cat_id = add_category(conn, "Test Kategorie")
+        p_id = add_product(conn, cat_id, "Bier", 2.50)
     return p_id
 
 
@@ -113,15 +150,8 @@ def pager_product_id(db):
     """Inserts a test category + requires_pager product, returns the product ID."""
     import database
     with database.get_db() as conn:
-        event_id = conn.execute("SELECT id FROM event LIMIT 1").fetchone()["id"]
-        cat_id = conn.execute(
-            "INSERT INTO category (event_id, name) VALUES (?, ?)",
-            (event_id, "Test Kategorie"),
-        ).lastrowid
-        p_id = conn.execute(
-            "INSERT INTO product (category_id, name, price, requires_pager) VALUES (?, ?, ?, 1)",
-            (cat_id, "Pizza Salami", 8.00),
-        ).lastrowid
+        cat_id = add_category(conn, "Test Kategorie")
+        p_id = add_product(conn, cat_id, "Pizza Salami", 8.00, requires_pager=1)
     return p_id
 
 
@@ -133,10 +163,7 @@ def pager_product_id_2(db, pager_product_id):
         cat_id = conn.execute(
             "SELECT category_id FROM product WHERE id=?", (pager_product_id,)
         ).fetchone()["category_id"]
-        p_id = conn.execute(
-            "INSERT INTO product (category_id, name, price, requires_pager) VALUES (?, ?, ?, 1)",
-            (cat_id, "Steak", 12.00),
-        ).lastrowid
+        p_id = add_product(conn, cat_id, "Steak", 12.00, requires_pager=1)
     return p_id
 
 
@@ -165,19 +192,9 @@ def option_product_ids(db):
     """
     import database
     with database.get_db() as conn:
-        event_id = conn.execute("SELECT id FROM event LIMIT 1").fetchone()["id"]
-        cat_id = conn.execute(
-            "INSERT INTO category (event_id, name) VALUES (?, ?)",
-            (event_id, "Test Kategorie"),
-        ).lastrowid
-        base_id = conn.execute(
-            "INSERT INTO product (category_id, name, price, stock, points) VALUES (?, ?, ?, ?, ?)",
-            (cat_id, "Currywurst", 5.00, 10, 5),
-        ).lastrowid
-        option_id = conn.execute(
-            "INSERT INTO product (category_id, name, price, group_id) VALUES (?, ?, ?, ?)",
-            (cat_id, "Currywurst mit Pommes", 6.00, base_id),
-        ).lastrowid
+        cat_id = add_category(conn, "Test Kategorie")
+        base_id = add_product(conn, cat_id, "Currywurst", 5.00, stock=10, points=5)
+        option_id = add_product(conn, cat_id, "Currywurst mit Pommes", 6.00, group_id=base_id)
     return cat_id, base_id, option_id
 
 
@@ -189,7 +206,8 @@ def customer_with_balance(db):
     with database.get_db() as conn:
         tenant_id = conn.execute("SELECT id FROM tenant LIMIT 1").fetchone()["id"]
         conn.execute(
-            "INSERT INTO customer (tenant_id, nfc_uid, balance) VALUES (?, ?, ?)",
+            # is_available=0: the chip is issued (with a balance), not a free one.
+            "INSERT INTO customer (tenant_id, nfc_uid, balance, is_available) VALUES (?, ?, ?, 0)",
             (tenant_id, uid, 20.00),
         )
     return uid

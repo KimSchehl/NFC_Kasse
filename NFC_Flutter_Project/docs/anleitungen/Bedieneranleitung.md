@@ -1,6 +1,6 @@
 # NFC-Kasse – Bedieneranleitung
 
-4. Oktober 2026 · Kim Schehl
+18. Oktober 2026 · Kim Schehl
 
 ## 1. Überblick
 
@@ -17,7 +17,7 @@ Diese Anleitung führt Schritt für Schritt durch Installation, Einrichtung, Ver
 | Baustein | Aufgabe | Wo |
 | --- | --- | --- |
 | Server (NFC-Kasse Backend) | speichert Chips, Guthaben, Artikel und Buchungen | Windows-Dienst auf dem Server-Laptop, meist der Laptop an der Bonkasse |
-| NFC-Kasse Verwaltung | Dienst starten und stoppen, Einstellungen, Bon-Layout | Programm auf dem Server-Laptop |
+| NFC-Kasse Verwaltung | Dienst starten und stoppen, Veranstalter wählen, Feste starten und beenden, Einstellungen, Bon-Layout, Datensicherung | Programm auf dem Server-Laptop |
 | Kassen-App | kassieren, aufladen, auszahlen, Statistik | Android-Tablets und -Smartphones |
 | Weboberfläche | dieselbe Kasse im Browser | `http://nfc-kasse.lan:8000/webapp` |
 | NFC-Leser | liest den Chip | Bluetooth-Leser „NFC-Reader\_0001“ usw., eingebautes NFC (Android) oder USB-Leser |
@@ -52,17 +52,15 @@ Die Installation machen Sie einmal auf dem Server-Laptop. Danach läuft NFC-Kass
 5. Zielordner `C:\Program Files\NFC-Kasse` so lassen, **Weiter**.
 6. **Desktop-Symbol erstellen** ankreuzen. Das legt „NFC-Kasse öffnen“ und „NFC-Kasse Verwaltung“ auf den Desktop. **Weiter**.
 7. **Installieren** klicken. Das Setup kopiert die Dateien, richtet den Dienst und die Firewall ein und startet den Dienst.
-8. Auf der letzten Seite den Haken bei **NFC-Kasse jetzt öffnen** lassen und auf **Fertigstellen** klicken. Der Browser öffnet die Anmeldeseite der Kasse. Zeigt er zunächst einen Fehler, ein paar Sekunden warten und die Seite neu laden.
+8. Auf der letzten Seite auf **Fertigstellen** klicken.
+9. **NFC-Kasse Verwaltung** öffnen, Seite **Lizenzen** (Abschnitt 3.5). Den Lizenzschlüssel der Kasse eintragen und **Speichern & Dienst neu starten**. Ohne gültige Hauptlizenz startet der Dienst nicht.
+10. Danach öffnet **NFC-Kasse öffnen** auf dem Desktop die Anmeldeseite der Kasse. Zeigt der Browser zunächst einen Fehler, ein paar Sekunden warten und die Seite neu laden.
 
 Weiter geht es mit Abschnitt 4, Erster Start.
 
 ### 2.3 Was das Setup einrichtet
 
-- Programm in `C:\Program Files\NFC-Kasse\`, Daten in `C:\ProgramData\NFC-Kasse\` (Datenbank, Einstellungen, Bon-Layout, Protokolle, Sicherungen).
-- Den Windows-Dienst **NFC-Kasse Backend**.
-- Eine Firewall-Regel, damit Tablets im WLAN den Server erreichen.
-- Eine Browser-Einstellung für Edge und Chrome, damit der Bluetooth-Leser in der Weboberfläche auf diesem Laptop funktioniert.
-- Im Startmenü den Ordner **NFC-Kasse** mit „NFC-Kasse öffnen“, „NFC-Kasse Verwaltung“, „Dienst starten“ und „Dienst stoppen“.
+Das Setup legt das Programm in `C:\Program Files\NFC-Kasse\` und die Daten in `C:\ProgramData\NFC-Kasse\` ab. Es richtet den Windows-Dienst **NFC-Kasse Backend**, eine Firewall-Regel, die Browser-Einstellung für den Bluetooth-Leser und den Startmenü-Ordner **NFC-Kasse** ein. Die Einzelheiten stehen im Handbuch für Systemadministratoren, Abschnitt 5.2.
 
 ### 2.4 Prüfen, ob alles läuft
 
@@ -102,13 +100,13 @@ Datenbank, Einstellungen und Bon-Layout bleiben dabei erhalten. Aktualisieren Si
 
 ## 3. Das Verwaltungstool
 
-Mit der **NFC-Kasse Verwaltung** steuern Sie den Server am Laptop: Dienst starten und stoppen, Einstellungen ändern, den Bon gestalten. Alles, was mit Artikeln, Benutzern und Verkauf zu tun hat, machen Sie dagegen in der Kasse selbst (ab Abschnitt 4).
+Mit der **NFC-Kasse Verwaltung** steuern Sie den Server am Laptop: Dienst starten und stoppen, Feste starten und beenden, Einstellungen ändern, den Bon gestalten, Daten sichern. Alles, was mit Artikeln, Benutzern und Verkauf zu tun hat, machen Sie dagegen in der Kasse selbst (ab Abschnitt 4). Das Verwaltungstool braucht keine Anmeldung: Wer den Server-Laptop bedient, darf alles.
 
 ### 3.1 Öffnen
 
 1. Auf dem Desktop **NFC-Kasse Verwaltung** doppelklicken, oder im Startmenü unter **NFC-Kasse** wählen.
 2. Die Frage der Benutzerkontensteuerung mit **Ja** beantworten.
-3. Links sind vier Seiten: **Dashboard**, **Konfiguration**, **Bon-Layout** und **Info**.
+3. Links sind acht Seiten: **Dashboard**, **Veranstalter** (Abschnitt 3.6), **Feste** (Abschnitt 11), **Konfiguration**, **Lizenzen** (Abschnitt 3.5), **Bon-Layout**, **Daten** (Abschnitt 11.6) und **Info**.
 
 ### 3.2 Dashboard
 
@@ -116,6 +114,7 @@ Mit der **NFC-Kasse Verwaltung** steuern Sie den Server am Laptop: Dienst starte
 
 - **Dienst-Status** zeigt mit grünem Punkt „Läuft“ oder „Gestoppt“.
 - **Starten**, **Stoppen**, **Neu starten** steuern den Dienst. Ausgegraut ist, was gerade nicht geht.
+- **Server-Adresse** zeigt die Adresse, die ein Tablet im Feld Server-URL eintragen muss. Das Symbol daneben kopiert sie.
 - **Weboberfläche öffnen** öffnet die Kasse im Browser dieses Laptops.
 - **Protokolle öffnen** öffnet den Ordner mit den Protokolldateien. Den brauchen Sie nur bei Problemen.
 
@@ -134,16 +133,13 @@ Hier stehen die Einstellungen des Servers. Ganz unten sind zwei Knöpfe:
 | --- | --- |
 | Netzwerkschnittstelle (HOST) | `0.0.0.0` lassen. Damit ist der Server im ganzen Netz erreichbar. |
 | Port | `8000` lassen. Wer ihn ändert, muss alle Adressen in dieser Anleitung anpassen. |
-| Name der Veranstaltung | Name, der in der Kasse und auf den Bons steht, z. B. „Weinfest 2026“. |
-| Chip-Pfand (€) | Pfand pro Chip, z. B. `3` oder `2.50`. `0` = kein Pfand. Abschnitt 9.3 erklärt, wie der Pfand gebucht wird. |
+| Name der Veranstaltung, Chip-Pfand (€) | Name und Pfand des laufenden Festes. Diese beiden Felder haben einen eigenen Knopf **Für alle übernehmen**: Nach einer Rückfrage gelten sie sofort an allen Kassen und auf jedem neuen Bon, ohne Neustart. Ein neuer Pfand gilt für Chips, die ab dann ausgegeben werden, Chips beim Gast behalten ihren bezahlten Pfand. Im internen Betrieb heißt die Kasse immer „Intern“, dort ist nur der Pfand änderbar. |
 | Virtuelle Bar-Chip-UID | `BAR` lassen. Auf diesen gedachten Chip werden Barverkäufe mit Papierbon gebucht. |
-| Leaderboard aktiviert, Pager aktiviert | Schalter für die Zusatzfunktionen. Sie wirken nur mit dem passenden Lizenzschlüssel darunter. |
 
 ![Konfiguration Mitte: Lizenzschlüssel, Web-Zugriff und Beginn der Bondrucker-Einstellungen](../images/bedieneranleitung/windows/06b_verwaltung_konfiguration_lizenzen_web_drucker.png)
 
 | Feld | Was eintragen |
 | --- | --- |
-| Leaderboard-Lizenzschlüssel, Pager-Lizenzschlüssel | Den Schlüssel aus der Lizenz-Mail einfügen. So bekommen Sie ihn: Abschnitt 3.5. |
 | Webapp-Pfad | `/webapp` lassen. |
 | Erlaubte Herkunfts-Adressen (CORS) | Empfohlen: `http://localhost:8000,http://127.0.0.1:8000,http://nfc-kasse.lan:8000,http://192.168.1.2:8000`. Dann klappt die Anmeldung im Browser unter beiden Adressen. |
 | Protokoll-Level | `INFO` lassen. `DEBUG` nur zur Fehlersuche, das erzeugt sehr viele Einträge. |
@@ -152,7 +148,7 @@ Hier stehen die Einstellungen des Servers. Ganz unten sind zwei Knöpfe:
 
 Die Bereiche **Bondrucker** und **Bon-Inhalt** sind in Abschnitt 8 Schritt für Schritt erklärt.
 
-Wichtig beim Ausfüllen: Beträge mit Punkt schreiben, nicht mit Komma (`2.50`, nicht `2,50`). In Zahlenfelder wie Port oder Baudrate gehören nur Ziffern. Ein falscher Wert kann verhindern, dass der Dienst startet. Steht das Dashboard nach dem Speichern auf „Gestoppt“, korrigieren Sie den zuletzt geänderten Wert und speichern erneut.
+Wichtig beim Ausfüllen der übrigen Felder: Beträge mit Punkt schreiben, nicht mit Komma (`2.50`, nicht `2,50`). In Zahlenfelder wie Port oder Baudrate gehören nur Ziffern. Ein falscher Wert kann verhindern, dass der Dienst startet. Steht das Dashboard nach dem Speichern auf „Gestoppt“, korrigieren Sie den zuletzt geänderten Wert und speichern erneut.
 
 ### 3.4 Bon-Layout
 
@@ -162,19 +158,46 @@ Hier legen Sie fest, wie der gedruckte Bon aussieht: Trennlinien, Trennzeichen, 
 
 Diese Seite hat nur **Speichern**. Danach auf dem **Dashboard** auf **Neu starten** klicken, sonst druckt die Kasse weiter mit dem alten Layout.
 
-### 3.5 Info und Lizenzen
+### 3.5 Lizenzen und Info
+
+Die Seite **Lizenzen** zeigt oben die **Installations-ID** dieser Installation. Darunter steht für jede Lizenz ein Feld für den Schlüssel:
+
+- **Kasse (Hauptlizenz)**: Ohne gültigen Schlüssel startet der Dienst nicht.
+- **Pager** und **Leaderboard**: die Zusatzfunktionen, jeweils mit dem Schalter **aktiviert**. Eine Funktion läuft nur mit eingeschaltetem Schalter und gültigem Schlüssel.
+
+Unter jedem Feld zeigt die Kasse, ob der Schlüssel wirklich funktioniert: **Gültig** (mit Ablaufdatum, falls der Schlüssel eines hat), **Abgelaufen**, **Gehört zu einer anderen Installation**, **Schlüssel für eine andere Funktion**, **Ungültiger Schlüssel** (meist unvollständig kopiert) oder **Kein Schlüssel eingetragen**. Die Prüfung läuft schon beim Einfügen, vor dem Speichern.
+
+So bekommen Sie einen Schlüssel:
+
+1. Neben der Installations-ID auf das Kopier-Symbol klicken.
+2. Eine Mail an **kontakt@nfc-kasse.de** schreiben (falls die nicht erreichbar ist: **info@nfc-kasse.de**), die Installations-ID einfügen und dazuschreiben, welche Lizenz Sie brauchen.
+3. Den Schlüssel aus der Antwort in das passende Feld einfügen, bei Pager oder Leaderboard den Schalter **aktiviert** einschalten und **Speichern & Dienst neu starten** klicken.
+
+Wie Pager und Leaderboard danach eingerichtet werden, steht in der Anleitung [Zusatzfunktionen Pager und Leaderboard](Zusatzfunktionen_Pager_Leaderboard.md).
 
 ![Verwaltungstool, Seite Info mit Version, Installations-ID und Ordnern](../images/bedieneranleitung/windows/07b_verwaltung_info.png)
 
-Die Seite zeigt die Version des Verwaltungstools, die **Installations-ID** und die Ordner von Programm, Daten und Protokollen. Mit dem Symbol rechts kopieren Sie den jeweiligen Wert.
+Die Seite **Info** zeigt die Version des Verwaltungstools, die Installations-ID und die Ordner von Programm, Daten und Protokollen. Mit dem Symbol rechts kopieren Sie den jeweiligen Wert.
 
-So bekommen Sie eine Lizenz für Pager oder Leaderboard:
+### 3.6 Veranstalter
 
-1. Auf **Info** neben der Installations-ID auf das Kopier-Symbol klicken.
-2. Eine Mail an **kontakt@nfc-kasse.de** schreiben (falls die nicht erreichbar ist: **info@nfc-kasse.de**), die Installations-ID einfügen und dazuschreiben, welche Funktion Sie möchten.
-3. Den Schlüssel aus der Antwort unter **Konfiguration** in das passende Lizenzfeld einfügen, den Schalter **… aktiviert** einschalten und **Speichern & Dienst neu starten** klicken.
+Ein Server kann die Kassen mehrerer Veranstalter verwalten, zum Beispiel wenn er für verschiedene Vereine oder Weingüter im Einsatz ist. Jeder Veranstalter hat seine eigene, komplett getrennte Kasse: eigene Benutzer und Rechte, eigene Kategorien und Artikel, eigene Chips mit eigenem Guthaben und eigene Feste. In Betrieb ist immer genau einer. Nur dessen Benutzer können sich anmelden.
 
-Der Schlüssel gilt nur für diese Installation. Wie die Funktionen danach eingerichtet werden, steht in der Anleitung Zusatzfunktionen Pager und Leaderboard.
+Bei der Installation gibt es einen Veranstalter „Lokal“. Für eine einzige Kasse brauchen Sie diese Seite nicht.
+
+**Neuen Veranstalter anlegen**
+
+1. Seite **Veranstalter** öffnen und auf **Neuer Veranstalter** klicken.
+2. **Name** eingeben, dazu **Benutzername** und **Passwort** des ersten Administrators (mindestens 6 Zeichen, zweimal). Mit diesem Konto richtet der Veranstalter seine Kasse ein.
+3. **Anlegen**. Der neue Veranstalter startet leer und im internen Betrieb.
+
+**Zu einem anderen Veranstalter wechseln**
+
+1. Beim laufenden Veranstalter muss das Fest beendet sein (Abschnitt 11.3).
+2. Beim gewünschten Veranstalter auf **Aktivieren** klicken und die Rückfrage bestätigen.
+3. Das Verwaltungstool sichert vorher automatisch. Danach sind alle Kassen abgemeldet. Jede meldet sich mit einem Konto des neuen Veranstalters wieder an.
+
+Chips haben bei jedem Veranstalter ein eigenes Guthaben. Derselbe Chip ist beim anderen Veranstalter ein neuer Chip. Seiten **Feste** und **Konfiguration** (Name und Pfand) zeigen immer den Veranstalter in Betrieb. Umbenennen geht mit dem Stift neben dem Namen.
 
 ## 4. Erster Start der Kasse
 
@@ -216,6 +239,8 @@ Auf dem Smartphone ist die Seitenleiste eingeklappt. Sie öffnet sich mit dem Me
 
 Kategorien sind die Gruppen in der Seitenleiste, meist eine pro Stand, zum Beispiel „Bonkasse“, „Bar“ und „Essen“. Artikel sind die Kacheln, die an der Kasse angetippt werden. Welche Kategorien ein Mitarbeiter sieht, legen Sie in Abschnitt 6 fest.
 
+Kategorien und Artikel legen Sie einmal an, sie bleiben über alle Feste erhalten. Pro Fest entscheiden Sie nur, welche davon die Kassen zeigen (Abschnitt 5.6). So haben Sie zum Beispiel einen festen Stamm von Kategorien und schalten für jedes Fest die passenden ein. Preis, Bestand und Farbe eines Artikels sind in jedem Fest gleich.
+
 ### 5.1 Kategorie anlegen
 
 1. In der Seitenleiste unter den Kategorien auf **Neue Kategorie** tippen.
@@ -223,7 +248,9 @@ Kategorien sind die Gruppen in der Seitenleiste, meist eine pro Stand, zum Beisp
 
 ![Dialog „Neue Kategorie“](../images/bedieneranleitung/app/tablet/11_neue_kategorie.png)
 
-Umbenennen oder löschen: In der Kasse unten in der Seitenleiste **Bearbeitungsmodus** einschalten. Neben jeder Kategorie erscheint ein Stift. Antippen, Namen ändern und speichern, oder die Kategorie löschen. Löschen kann nur, wer das Recht „Kategorie löschen“ hat.
+Eine neue Kategorie ist im laufenden Fest sofort eingeschaltet.
+
+Umbenennen, ausblenden oder löschen: In der Kasse unten in der Seitenleiste **Bearbeitungsmodus** einschalten. Neben jeder Kategorie erscheint ein Stift. Antippen, Namen ändern und speichern, mit **In diesem Fest anzeigen** für dieses Fest ausblenden (Recht „Kategorie deaktivieren“) oder die Kategorie löschen (Recht „Kategorie löschen“). Gelöscht ist sie in allen Festen.
 
 Tipp: Legen Sie für die Bonkasse eine eigene Kategorie an. Dort liegen die Aufladeartikel und der Auszahlungs-Artikel, und nur das Personal der Bonkasse bekommt Zugriff darauf.
 
@@ -234,7 +261,7 @@ Tipp: Legen Sie für die Bonkasse eine eigene Kategorie an. Dort liegen die Aufl
 3. **Name** eingeben, so wie er auf der Kachel stehen soll, zum Beispiel „Bier 0,5 l“.
 4. **Preis (€)** eingeben, mit Punkt: `4.00`.
 5. Bei Bedarf weitere Felder ausfüllen (Tabelle unten).
-6. **Speichern**. Die Kachel erscheint sofort auf allen Kassen dieser Kategorie.
+6. **Speichern**. Die Kachel erscheint sofort auf allen Kassen dieser Kategorie. Ein neuer Artikel ist im laufenden Fest eingeschaltet.
 
 ![Artikelverwaltung mit den Kategorien Bonkasse und Bar und dem Knopf „Neuer Artikel“](../images/bedieneranleitung/app/tablet/13_artikelverwaltung.png)
 
@@ -243,13 +270,14 @@ Tipp: Legen Sie für die Bonkasse eine eigene Kategorie an. Dort liegen die Aufl
 | Feld | Wofür |
 | --- | --- |
 | Name | Beschriftung der Kachel und Name auf dem Bon. |
-| Preis (€) | Verkaufspreis. Ein negativer Preis ist eine Gutschrift, zum Beispiel `-2.00` für „Becherpfand zurück“. |
-| Guthaben Aufladung | Macht den Artikel zum Aufladeartikel. Das Preisfeld heißt dann **Auflade-Betrag (€)**, dort tragen Sie den Betrag positiv ein, z. B. `10`. Aufladungen zählen automatisch nicht zum Umsatz. |
-| Auszahlungs-Artikel | Zahlt beim Buchen das ganze Restguthaben plus Chip-Pfand aus. Als Preis `0` eintragen. Ein solcher Artikel reicht pro Bonkasse. |
-| Von Statistik ausschließen | Der Artikel zählt nicht zum Umsatz, sinnvoll zum Beispiel für Becherpfand. |
+| Preis (€) | Verkaufspreis. Ein negativer Preis ist eine Gutschrift für den Gast und braucht beim Buchen das Recht **Aufladen** (Abschnitt 6.2). Für Becherpfand nehmen Sie deshalb einen Pfand-Artikel. |
+| Guthaben Aufladung | Macht den Artikel zum Aufladeartikel. Das Preisfeld heißt dann **Auflade-Betrag (€)**, dort tragen Sie den Betrag positiv ein, z. B. `10`. Aufladungen zählen automatisch nicht zum Umsatz. Buchen darf sie nur, wer das Recht **Aufladen** hat. |
+| Pfand-Artikel | Für Becher- oder Flaschenpfand: „Pfand +“ mit positivem Preis, „Pfand −“ mit negativem Preis. Pfand-Artikel zählen nicht zum Umsatz und brauchen kein Recht Aufladen. |
+| Auszahlungs-Artikel | Zahlt beim Buchen das ganze Restguthaben plus Chip-Pfand aus. Als Preis `0` eintragen. Ein solcher Artikel reicht pro Bonkasse. Buchen darf ihn nur, wer das Recht **Auszahlen** hat. |
+| Von Statistik ausschließen | Der Artikel zählt nicht zum Umsatz. |
 | Bestand (leer = unbegrenzt) | Anzahl, die verkauft werden kann. Jede Buchung zählt herunter. Ab 10 Stück warnt die Kasse beim Buchen, bei 0 ist die Kachel rot-weiß umrandet und nicht mehr buchbar. |
-| Aktiv (buchbar) | Erscheint erst beim Bearbeiten. Ausgeschaltet bleibt die Kachel grau sichtbar, kann aber nicht gebucht werden. |
-| Button-Farbe | Erscheint erst beim Bearbeiten. Farbe der Kachel für Ihr Benutzerkonto (Abschnitt 5.5), das erste Feld bedeutet „keine Farbe“. |
+| Aktiv (buchbar) | Erscheint erst beim Bearbeiten und nur mit dem Recht Deaktivieren. Ausgeschaltet bleibt die Kachel grau sichtbar, kann aber nicht gebucht werden. |
+| Standard-Farbe | Farbe der Kachel auf allen Kassen. Jedes Konto kann sie für sich selbst umfärben (Abschnitt 5.5). Das erste Feld bedeutet „keine Farbe“. |
 | Leaderboard-Punkte, Pager erforderlich | Nur sichtbar, wenn die Zusatzfunktion freigeschaltet ist. Erklärt in der Anleitung Zusatzfunktionen. |
 
 Für die Bonkasse bewähren sich die Aufladeartikel „Aufladen 5 €“, „10 €“, „20 €“ und „50 €“ plus ein Auszahlungs-Artikel „Auszahlung“.
@@ -280,7 +308,7 @@ So sieht das an der Kasse aus: Kachel **Currywurst** antippen, dann die gewünsc
 
 ### 5.4 Artikel ändern, verschieben, löschen
 
-- **Ändern**: In der Artikelverwaltung den Artikel antippen, ändern, **Speichern**. Ein neuer Preis gilt nur für neue Buchungen.
+- **Ändern**: In der Artikelverwaltung den Artikel antippen, ändern, **Speichern**. Ein neuer Preis gilt nur für neue Buchungen, dann aber in jedem Fest, in dem der Artikel eingeschaltet ist.
 - **In eine andere Kategorie verschieben**: Den Artikel lange drücken und auf die Karte der anderen Kategorie ziehen.
 - **Löschen**: Im Dialog unten links **Löschen**. Artikel, die schon verkauft wurden, besser mit **Aktiv (buchbar)** ausschalten. Dann bleiben sie für die Auswertung erkennbar und lassen sich später wieder einschalten.
 
@@ -294,11 +322,21 @@ So sieht das an der Kasse aus: Kachel **Currywurst** antippen, dann die gewünsc
 
 ![Kasse im Bearbeitungsmodus: Stifte neben den Kategorien, Knöpfe für leere Positionen unten rechts](../images/bedieneranleitung/app/tablet/10_bearbeitungsmodus.png)
 
-Anordnung und Farbe der Kacheln speichert die Kasse für das Benutzerkonto, mit dem Sie sie ändern, getrennt für Hoch- und Querformat. Sie gelten auf jedem Gerät, an dem sich dieses Konto anmeldet, andere Konten sehen ihre eigene Anordnung. Richten Sie die Kacheln deshalb mit dem Konto ein, das später am Stand kassiert. Der Bestand gilt dagegen für alle Kassen.
+Anordnung und eigene Farbe der Kacheln speichert die Kasse für das Benutzerkonto, mit dem Sie sie ändern, getrennt für Hoch- und Querformat. Sie gelten auf jedem Gerät, an dem sich dieses Konto anmeldet, andere Konten sehen ihre eigene Anordnung. Richten Sie die Kacheln deshalb mit dem Konto ein, das später am Stand kassiert. Der Bestand gilt dagegen für alle Kassen.
+
+### 5.6 Was ein Fest zeigt
+
+Die **Artikelverwaltung** zeigt alle Kategorien und Artikel, auch die, die im laufenden Fest ausgeblendet sind. Ausgeblendete stehen grau mit dem Zusatz „nicht in diesem Fest“.
+
+- Der Schalter **Im Fest** neben einer Kategorie blendet sie für das laufende Fest ein oder aus. Dafür braucht es das Recht „Kategorie deaktivieren“. Wird eine Kategorie zum ersten Mal in einem Fest eingeschaltet, kommen alle ihre Artikel mit.
+- Der Schalter neben einem Artikel blendet ihn für das laufende Fest ein oder aus, mit seinen Optionen. Dafür braucht es in der Kategorie das Recht „Deaktivieren“.
+- Ausgeblendet heißt: nicht in der Kasse und nicht buchbar. Anders als **Aktiv (buchbar)** im Artikel-Dialog: Ein inaktiver Artikel steht grau in der Kasse, zum Beispiel wenn er ausverkauft ist, und das in jedem Fest.
+
+Welche Kategorien ein neues Fest zeigt, wählen Sie beim Start im Verwaltungstool (Abschnitt 11.2). Andere Kassen sehen ein Ein- oder Ausblenden spätestens nach dem nächsten Neuladen, zum Beispiel nach einer Anmeldung.
 
 ## 6. Mitarbeiter-Konten und Rechte
 
-Jede Person, die kassiert, bekommt ein eigenes Konto. So sieht sie nur ihre Kategorien, und in der Auswertung ist erkennbar, wer was gebucht hat. Rechte gibt es auf zwei Ebenen: **globale Berechtigungen** für Aufgaben außerhalb der Kasse und **Rechte pro Kategorie** für Buchen, Storno und Artikel.
+Jede Person, die kassiert, bekommt ein eigenes Konto. So sieht sie nur ihre Kategorien, und in der Auswertung ist erkennbar, wer was gebucht hat. Rechte gibt es auf zwei Ebenen: **globale Berechtigungen** für Aufgaben außerhalb der Kasse und **Rechte pro Kategorie** für Buchen, Storno und Artikel. Konten und Rechte gelten in jedem Fest (Abschnitt 6.6).
 
 ### 6.1 Konto anlegen
 
@@ -318,36 +356,43 @@ Jede Person, die kassiert, bekommt ein eigenes Konto. So sieht sie nur ihre Kate
 
 | Gruppe | Häkchen | Wirkung |
 | --- | --- | --- |
-| Kategorien | Kategorie erstellen, bearbeiten, deaktivieren, löschen | Wer auch nur eines davon hat, gilt als **Verantwortlicher**: Er sieht alle Kategorien, darf dort alles und unbegrenzt stornieren. |
-| Statistik & Finanzen | Umsatz einsehen | Statistik mit Übersicht und Chips, Tagesabschluss, Neues Event |
+| Guthaben | Aufladen | Aufladeartikel buchen (Artikel mit „Guthaben Aufladung“, Abschnitt 9.4). Zusätzlich braucht die Person **Buchen** in der Kategorie, in der der Aufladeartikel liegt. |
+|  | Auszahlen | Den Auszahlungs-Artikel buchen (Abschnitt 9.6). Dafür ist kein Recht pro Kategorie nötig. |
+| Kategorien | Kategorie erstellen, bearbeiten, deaktivieren, löschen | Wer auch nur eines davon hat, gilt als **Verantwortlicher**: Er sieht alle Kategorien, darf dort buchen, unbegrenzt stornieren und alle Artikel verwalten. |
+| Statistik & Finanzen | Umsatz einsehen | Statistik mit den Reitern Übersicht und Chips, Tagesabschluss (Abschnitt 10 und 11.1) |
 |  | Transaktionen einsehen | Reiter Transaktionen in der Statistik |
-|  | Daten exportieren | Export der Daten |
-| Benutzerverwaltung | Benutzer anzeigen, erstellen, bearbeiten, deaktivieren, löschen, Rechte vergeben | Konten verwalten wie in diesem Abschnitt |
+| Benutzerverwaltung | Benutzer anzeigen, erstellen, bearbeiten, deaktivieren, löschen | Konten verwalten wie in diesem Abschnitt |
+|  | Rechte vergeben | Rechte anderer Konten ändern. Erst mit diesem Häkchen erscheint **Benutzer** in der Seitenleiste, dazu gehört meist **Benutzer anzeigen**. |
 | Notfall | Notfall-Kontakt | Bekommt die Hilfe-Anfragen der Kassen (Abschnitt 9.8) |
 | Bon-Druck | Bon drucken | Darf ohne Chip verkaufen und Papierbons drucken (Abschnitt 8.6) |
-| Kundenterminal | Kiosk-Modus | Das Konto zeigt nur die Guthaben-Abfrage für Gäste (Abschnitt 12.4) |
-| Protokolle | Protokolle einsehen, Protokoll-Level verwalten | Protokolle in der App ansehen, bei Problemen |
+| Kundenterminal | Kiosk-Modus | Hat ein Konto nur dieses eine Häkchen und keine Kategorie, zeigt es nur die Guthaben-Abfrage für Gäste (Abschnitt 12.4). Bei einem Konto mit weiteren Rechten wirkt es nicht. |
+| Protokolle | Protokolle einsehen | Menüpunkt **Protokolle** mit den Protokollen aller Geräte |
+|  | Protokoll-Level verwalten | Im selben Menüpunkt festlegen, wie ausführlich jedes Gerät protokolliert |
 
-Aufladen und Auszahlen an der Bonkasse erlaubt das Recht **Buchen** in der Kategorie der Bonkasse. Die Häkchen unter **Guthaben** brauchen Sie dafür nicht.
+Für Feste, Festvorlagen, die Abrechnung als CSV und Datensicherungen gibt es kein Recht in der Kasse. Das alles geht nur im Verwaltungstool am Server-Laptop (Abschnitt 11).
+
+Das letzte aktive Konto mit **Rechte vergeben** lässt sich nicht deaktivieren oder löschen. So kann sich niemand aus der Rechteverwaltung aussperren.
 
 ### 6.3 Rechte pro Kategorie
 
 Unter **Kategorien & Berechtigungen** steht jede Kategorie mit einem aufklappbaren Baum:
 
-- **Buchungen → Buchen**: Die Person sieht die Kategorie und darf dort verkaufen. Ohne dieses Häkchen bleibt die Kategorie für sie unsichtbar.
+- **Buchungen → Buchen**: Die Person darf in dieser Kategorie verkaufen.
 - **Buchungen → Storno** mit **5 min** oder **Unbegrenzt**: Mit „5 min“ darf die Person eine Buchung nur in den ersten fünf Minuten zurücknehmen, mit „Unbegrenzt“ jederzeit. Es gilt immer nur eins von beiden.
-- **Positionen → Erstellen, Bearbeiten, Deaktivieren, Löschen**: Artikel dieser Kategorie verwalten (Abschnitt 5).
+- **Positionen → Erstellen, Bearbeiten, Deaktivieren, Löschen**: Artikel dieser Kategorie verwalten (Abschnitt 5). Wer **Deaktivieren** hat, sieht auch die ausgeschalteten Artikel.
 
-Ein Häkchen an der Kategorie selbst setzt oder entfernt alle Rechte darunter auf einmal.
+Die Kategorie erscheint in der Seitenleiste, sobald die Person dort mindestens ein Recht hat. Ohne jedes Recht bleibt sie unsichtbar. Ein Häkchen an der Kategorie selbst setzt oder entfernt alle Rechte darunter auf einmal.
+
+Verantwortliche (Abschnitt 6.2) brauchen hier nichts, sie haben in jeder Kategorie alle Rechte.
 
 ### 6.4 Bewährte Einstellungen
 
 | Rolle | Globale Berechtigungen | Rechte pro Kategorie |
 | --- | --- | --- |
 | Standpersonal, z. B. Bar | keine | Bar: Buchen, Storno 5 min |
-| Bonkasse | bei Barverkauf mit Bon: Bon drucken | Bonkasse: Buchen, Storno 5 min |
-| Schichtleitung | Kategorie bearbeiten, Umsatz einsehen, Notfall-Kontakt | keine nötig, sieht als Verantwortliche alles |
-| Gäste-Terminal | Kiosk-Modus | keine |
+| Bonkasse | Aufladen, Auszahlen, bei Barverkauf mit Bon zusätzlich Bon drucken | Bonkasse: Buchen, Storno 5 min |
+| Schichtleitung | Kategorie bearbeiten, Umsatz einsehen, Notfall-Kontakt, bei Bedarf Aufladen und Auszahlen | keine nötig, sieht als Verantwortliche alles |
+| Gäste-Terminal | nur Kiosk-Modus | keine |
 
 Ein Gerät, an dem sich alle Leute eines Standes abwechseln, kann auch mit einem gemeinsamen Konto pro Stand laufen, zum Beispiel „bar“. Dann ist in der Auswertung aber nicht mehr erkennbar, wer gebucht hat.
 
@@ -355,6 +400,12 @@ Ein Gerät, an dem sich alle Leute eines Standes abwechseln, kann auch mit einem
 
 - **Passwort ändern**: Benutzer → Stift beim Konto → **Neues Passwort** eingeben → **Speichern**. Leer lassen bedeutet: unverändert.
 - **Konto sperren**: Das Häkchen **Aktiv** entfernen. Die Person kann sich nicht mehr anmelden, ihre Buchungen bleiben in der Auswertung erhalten. Das ist besser als Löschen.
+
+### 6.6 Rechte und Feste
+
+Konten, globale Berechtigungen und Rechte pro Kategorie gehören dem Veranstalter, nicht einem Fest. Sie gelten unverändert im internen Betrieb und in jedem Fest, auch in künftigen. Eine Änderung während eines Festes bleibt nach dem Fest erhalten.
+
+Unter **Kategorien & Berechtigungen** stehen alle Kategorien, auch die, die das laufende Fest ausblendet. Sie tragen den Zusatz „nicht in diesem Fest“. So lassen sich Rechte schon für das nächste Fest vergeben.
 
 ## 7. Bluetooth-NFC-Leser verbinden
 
@@ -454,11 +505,11 @@ Im Verwaltungstool auf der Seite **Konfiguration**, Bereich **Bon-Inhalt**:
 
 | Schalter oder Feld | Wirkung |
 | --- | --- |
-| Veranstaltungsname anzeigen | Name der Veranstaltung oben, fett und mittig |
+| Veranstaltungsname anzeigen | Name des laufenden Festes oben, fett und mittig |
 | Datum + Uhrzeit anzeigen | Datum und Uhrzeit des Verkaufs, mittig |
 | Preis anzeigen | Preis des Artikels |
 | Fußzeilentext | Eine Zeile unter dem Artikel, zum Beispiel „Vielen Dank!“ oder „Nur am 04.10. gültig“. Leer = keine Zeile. |
-| Kassierer anzeigen | Name der Person, die gedruckt hat. Es wird der Anzeigename aus dem Benutzerkonto gedruckt. |
+| Kassierer anzeigen | Name der Person, die gedruckt hat. Es wird der Anzeigename aus dem Benutzerkonto gedruckt, ohne Anzeigenamen der Benutzername. |
 | Kassierer-Bezeichnung | Wort vor dem Namen, zum Beispiel „Kassierer“ oder „Bedienung“ |
 
 Danach **Speichern & Dienst neu starten**.
@@ -550,6 +601,8 @@ Beispiel bei 3 € Pfand: Der Gast zahlt 20 € bar, Sie buchen „Aufladen 20 �
 
 ### 9.4 Guthaben aufladen (Bonkasse)
 
+Dafür braucht das Konto das Recht **Aufladen** und **Buchen** in der Kategorie der Bonkasse (Abschnitt 6.2). Fehlt eines davon, lehnt die Kasse die Buchung ab.
+
 1. Die Kategorie der Bonkasse wählen.
 2. Aufladeartikel antippen, zum Beispiel zweimal „Aufladen 10 €“ für 20 €. Der Betrag steht im Warenkorb grün mit Minus davor, das ist eine Gutschrift für den Gast.
 3. Den Chip scannen.
@@ -569,6 +622,8 @@ Nach jeder Buchung erscheint unter dem großen Knopf **Letzte Buchung stornieren
 Stornieren lässt sich nur die letzte Buchung dieses Geräts. Nach der nächsten Buchung geht das nicht mehr. Wer nur „Storno 5 min“ hat, kann außerdem nur in den ersten fünf Minuten stornieren. Danach meldet die Kasse „Storno-Zeitfenster von 5 Minuten abgelaufen“, dann die Schichtleitung holen.
 
 ### 9.6 Guthaben auszahlen (Bonkasse)
+
+Dafür braucht das Konto das Recht **Auszahlen** (Abschnitt 6.2).
 
 1. Die Kategorie der Bonkasse wählen und den Chip scannen.
 2. Den Auszahlungs-Artikel antippen, zum Beispiel „Auszahlung“. Er muss allein im Warenkorb liegen.
@@ -609,7 +664,7 @@ Die Statistik zeigt Umsatz, alle Buchungen und den Stand jedes Chips, live währ
 
 ### 10.1 Zeitraum wählen
 
-Die Buchungen sind in **Perioden** eingeteilt, meist eine pro Veranstaltungstag. Eine neue Periode beginnt mit jedem Tagesabschluss (Abschnitt 11).
+Die Statistik zeigt immer den Betrieb, der gerade läuft: das aktuelle Fest oder den internen Betrieb (Abschnitt 11). Die Buchungen sind in **Perioden** eingeteilt, meist eine pro Veranstaltungstag. Eine neue Periode beginnt mit jedem Fest und mit jedem Tagesabschluss.
 
 1. Oben auf das Feld mit dem Kalender tippen. Es zeigt die aktuelle Periode, zum Beispiel „Start (aktiv seit 03.10. 18:34)“.
 2. Im Fenster **Zeitraum auswählen** eine oder mehrere Perioden ankreuzen, oder **Alle Zeiten** für alles seit Beginn.
@@ -646,20 +701,33 @@ Die Buchungen sind in **Perioden** eingeteilt, meist eine pro Veranstaltungstag.
 
 Darunter steht jeder Chip mit Nummer, letzter Buchung, Guthaben und Status: **Aktiv** (beim Gast) oder **Frei** (ausgezahlt). Mit **Chip-UID suchen** finden Sie einen bestimmten Chip.
 
-Für den Kassensturz an der Bonkasse zeigt **Aufgeladen**, wie viel Bargeld im Zeitraum für Aufladungen eingenommen wurde. Ein Export der Daten als Datei ist im Server vorgesehen, hat in der App aber noch keinen Knopf.
+Für den Kassensturz an der Bonkasse zeigt **Aufgeladen**, wie viel Bargeld im Zeitraum für Aufladungen eingenommen wurde. Die Abrechnung als CSV-Datei für die Buchhaltung erstellen Sie im Verwaltungstool (Abschnitt 11.4).
 
-## 11. Tagesabschluss und Neues Event
+## 11. Feste, Tagesabschluss und Datensicherung
 
-Beide Knöpfe stehen oben in der **Statistik** und brauchen das Recht **Umsatz einsehen**.
+Die Kasse läuft immer in einem von zwei Zuständen:
 
-|  | Tagesabschluss | Neues Event |
-| --- | --- | --- |
-| Wann | am Ende jedes Veranstaltungstags | wenn die ganze Veranstaltung vorbei ist und die Chips für die nächste wieder ausgegeben werden |
-| Was passiert | Die aktuelle Periode endet, eine neue beginnt | Tagesabschluss plus: Alle Guthaben werden auf 0,00 € gesetzt, jeder Chip gilt wieder als neu |
-| Guthaben der Gäste | bleiben erhalten | sind weg |
-| Artikel, Benutzer, Buchungsverlauf | bleiben | bleiben |
+- **Fest läuft**: Buchungen, Statistik, Pager und Leaderboard gehören zu diesem Fest. Sein Name steht auf den Bons.
+- **Interner Betrieb**: Es läuft kein Fest. Die Kasse funktioniert trotzdem, die Buchungen laufen auf „Intern“ mit eigener Statistik. Im internen Betrieb gibt es keinen Tagesabschluss und keine Leaderboard-Punkte.
+
+Guthaben und Chips gehören keinem Fest. Sie bleiben beim Starten und Beenden eines Festes vollständig erhalten. Wer am Ende noch Guthaben hat, kann es beim nächsten Fest ausgeben oder es sich an der Bonkasse auszahlen lassen.
+
+Bei der Installation legt NFC-Kasse automatisch ein erstes Fest „Hauptveranstaltung“ ohne Pfand an. Name und Pfand ändern Sie im Verwaltungstool unter **Konfiguration** (Abschnitt 3.3).
+
+Kategorien, Artikel, Konten und Rechte gehören keinem Fest, ein Fest blendet nur Kategorien und Artikel ein (Abschnitt 5.6).
+
+|  | Tagesabschluss | Fest beenden | Fest starten |
+| --- | --- | --- | --- |
+| Wo | Kasse, **Statistik** | Verwaltungstool, Seite **Feste** | Verwaltungstool, Seite **Feste** |
+| Wann | am Ende jedes Veranstaltungstags | wenn die Veranstaltung vorbei ist | vor der nächsten Veranstaltung |
+| Was passiert | Die aktuelle Periode endet, eine neue beginnt | Das Fest wird archiviert, offene Pager werden geschlossen, die Kasse wechselt in den internen Betrieb | Ein neues Fest mit Name, Pfand und den gewählten Kategorien beginnt, die Statistik zählt ab null |
+| Guthaben der Gäste | bleiben | bleiben | bleiben |
+
+Die Kassen merken jeden Wechsel nach wenigen Sekunden von selbst. Niemand muss sich neu anmelden.
 
 ### 11.1 Tagesabschluss machen
+
+Dafür braucht das Konto das Recht **Umsatz einsehen**. Der Knopf erscheint nur, während ein Fest läuft.
 
 1. In der Seitenleiste **Statistik** öffnen.
 2. Oben rechts auf **Tagesabschluss** tippen.
@@ -670,22 +738,57 @@ Beide Knöpfe stehen oben in der **Statistik** und brauchen das Recht **Umsatz e
 
 Danach zählt die Statistik ab null für die neue Periode. Den abgeschlossenen Tag sehen Sie jederzeit wieder, indem Sie ihn oben im Zeitraum auswählen (Abschnitt 10.1). Der Tagesabschluss unterbricht den Verkauf nicht.
 
-Tipp: Starten Sie nach den Tests vor der Veranstaltung einmal **Neues Event** (Abschnitt 11.2). Dann haben die Testchips kein Guthaben mehr, und die Testbuchungen stehen nicht in den Zahlen des ersten Tages.
+### 11.2 Fest starten
 
-### 11.2 Neues Event starten
+1. Im Verwaltungstool die Seite **Feste** öffnen. Oben muss **Interner Betrieb** stehen. Läuft noch ein Fest, beenden Sie es zuerst (Abschnitt 11.3).
+2. **Fest starten …** klicken.
+3. **Festname** eingeben. Er steht auf jedem Bon. Pflichtfeld.
+4. **Pfand pro Chip (€)** eingeben, `0` für kein Pfand. Pflichtfeld. Er gilt für Chips, die ab jetzt neu ausgegeben werden. Chips, die schon beim Gast sind, behalten ihren Pfand. **Datum** ist optional.
+5. Unter **Artikel & Warengruppen** wählen, woran sich das Fest orientiert:
+   - **Artikel aus „Intern“** oder **Artikel aus** einem früheren Fest: Das neue Fest zeigt dieselben Kategorien und Artikel wie dieses.
+   - **Ohne Vorlage — Warengruppen unten wählen**: nur die Kategorien, die Sie darunter ankreuzen.
+   - **Aus Vorlagen-Datei …**: eine Festvorlage (Abschnitt 11.5). Danach ankreuzen, was übernommen wird: Artikel & Warengruppen, Bon-Layout, Drucker-Einstellungen, Fußzeile & Kassierer-Text.
+6. Unter **Warengruppen in diesem Fest** die Auswahl prüfen. Angekreuzt sind die Kategorien der gewählten Quelle. Eine zusätzlich angekreuzte Kategorie kommt mit allen ihren Artikeln. Einzelne Artikel blenden Sie später in der Artikelverwaltung ein und aus (Abschnitt 5.6).
+7. **Bestände zurücksetzen** nur einschalten, wenn alle Artikel des Festes ohne Bestandszählung (unbegrenzt) starten sollen. Sonst zählt der Bestand weiter, denn er gehört dem Artikel.
+8. **Fest starten** klicken. Das Verwaltungstool legt vorher automatisch eine Sicherung an.
+9. Wurden Bon-Layout, Drucker oder Texte aus einer Vorlage übernommen, fragt das Tool, ob der Dienst jetzt neu starten soll. Erst danach gelten diese Einstellungen. Die Kassen sind dabei einige Sekunden nicht verbunden.
 
-**Achtung:** Neues Event löscht alle Guthaben auf allen Chips. Vorher müssen alle Gäste ausgezahlt sein. Prüfen Sie in der Statistik im Reiter **Chips**, ob **Guthaben gesamt** bei 0,00 € steht oder nur noch Restbeträge offen sind, die Sie bewusst verfallen lassen.
+Konten und Rechte müssen Sie nicht neu vergeben, sie gelten in jedem Fest.
 
-1. In der **Statistik** oben rechts auf **Neues Event** tippen.
-2. Die Warnung lesen: Alle Guthaben werden auf 0,00 € gesetzt, alle Chips gelten beim nächsten Scan als neue Kunden und der Pfand wird wieder erhoben.
-3. Bei **Bezeichnung der neuen Periode** einen Namen eintragen, zum Beispiel den Namen der nächsten Veranstaltung.
-4. **Zurücksetzen** tippen. Die Meldung „Alle Chips zurückgesetzt — bereit für neues Event.“ erscheint.
+Tipp: Testen Sie vor der Veranstaltung im internen Betrieb und starten Sie das Fest erst danach. Dann stehen die Testbuchungen nicht in den Zahlen des Festes. Das Guthaben der Testchips bleibt aber erhalten, zahlen Sie die Testchips deshalb vorher aus.
 
-![Warnung „Neues Event starten“ mit der Liste, was zurückgesetzt wird](../images/bedieneranleitung/app/tablet/21_neues_event_dialog.png)
+### 11.3 Fest beenden
 
-Artikel, Benutzer und der ganze Buchungsverlauf bleiben erhalten. Auch die Punkte des Leaderboards werden nicht zurückgesetzt. Den Namen der Veranstaltung auf Bons und in der Kasse ändern Sie im Verwaltungstool (Abschnitt 3.3).
+1. Im Verwaltungstool die Seite **Feste** öffnen und **Fest beenden …** klicken.
+2. Das Fenster zeigt, wann zuletzt gebucht wurde, ob noch Bons ungedruckt oder Pager offen sind und wie viele Chips noch Restguthaben haben. Wird an den Kassen noch gebucht, warten Sie damit. Eine Buchung, die genau beim Wechsel ankommt, lehnt die Kasse ab, sie muss am Tablet wiederholt werden.
+3. **Fest beenden** klicken. Das Verwaltungstool legt vorher automatisch eine Sicherung an.
 
-Sichern Sie die Daten vor dem Neuen Event: Im Verwaltungstool auf dem Dashboard **Neu starten** klicken. Dabei legt NFC-Kasse automatisch eine Sicherung an. Mehr dazu im Handbuch für Systemadministratoren, Abschnitt 10.
+Die Kasse läuft danach im internen Betrieb. Das beendete Fest steht unten in der Liste der Seite **Feste**. Dort können Sie es jederzeit als Abrechnung oder Vorlage speichern.
+
+### 11.4 Abrechnung als CSV
+
+1. Im Verwaltungstool auf der Seite **Feste** beim gewünschten Fest auf **Abrechnung als CSV (Buchungen, Artikel, Gesamtstatistik)** klicken.
+2. Den Zeitraum wählen: **Gesamter Zeitraum** oder einzelne Perioden. **Weiter**.
+3. Speicherort wählen.
+
+### 11.5 Festvorlagen
+
+Eine Festvorlage ist eine Datei mit allem, was ein Fest vorbereitet: die eingeschalteten Kategorien, Artikel mit Preisen, Optionen und Farben, Pfand, Bon-Layout, Drucker-Einstellungen und Bon-Texte. Guthaben, Chips, Buchungen, Benutzer und Lizenzen sind nie enthalten.
+
+1. Im Verwaltungstool auf der Seite **Feste** beim gewünschten Fest **Als Festvorlage speichern** klicken.
+2. Speicherort wählen. Die Datei heißt `Festvorlage_` plus Festname, mit der Endung `.json`.
+
+Verwenden können Sie die Vorlage beim nächsten Fest (Abschnitt 11.2, **Aus Vorlagen-Datei …**), auch bei einem anderen Veranstalter oder auf einem anderen Server-Laptop. Kategorien und Artikel ordnet die Kasse dabei nach dem Namen zu: Vorhandene werden eingeblendet und bleiben, wie sie sind, fehlende werden aus der Vorlage angelegt.
+
+### 11.6 Datensicherung
+
+Auf der Seite **Daten** im Verwaltungstool sichern Sie die ganze Datenbank: alle Feste, Artikel, Benutzer, Buchungen und das Guthaben aller Chips.
+
+- **Jetzt sichern** legt sofort eine Sicherung an, auf Wunsch mit Bezeichnung. Das geht auch im laufenden Betrieb.
+- **Wiederherstellen** bei einer Sicherung in der Liste setzt die Datenbank auf diesen Stand zurück. Zur Bestätigung tippen Sie ein Wort ein. Der Dienst wird dafür kurz angehalten.
+- **Sicherung importieren** spielt eine Sicherungsdatei von einem USB-Stick oder einem anderen Laptop ein.
+
+Vor jedem Wiederherstellen und Importieren sichert das Tool automatisch den aktuellen Stand. Welche Sicherungen es automatisch anlegt und wo sie liegen, steht im Handbuch für Systemadministratoren, Abschnitt 10.
 
 ## 12. Ansicht, Kundenanzeige und Kiosk
 
@@ -743,14 +846,14 @@ Abmelden: Oben links fünfmal schnell hintereinander auf das Laden-Symbol neben 
 - Energiesparen und Ruhezustand am Server-Laptop ausgeschaltet (Handbuch für Systemadministratoren, Abschnitt 4)
 - NFC-Kasse installiert, im Verwaltungstool steht „Läuft“
 - Admin-Passwort geändert
-- Name der Veranstaltung und Chip-Pfand im Verwaltungstool eingetragen
+- Richtiger Veranstalter in Betrieb (Verwaltungstool, Seite Veranstalter, nur bei mehreren)
 - Kategorien, Artikel und Preise angelegt, in der Bonkasse Aufladeartikel und ein Auszahlungs-Artikel
-- Konten für alle Mitarbeiter mit ihren Kategorien, mindestens ein Notfall-Kontakt
+- Konten für alle Mitarbeiter mit ihren Kategorien, mindestens ein Notfall-Kontakt, an der Bonkasse die Rechte Aufladen und Auszahlen
 - Jedes Tablet: App installiert, angemeldet, die richtigen Kategorien erscheinen
 - NFC-Leser geladen und gekoppelt, Lesernummer auf dem Tablet notiert
 - Bondrucker: Testbon gedruckt (falls genutzt)
 - Testlauf: aufladen, verkaufen, stornieren, auszahlen
-- Danach **Neues Event** gestartet, damit keine Testdaten übrig sind
+- Testchips ausgezahlt, danach im Verwaltungstool das Fest mit Name, Pfand und den richtigen Kategorien gestartet (Abschnitt 11.2)
 - Server-Laptop einmal neu gestartet, der Dienst läuft danach von selbst
 - Ladegeräte für Tablets und Leser, Wechselgeld und Bargeld für Auszahlungen bereit
 
@@ -760,6 +863,7 @@ Abmelden: Oben links fünfmal schnell hintereinander auf das Laden-Symbol neben 
 | --- | --- |
 | Das Symbol oben rechts zeigt keine Verbindung zum Server | Ist das Gerät im WLAN der Kasse? Stimmt die Server-URL samt `:8000`? Im Verwaltungstool prüfen, ob der Dienst läuft, sonst **Starten**. |
 | Mit `nfc-kasse.lan` klappt die Anmeldung nicht | Auf der Anmeldeseite `http://192.168.1.2:8000` wählen. Den Router prüft das Handbuch für Systemadministratoren. |
+| Der Dienst startet nicht, das Dashboard steht auf „Gestoppt“ | Im Verwaltungstool die Seite **Lizenzen** prüfen: Steht bei der Hauptlizenz nicht **Gültig**, startet der Dienst nicht (Abschnitt 3.5). |
 | Nach dem Speichern im Verwaltungstool steht der Dienst auf „Gestoppt“ | Den zuletzt geänderten Wert prüfen, oft ein Komma statt Punkt im Chip-Pfand. Korrigieren und **Speichern & Dienst neu starten**. |
 | Eine Änderung im Verwaltungstool wirkt nicht | **Speichern & Dienst neu starten** benutzen, beim Bon-Layout danach **Neu starten**. |
 | „Nach Geräten suchen“ findet den Leser nicht | Leser eingeschaltet und geladen? Bluetooth am Gerät an? Im Browser: Chrome oder Edge, Adresse als vertrauenswürdig eingetragen (Abschnitt 7.3)? |
@@ -769,7 +873,10 @@ Abmelden: Oben links fünfmal schnell hintereinander auf das Laden-Symbol neben 
 | Buchen ist grau | Chip scannen. Ist Rest Guthaben rot, reicht das Guthaben nicht (Abschnitt 9.2). |
 | „Doppelbuchung verhindert — bitte 2 Sekunden warten“ | Dieselbe Buchung wurde zweimal getippt. Kurz warten und am Guthaben prüfen, ob die erste durchgegangen ist. |
 | „Storno-Zeitfenster von 5 Minuten abgelaufen“ | Die Schichtleitung holen (Abschnitt 9.5). |
-| „Keine Buchungsberechtigung für eine oder mehrere Warengruppen“ oder leere Seitenleiste | Dem Konto unter **Benutzer** die Kategorie mit **Buchen** geben (Abschnitt 6.3). |
+| „Keine Buchungsberechtigung für eine oder mehrere Warengruppen“ oder leere Seitenleiste | Dem Konto unter **Benutzer** die Kategorie mit **Buchen** geben (Abschnitt 6.3). Ist die Kategorie im laufenden Fest ausgeblendet, in der Artikelverwaltung einschalten (Abschnitt 5.6). |
+| „Berechtigung 'Aufladen' erforderlich“ oder „Berechtigung 'Auszahlen' erforderlich“ | Dem Konto unter **Benutzer** die globale Berechtigung **Aufladen** bzw. **Auszahlen** geben (Abschnitt 6.2). |
+| Eine Buchung wird abgelehnt: „Das Fest wurde gerade gewechselt“ oder „Ein Artikel ist in diesem Fest nicht mehr aktiv“ | Die Kasse lädt das Fest neu. Die Buchung wiederholen. Fehlt der Artikel danach, ist er im Fest ausgeblendet (Abschnitt 5.6). |
+| Alle Kassen sind abgemeldet, das Passwort passt nicht mehr | Im Verwaltungstool wurde der Veranstalter gewechselt (Abschnitt 3.6). Mit einem Konto des Veranstalters in Betrieb anmelden. |
 | Bons werden nicht gedruckt | Abschnitt 8.7. |
 | Alle Geräte wurden abgemeldet | Einfach neu anmelden. Passiert, wenn die Einstellungsdatei des Servers neu angelegt wurde. |
 

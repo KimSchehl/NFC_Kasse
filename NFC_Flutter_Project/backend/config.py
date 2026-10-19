@@ -24,15 +24,9 @@ def _float_env(name: str, default: float) -> float:
 # it invalidates every license already issued for this install.
 INSTALLATION_ID: str = os.getenv("INSTALLATION_ID", "")
 
-# Chip deposit in EUR (e.g. 3.0 for 3 Euro).
-# Configured via CHIP_DEPOSIT in config.env.
-# Applied automatically on first chip issuance; refunded automatically on payout.
-# Set to 0 to disable deposit logic entirely.
-CHIP_DEPOSIT: float = _float_env("CHIP_DEPOSIT", 0.0)
-
-# Name of the event shown in the UI and on bon slips.
-# Configured via EVENT_NAME in config.env.
-EVENT_NAME: str = os.getenv("EVENT_NAME", "Hauptveranstaltung")
+# The fest's name and chip deposit are no config.env settings: each fest has
+# its own (event.name / event.chip_deposit), set when it is started and
+# changeable live in the admin tool (admin_cli.py event-update).
 
 # Virtual chip UID used for cash (bar) sales without a physical NFC chip.
 # Bookings appear in category statistics but the chip is hidden from the Chips tab.

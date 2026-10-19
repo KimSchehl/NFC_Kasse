@@ -51,7 +51,8 @@ def test_me_returns_user_info(client, auth_headers):
     assert resp.status_code == 200
     data = resp.json()
     assert data["username"] == "admin"
-    assert "sales.booking.create" in data["permissions"]
+    assert "guthaben.topup" in data["permissions"]
+    assert "kiosk.access" not in data["permissions"]  # the seeded admin is no kiosk account
 
 
 def test_me_includes_pager_enabled_flag(client, auth_headers):

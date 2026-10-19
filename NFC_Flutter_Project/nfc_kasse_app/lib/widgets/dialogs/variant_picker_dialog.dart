@@ -21,26 +21,43 @@ class VariantPickerDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(base.name),
+      // Tiles grow with the name (long option names wrap instead of being
+      // cut off); the tiles of one row share the taller height. Narrow
+      // phones get one tile per row.
       content: SizedBox(
         width: 360,
-        child: GridView.count(
-          crossAxisCount: 2,
-          shrinkWrap: true,
-          mainAxisSpacing: 8,
-          crossAxisSpacing: 8,
-          childAspectRatio: 1.3,
-          children: [
-            for (final p in options)
-              ProductTile(
-                product: p,
-                maxLines: 2,
-                color: null,
-                onTap: () {
-                  if (!p.active || p.isOutOfStock) return;
-                  Navigator.of(context).pop(p);
-                },
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final perRow = constraints.maxWidth >= 300 ? 2 : 1;
+            return SingleChildScrollView(
+              child: Column(
+                children: [
+                  for (var i = 0; i < options.length; i += perRow)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: IntrinsicHeight(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            for (var j = i; j < i + perRow; j++) ...[
+                              if (j > i) const SizedBox(width: 8),
+                              Expanded(
+                                child: j < options.length
+                                    ? ConstrainedBox(
+                                        constraints: const BoxConstraints(minHeight: 96),
+                                        child: _tile(context, options[j]),
+                                      )
+                                    : const SizedBox.shrink(),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
               ),
-          ],
+            );
+          },
         ),
       ),
       actions: [
@@ -51,4 +68,15 @@ class VariantPickerDialog extends StatelessWidget {
       ],
     );
   }
+
+  Widget _tile(BuildContext context, ProductModel p) => ProductTile(
+        product: p,
+        maxLines: 4,
+        color: null,
+        fitContent: true,
+        onTap: () {
+          if (!p.active || p.isOutOfStock) return;
+          Navigator.of(context).pop(p);
+        },
+      );
 }

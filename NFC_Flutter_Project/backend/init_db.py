@@ -1,18 +1,23 @@
 """
-NFC-Kasse — Database Initialization
-=====================================
-Phase 1: Local / SQLite / Single-Event
+NFC-Kasse — Database Initialization (schema v3)
+================================================
 
-Forward compatibility without overengineering:
-- tenant_id columns present everywhere (NULL = local install, ready for cloud)
-- event_id linked throughout (multi-event ready)
-- permission_node as data table, not hardcoded enum in code
-- user_category_access for fine-grained category visibility per user
-- Repository pattern recommended for DB access (easy PostgreSQL migration later)
+Ownership (see docs/VERANSTALTER_PLAN.md):
+- tenant = Veranstalter. Owns users, rights, categories, articles and chips.
+- event = one Fest (or the permanent "Intern" event) of a tenant. Owns only
+  what happened during it (sales, top-ups, periods, pagers, print jobs) plus
+  which of the tenant's categories/articles are switched on for it
+  (event_category / event_product).
+- permission_node as data table, not hardcoded enum in code.
+- Keep SQL portable to PostgreSQL (planned cloud version).
+
+Existing databases are upgraded by migrations.py, never by this file.
 """
 
 import sqlite3
 import os
+
+from db_backup import SCHEMA_VERSION
 
 DB_PATH = os.environ.get("DB_PATH", "kasse.db")
 
@@ -27,15 +32,17 @@ def init_db():
     c = conn.cursor()
 
     # ------------------------------------------------------------------
-    # TENANT
-    # Local: exactly one tenant with id=1, plan='local'
-    # Cloud future: multiple tenants without schema change
+    # TENANT = Veranstalter
+    # Local: one or more Veranstalter used one after another; exactly one
+    # is active (chosen in the admin tool), only its users can log in.
+    # Cloud future: many tenants active at the same time.
     # ------------------------------------------------------------------
     c.execute("""
     CREATE TABLE tenant (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
         name        TEXT    NOT NULL,
         plan        TEXT    NOT NULL DEFAULT 'local',  -- 'local' | 'cloud'
+        active      INTEGER NOT NULL DEFAULT 0,        -- local: the one Veranstalter in use
         created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
     )""")
 
@@ -50,6 +57,11 @@ def init_db():
         tenant_id   INTEGER NOT NULL REFERENCES tenant(id),
         name        TEXT    NOT NULL,
         active      INTEGER NOT NULL DEFAULT 1,
+        date        TEXT,
+        chip_deposit REAL   NOT NULL DEFAULT 0,  -- Pfand for new chip issues during this event
+        is_intern   INTEGER NOT NULL DEFAULT 0,  -- 1 = the permanent "Intern" event (no fest running)
+        started_at  TEXT,
+        ended_at    TEXT,
         created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
     )""")
 
@@ -107,29 +119,28 @@ def init_db():
     )""")
 
     # ------------------------------------------------------------------
-    # USER PERMISSION — individual permissions per user per event
-    # Each row = one checked leaf node in the permission tree
+    # USER PERMISSION — global permissions of a user, valid in every event
+    # of the user's tenant. Each row = one checked leaf node in the tree.
     # ------------------------------------------------------------------
     c.execute("""
     CREATE TABLE user_permission (
         id              INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id         INTEGER NOT NULL REFERENCES user(id),
-        event_id        INTEGER NOT NULL REFERENCES event(id),
         permission_id   TEXT    NOT NULL REFERENCES permission_node(id),
         granted_by      INTEGER REFERENCES user(id),
         granted_at      TEXT    NOT NULL DEFAULT (datetime('now')),
-        UNIQUE(user_id, event_id, permission_id)
+        UNIQUE(user_id, permission_id)
     )""")
 
     # ------------------------------------------------------------------
-    # CATEGORY & PRODUCT
+    # CATEGORY & PRODUCT — owned by the tenant, switched on per event
     # deleted flag (soft-delete): historical sales remain valid
-    # sort_order: display order adjustable per event
+    # sort_order: display order, the same in every event
     # ------------------------------------------------------------------
     c.execute("""
     CREATE TABLE category (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
-        event_id    INTEGER NOT NULL REFERENCES event(id),
+        tenant_id   INTEGER NOT NULL REFERENCES tenant(id),
         name        TEXT    NOT NULL,
         sort_order  INTEGER NOT NULL DEFAULT 0,
         deleted     INTEGER NOT NULL DEFAULT 0
@@ -142,7 +153,7 @@ def init_db():
         name        TEXT    NOT NULL,
         price       REAL    NOT NULL,
         sort_order  INTEGER NOT NULL DEFAULT 0,
-        active      INTEGER NOT NULL DEFAULT 1,  -- temporarily disable without deleting
+        active      INTEGER NOT NULL DEFAULT 1,  -- temporarily not bookable (greyed out), in every event
         deleted     INTEGER NOT NULL DEFAULT 0,  -- soft-delete, keeps historical sales valid
         is_payout           INTEGER NOT NULL DEFAULT 0,  -- marks article as full-balance payout
         exclude_from_stats  INTEGER NOT NULL DEFAULT 0,  -- exclude from revenue statistics
@@ -161,10 +172,31 @@ def init_db():
     )""")
 
     # ------------------------------------------------------------------
-    # USER CATEGORY ACCESS — per-category booking and article permissions
+    # EVENT_CATEGORY / EVENT_PRODUCT — which of the tenant's categories and
+    # articles are switched on in an event. A row = shown and bookable there.
+    # event_product holds base articles only; an option (group_id set)
+    # follows its base: COALESCE(p.group_id, p.id) is the id to look up.
+    # ------------------------------------------------------------------
+    c.execute("""
+    CREATE TABLE event_category (
+        event_id    INTEGER NOT NULL REFERENCES event(id),
+        category_id INTEGER NOT NULL REFERENCES category(id),
+        PRIMARY KEY (event_id, category_id)
+    )""")
+
+    c.execute("""
+    CREATE TABLE event_product (
+        event_id    INTEGER NOT NULL REFERENCES event(id),
+        product_id  INTEGER NOT NULL REFERENCES product(id),
+        PRIMARY KEY (event_id, product_id)
+    )""")
+
+    # ------------------------------------------------------------------
+    # USER CATEGORY ACCESS — per-category booking and article permissions,
+    # valid in every event the category is switched on in.
     #
     # Why a separate table instead of permission_node entries?
-    # Categories are dynamic (differ per event, can be renamed).
+    # Categories are dynamic (created per tenant, can be renamed).
     # permission_node is for static, code-level permissions.
     #
     # How it works:
@@ -183,7 +215,6 @@ def init_db():
     CREATE TABLE user_category_access (
         id                      INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id                 INTEGER NOT NULL REFERENCES user(id),
-        event_id                INTEGER NOT NULL REFERENCES event(id),
         category_id             INTEGER NOT NULL REFERENCES category(id),
         can_book                INTEGER NOT NULL DEFAULT 0,
         can_storno_5min         INTEGER NOT NULL DEFAULT 0,
@@ -194,7 +225,7 @@ def init_db():
         can_delete_article      INTEGER NOT NULL DEFAULT 0,
         granted_by              INTEGER REFERENCES user(id),
         granted_at              TEXT    NOT NULL DEFAULT (datetime('now')),
-        UNIQUE(user_id, event_id, category_id)
+        UNIQUE(user_id, category_id)
     )""")
 
     # ------------------------------------------------------------------
@@ -212,16 +243,16 @@ def init_db():
         balance      REAL    NOT NULL DEFAULT 0.0,
         customer_name TEXT,                -- optional name set by the customer at the kiosk
         is_available INTEGER NOT NULL DEFAULT 1,
+        deposit_paid REAL    NOT NULL DEFAULT 0,  -- Pfand actually taken for this chip; refunded exactly at payout
         created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
         UNIQUE(tenant_id, nfc_uid)
     )""")
 
     # ------------------------------------------------------------------
-    # LEADERBOARD SCORE — optional add-on, clean separation from core
-    # One row per chip (customer_id PK).
-    # points: running total, updated atomically with each sale/cancel
-    # opt_in: 1 = customer wants to appear on the leaderboard display
-    # Entire table is ignored when LEADERBOARD=false in config.env.
+    # LEADERBOARD — optional add-on. Points are not stored here any more;
+    # they are the sum of sale.points per event (see leaderboard_entry).
+    # leaderboard_score is the pre-event-model table, kept only so the
+    # migration can copy opt-ins out of it.
     # ------------------------------------------------------------------
     c.execute("""
     CREATE TABLE leaderboard_score (
@@ -229,6 +260,15 @@ def init_db():
         points      INTEGER NOT NULL DEFAULT 0,
         opt_in      INTEGER NOT NULL DEFAULT 0,
         updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+    )""")
+
+    # One opt-in per customer and event: a new fest starts with nobody opted in.
+    c.execute("""
+    CREATE TABLE leaderboard_entry (
+        event_id    INTEGER NOT NULL REFERENCES event(id),
+        customer_id INTEGER NOT NULL REFERENCES customer(id),
+        opt_in      INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (event_id, customer_id)
     )""")
 
     # ------------------------------------------------------------------
@@ -244,6 +284,7 @@ def init_db():
         customer_id     INTEGER NOT NULL REFERENCES customer(id),
         product_id      INTEGER NOT NULL REFERENCES product(id),
         price_at_sale   REAL    NOT NULL,   -- price snapshot at booking time
+        points          INTEGER NOT NULL DEFAULT 0,  -- leaderboard points awarded by this sale (0 at Intern)
         booked_by       INTEGER NOT NULL REFERENCES user(id),
         booked_at       TEXT    NOT NULL DEFAULT (datetime('now')),  -- used for 5-min cancel check
         cancelled       INTEGER NOT NULL DEFAULT 0,
@@ -387,7 +428,8 @@ def init_db():
     # denormalized back-reference (like print_job.sale_id), not currently
     # read back by any endpoint, kept for future traceability.
     # status: 'open' while the pager is out with a guest, 'done' once
-    # returned/delivered. event_reset() force-closes any still-open rows.
+    # returned/delivered. routers/events.py's end_event() force-closes any
+    # still-open rows when a fest ends.
     # ------------------------------------------------------------------
     c.execute("""
     CREATE TABLE pager_order (
@@ -429,11 +471,13 @@ def init_db():
     c.execute("CREATE INDEX idx_sale_booked_at        ON sale(booked_at)")
     c.execute("CREATE INDEX idx_topup_customer        ON topup(customer_id)")
     c.execute("CREATE INDEX idx_customer_nfc          ON customer(nfc_uid)")
-    c.execute("CREATE INDEX idx_user_permission       ON user_permission(user_id, event_id)")
-    c.execute("CREATE INDEX idx_user_category_access  ON user_category_access(user_id, event_id)")
     c.execute("CREATE INDEX idx_product_category      ON product(category_id)")
+    c.execute("CREATE INDEX idx_category_tenant       ON category(tenant_id)")
+    c.execute("CREATE INDEX idx_event_product_product ON event_product(product_id)")
+    c.execute("CREATE UNIQUE INDEX one_active_event_per_tenant ON event(tenant_id) WHERE active = 1")
     c.execute("CREATE INDEX idx_refresh_token         ON refresh_token(token_hash)")
 
+    conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
     conn.commit()
     return conn
 
@@ -475,7 +519,8 @@ def seed_permissions(conn):
         ("statistics",              None,               "Statistik & Finanzen",     "group", 3),
         ("statistics.revenue",      "statistics",       "Umsatz einsehen",          "r",     1),
         ("statistics.transactions", "statistics",       "Transaktionen einsehen",   "r",     2),
-        ("statistics.export",       "statistics",       "Daten exportieren",        "r",     3),
+        # No statistics.export: the CSV export for accounting lives in the
+        # admin tool (admin_cli.py csv-export), which has no user login.
 
         # --- User Management ---
         ("users",                   None,               "Benutzerverwaltung",       "group", 4),
@@ -502,6 +547,9 @@ def seed_permissions(conn):
         ("logs",                    None,               "Protokolle",               "group", 8),
         ("logs.view",               "logs",             "Protokolle einsehen",      "r",     1),
         ("logs.configure",          "logs",             "Protokoll-Level verwalten","w",     2),
+
+        # No permission for starting/ending a fest either — that's done in
+        # the admin tool on the server (admin_cli.py), never from the app.
     ]
 
     c.executemany(
@@ -517,20 +565,27 @@ def seed_default_data(conn):
     Admin password is 'admin' — MUST be changed on first login.
     """
     import bcrypt
-    from config import BAR_CHIP_UID, EVENT_NAME
+    from config import BAR_CHIP_UID
 
     c = conn.cursor()
 
     # Tenant (content in German — this is user-facing data)
-    c.execute("INSERT INTO tenant (name, plan) VALUES (?, ?)", ("Lokal", "local"))
+    c.execute("INSERT INTO tenant (name, plan, active) VALUES (?, ?, 1)", ("Lokal", "local"))
     tenant_id = c.lastrowid
 
-    # Event (content in German)
+    # Event (content in German). The running fest starts out active; the
+    # permanent "Intern" event is always there, inactive while a fest runs.
     c.execute(
-        "INSERT INTO event (tenant_id, name, active) VALUES (?, ?, 1)",
-        (tenant_id, EVENT_NAME)
+        "INSERT INTO event (tenant_id, name, active, chip_deposit) VALUES (?, ?, 1, ?)",
+        # Name and Pfand of this first fest are changed live in the admin
+        # tool (Konfiguration); every later fest gets them when started.
+        (tenant_id, "Hauptveranstaltung", 0.0)
     )
     event_id = c.lastrowid
+    c.execute(
+        "INSERT INTO event (tenant_id, name, active, is_intern) VALUES (?, 'Intern', 0, 1)",
+        (tenant_id,)
+    )
 
     # Admin user — password 'admin', MUST be changed immediately
     pw_hash = bcrypt.hashpw(b"admin", bcrypt.gensalt()).decode()
@@ -540,17 +595,15 @@ def seed_default_data(conn):
     )
     admin_id = c.lastrowid
 
-    # Grant ALL leaf permissions to admin on this event -- except kiosk.access.
-    # The Flutter app treats kiosk.access as an exclusive mode (main.dart's
-    # _AuthGate routes straight to KioskScreen and never back), so granting
-    # it here would permanently lock the freshly-seeded admin out of the
-    # normal app on first login. Kiosk is meant for a dedicated terminal
-    # account, not the admin account.
+    # Grant ALL leaf permissions to admin -- except kiosk.access. Granting it
+    # is harmless for an account with other rights (only a kiosk-*only*
+    # account is routed to the kiosk screen, see UserModel.isKioskOnly), but
+    # kiosk belongs on a dedicated terminal account, not on the admin.
     c.execute("SELECT id FROM permission_node WHERE node_type != 'group' AND (parent_id IS NULL OR parent_id != 'kiosk')")
     for (perm_id,) in c.fetchall():
         c.execute(
-            "INSERT INTO user_permission (user_id, event_id, permission_id, granted_by) VALUES (?, ?, ?, ?)",
-            (admin_id, event_id, perm_id, admin_id)
+            "INSERT INTO user_permission (user_id, permission_id, granted_by) VALUES (?, ?, ?)",
+            (admin_id, perm_id, admin_id)
         )
 
     # Role templates (names are German — user-facing content)
@@ -569,7 +622,6 @@ def seed_default_data(conn):
             "categories.delete",
             "statistics.revenue",
             "statistics.transactions",
-            "statistics.export",
             "users.view",
             "users.manage_permissions",
         ]),

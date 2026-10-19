@@ -118,11 +118,19 @@ class NfcKasseApp extends ConsumerWidget {
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
       themeMode: ThemeMode.system,
+      // Android draws edge-to-edge: in landscape the navigation bar sits
+      // left/right of the app, in portrait at the bottom. One SafeArea around
+      // every screen and dialog keeps content out of it. Top is left to each
+      // screen (AppBars extend under the status bar themselves); the coloured
+      // box fills the inset strips instead of showing black.
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(context).copyWith(
           textScaler: TextScaler.linear(textScale),
         ),
-        child: child!,
+        child: ColoredBox(
+          color: Theme.of(context).colorScheme.surface,
+          child: SafeArea(top: false, child: child!),
+        ),
       ),
       home: const _AuthGate(),
     );

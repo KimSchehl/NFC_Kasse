@@ -16,6 +16,12 @@ class UserModel {
   final List<CategoryModel> categories;
   final bool leaderboardEnabled;
   final bool pagerEnabled;
+  final String eventName;
+  final bool eventIsIntern;
+
+  /// From the server: any article-management right in any category, also
+  /// one not switched on in the running fest (or manager).
+  final bool canManageArticlesAnywhere;
 
   const UserModel({
     required this.id,
@@ -25,6 +31,9 @@ class UserModel {
     required this.categories,
     this.leaderboardEnabled = false,
     this.pagerEnabled = false,
+    this.eventName = '',
+    this.eventIsIntern = false,
+    this.canManageArticlesAnywhere = false,
   });
 
   factory UserModel.fromJson(Map<String, dynamic> j) => UserModel(
@@ -34,6 +43,9 @@ class UserModel {
         permissions: (j['permissions'] as List).cast<String>(),
         leaderboardEnabled: j['leaderboard_enabled'] as bool? ?? false,
         pagerEnabled: j['pager_enabled'] as bool? ?? false,
+        eventName: j['event_name'] as String? ?? '',
+        eventIsIntern: j['event_is_intern'] as bool? ?? false,
+        canManageArticlesAnywhere: j['can_manage_articles'] as bool? ?? false,
         // The /me endpoint returns categories as {category_id, category_name, can_*},
         // which we remap to the standard CategoryModel.fromJson key names.
         categories: (j['categories'] as List)
@@ -65,7 +77,8 @@ class UserModel {
   /// True when the user has at least one article-management right on at
   /// least one category (or is a manager, who always does once they have
   /// any category) — gates the "Artikelverwaltung" sidebar entry.
-  bool get canManageAnyArticles => categories.any((c) => c.canManageArticles);
+  bool get canManageAnyArticles =>
+      canManageArticlesAnywhere || isManager || categories.any((c) => c.canManageArticles);
 
   bool get isKiosk => hasPermission('kiosk.access');
 

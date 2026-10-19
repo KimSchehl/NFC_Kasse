@@ -1,7 +1,7 @@
 # NFC-Kasse — Roadmap & Zukunftsideen
 
 Gesammelte Ideen für zukünftige Erweiterungen.
-Aktuelle Phase: **Lokal / Single-Event / SQLite**
+Aktuelle Phase: **Lokal / SQLite**, ein Fest zur Zeit plus interner Betrieb (Feste laufen über das Verwaltungstool)
 
 ---
 

@@ -9,8 +9,14 @@ class ProductService {
   final ApiClient _client;
   ProductService(this._client);
 
-  Future<List<CategoryModel>> getCategories() async {
-    final resp = await _client.dio.get('/api/products/categories');
+  /// The running fest's categories the user may see. With [all], every
+  /// category of the Veranstalter (with [CategoryModel.activeInEvent]) — for
+  /// assigning rights, which hold in every fest.
+  Future<List<CategoryModel>> getCategories({bool all = false}) async {
+    final resp = await _client.dio.get(
+      '/api/products/categories',
+      queryParameters: all ? {'all': true} : null,
+    );
     return (resp.data as List)
         .map((j) => CategoryModel.fromJson(j as Map<String, dynamic>))
         .toList();
@@ -128,6 +134,12 @@ class ProductService {
     return ProductModel.fromJson(resp.data as Map<String, dynamic>);
   }
 
+  /// Switches the article (with its options) on/off for the running fest.
+  Future<ProductModel> setInEvent(int id, bool active) async {
+    final resp = await _client.dio.patch('/api/products/$id/event-active', data: {'active': active});
+    return ProductModel.fromJson(resp.data as Map<String, dynamic>);
+  }
+
   Future<void> deleteProduct(int id) async {
     await _client.dio.delete('/api/products/$id');
   }
@@ -139,6 +151,13 @@ class ProductService {
 
   Future<CategoryModel> updateCategory(int id, String name) async {
     final resp = await _client.dio.put('/api/products/categories/$id', data: {'name': name});
+    return CategoryModel.fromJson(resp.data as Map<String, dynamic>);
+  }
+
+  /// Switches the category on/off for the running fest. Switched on for
+  /// the first time there, it brings all its articles along.
+  Future<CategoryModel> setCategoryInEvent(int id, bool active) async {
+    final resp = await _client.dio.patch('/api/products/categories/$id/active', data: {'active': active});
     return CategoryModel.fromJson(resp.data as Map<String, dynamic>);
   }
 

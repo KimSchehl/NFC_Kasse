@@ -4,7 +4,7 @@ import sqlite3
 from fastapi import APIRouter, Depends, HTTPException
 
 from database import get_db
-from dependencies import RequestContext, require_permission
+from dependencies import RequestContext, ensure_event_active, require_permission
 from schemas import PayoutResponse, TopupRequest, TopupResponse
 
 router = APIRouter(prefix="/api/topup", tags=["topup"])
@@ -41,6 +41,7 @@ def topup(
 
     try:
         with get_db(exclusive=True) as db:
+            ensure_event_active(db, event_id)
             customer_id = _get_or_create_customer(db, tenant_id, body.nfc_uid)
 
             db.execute(
@@ -86,6 +87,7 @@ def payout(
 
     try:
         with get_db(exclusive=True) as db:
+            ensure_event_active(db, event_id)
             customer = db.execute(
                 "SELECT id, balance FROM customer WHERE tenant_id=? AND nfc_uid=?",
                 (tenant_id, nfc_uid),

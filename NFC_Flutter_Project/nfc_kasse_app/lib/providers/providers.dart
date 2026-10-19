@@ -64,6 +64,9 @@ final apiClientProvider = Provider<ApiClient>((ref) {
   return ApiClient(
     ref.watch(storageProvider),
     baseUrl: ref.watch(serverUrlProvider),
+    // ref.read at call time, never during build: the watcher's reload reads
+    // providers that themselves depend on this client.
+    onEventChanged: () => unawaited(ref.read(activeEventWatcherProvider.notifier).reloadNow()),
   );
 });
 
@@ -148,6 +151,12 @@ final connectionStatusProvider = StreamProvider<bool>((ref) {
         ref
             .read(loggingProvider.notifier)
             .applyRemoteLevel(response.data['log_level'] as String?);
+        // Before the catalog check below: on a fest switch this drops the
+        // selected category synchronously, so that check doesn't diff a
+        // category of the event that just ended.
+        unawaited(ref
+            .read(activeEventWatcherProvider.notifier)
+            .observe((response.data['active_events'] as List?)?.cast<int>()));
         // Fire-and-forget: piggybacks the product-catalog change check on
         // the same 10s cadence without blocking this stream on its result.
         unawaited(ref.read(productSyncProvider.notifier).checkForChanges());
@@ -1174,6 +1183,74 @@ final adminCategoriesProvider = FutureProvider<List<AdminCategoryProducts>>((ref
   ref.watch(categoriesRefreshProvider);
   return ref.read(productServiceProvider).getAdminCategories();
 });
+
+// ---------------------------------------------------------------------------
+// Fest switch — started/ended in the admin tool on the server
+// ---------------------------------------------------------------------------
+
+/// Bumped whenever the server's active event changes. For screens holding
+/// event-scoped state outside any provider (e.g. the stats screen's period
+/// list) — everything provider-based is invalidated by the watcher itself.
+final activeEventRevisionProvider = StateProvider<int>((ref) => 0);
+
+/// Fed by [connectionStatusProvider]'s 10s /health poll, which carries the
+/// server's active event ids. Feste are started and ended only in the admin
+/// tool, never on a device, so this poll is how a running device finds out:
+/// it then reloads everything scoped to the active event — /me (rights,
+/// category access, event name/Intern flag), categories, articles.
+class ActiveEventWatcher extends Notifier<List<int>?> {
+  bool _reloading = false;
+
+  @override
+  List<int>? build() => null;
+
+  Future<void> observe(List<int>? activeEvents) async {
+    if (activeEvents == null) return;
+    final previous = state;
+    state = activeEvents;
+    // First poll only establishes the baseline: whatever was loaded at
+    // startup already belongs to this event.
+    if (previous == null || listEquals(previous, activeEvents)) return;
+
+    AppLogger.info('Aktives Event gewechselt: $previous -> $activeEvents', logger: 'events');
+    await _reload();
+  }
+
+  /// The server rejected a write with `code: "event_changed"` (see
+  /// [ApiClient.onEventChanged]): this device is still on the previous fest.
+  /// Reload right away instead of waiting up to 10s for the next /health
+  /// poll — dropping the baseline makes that poll merely re-establish it
+  /// rather than reload a second time.
+  Future<void> reloadNow() async {
+    AppLogger.info('Buchung wegen Festwechsel abgelehnt — lade neu', logger: 'events');
+    state = null;
+    await _reload();
+  }
+
+  Future<void> _reload() async {
+    if (_reloading) return;
+    _reloading = true;
+    try {
+      // Cart items and the selected category are articles of the event that
+      // just ended — booking them into the new one would be wrong.
+      ref.read(cartProvider.notifier).clear();
+      ref.read(selectedCategoryProvider.notifier).state = null;
+      if (ref.read(authProvider).valueOrNull != null) {
+        await ref.read(authProvider.notifier).refreshFromServer();
+      }
+      ref.invalidate(categoriesProvider);
+      ref.invalidate(productsProvider);
+      ref.read(adminCategoriesRefreshProvider.notifier).state++;
+      ref.read(activeEventRevisionProvider.notifier).state++;
+    } finally {
+      _reloading = false;
+    }
+  }
+}
+
+final activeEventWatcherProvider = NotifierProvider<ActiveEventWatcher, List<int>?>(
+  ActiveEventWatcher.new,
+);
 
 // ---------------------------------------------------------------------------
 // Product catalog sync — cross-device price/stock updates

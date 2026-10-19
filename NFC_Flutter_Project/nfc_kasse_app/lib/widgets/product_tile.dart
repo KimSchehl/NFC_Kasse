@@ -103,6 +103,10 @@ class ProductTile extends StatelessWidget {
   /// would be misleading. The tile shows just the name in that case.
   final bool hidePrice;
 
+  /// False (POS grid): the tile has a fixed size and the name is cut off
+  /// after [maxLines]. True (option picker): the tile grows with the name.
+  final bool fitContent;
+
   const ProductTile({
     super.key,
     required this.product,
@@ -110,6 +114,7 @@ class ProductTile extends StatelessWidget {
     required this.color,
     required this.onTap,
     this.hidePrice = false,
+    this.fitContent = false,
   });
 
   @override
@@ -137,6 +142,21 @@ class ProductTile extends StatelessWidget {
     final onCard =
         color != null && !greyedOut ? contrastColor(color!) : null;
 
+    final name = Center(
+      child: Text(
+        product.name,
+        textAlign: TextAlign.center,
+        maxLines: maxLines,
+        overflow: TextOverflow.ellipsis,
+        style: theme.textTheme.titleMedium?.copyWith(
+          fontSize: 20,
+          color: greyedOut
+              ? theme.colorScheme.onSurface.withValues(alpha: 0.4)
+              : onCard,
+        ),
+      ),
+    );
+
     final card = Card(
       clipBehavior: Clip.antiAlias,
       color: cardColor,
@@ -146,23 +166,9 @@ class ProductTile extends StatelessWidget {
           padding: const EdgeInsets.all(10),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: fitContent ? MainAxisSize.min : MainAxisSize.max,
             children: [
-              Expanded(
-                child: Center(
-                  child: Text(
-                    product.name,
-                    textAlign: TextAlign.center,
-                    maxLines: maxLines,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontSize: 20,
-                      color: greyedOut
-                          ? theme.colorScheme.onSurface.withValues(alpha: 0.4)
-                          : onCard,
-                    ),
-                  ),
-                ),
-              ),
+              if (fitContent) ...[name, const SizedBox(height: 4)] else Expanded(child: name),
               if (!hidePrice)
                 Text(
                   formatPrice(product.price),

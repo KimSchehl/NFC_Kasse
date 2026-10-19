@@ -1,7 +1,8 @@
 # License Tool
 
-Generates feature license keys (PAGER, LEADERBOARD, ...) for customer
-installations. Lives outside `backend/` on purpose — it's never bundled
+Generates license keys for customer installations: the main licence
+(feature `kasse`, config key `LICENSE_KEY` — the Windows service refuses to
+start without it) and the add-ons (`pager`, `leaderboard`). Lives outside `backend/` on purpose — it's never bundled
 into the frozen backend build (`packaging/pyinstaller/nfc_kasse_backend.spec`
 only points at `backend/service_main.py`), and it holds the private signing
 key, which must never reach a customer's machine.
@@ -25,17 +26,15 @@ license issued so far and start over.
 
 1. Ask the customer for their `INSTALLATION_ID` (a line in their
    `config.env`, generated automatically on first install).
-2. Run:
-   ```
-   python license_tool/generate_license.py <installation_id> pager leaderboard
-   ```
-   (list whichever features they bought — any name works, it just has to
-   match what `backend/config.py` checks for, currently `pager` and
-   `leaderboard`.)
-3. Send them the printed `..._LICENSE_KEY=...` lines. They paste those into
-   their `config.env` alongside the matching `PAGER=true`/`LEADERBOARD=true`
-   flags, then restart the service — both the flag and a valid key for that
-   exact `INSTALLATION_ID` are required for a feature to actually turn on.
+2. Run `python license_tool/generate_license.py` (or double-click it). It
+   asks for the installation ID, the feature (Kasse / Pager / Leaderboard)
+   and an optional last valid day (`JJJJ-MM-TT`, empty = no expiry), and
+   prints one config.env line, e.g. `LICENSE_KEY=...` or `PAGER_LICENSE_KEY=...`.
+   Run it once per licence.
+3. Send them the printed line. They paste the key into the admin tool's
+   **Lizenzen** page, which shows right away whether it is valid, expired or
+   for another installation (`admin_cli.py license-check`, the same check
+   the service does).
 
 A license is permanently tied to one `installation_id` — it does nothing on
 any other installation, and stops working entirely if that installation's
@@ -45,7 +44,8 @@ only regenerated automatically on first install, alongside `SECRET_KEY`).
 ## How it works
 
 Each key is `base64url(payload) + "." + base64url(signature)`, where
-`payload` is `{"v": 1, "installation_id": "...", "feature": "..."}` and
+`payload` is `{"v": 1, "installation_id": "...", "feature": "..."}` (plus an
+optional `"valid_until": "JJJJ-MM-TT"`) and
 `signature` is an Ed25519 signature over the payload bytes. Verification
 (`backend/licensing.py`) only ever needs the *public* key, so it's safe to
 ship with every install — forging a key requires the private key, which

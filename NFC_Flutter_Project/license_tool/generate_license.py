@@ -15,6 +15,7 @@ first if it doesn't exist yet.
 import base64
 import json
 import sys
+from datetime import date
 from pathlib import Path
 
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
@@ -25,20 +26,24 @@ PRIVATE_KEY_PATH = Path(__file__).parent / "private_key.pem"
 # and must match exactly what backend/config.py checks, e.g. "pager" gates
 # PAGER_ENABLED). Add a line here when a new licensable feature is added.
 FEATURES = {
-    "1": "pager",
-    "2": "leaderboard",
+    "1": "kasse",
+    "2": "pager",
+    "3": "leaderboard",
 }
+LABELS = {"kasse": "Kasse (Hauptlizenz, ohne sie startet der Dienst nicht)"}
+# config.env key per feature; the main licence is plain LICENSE_KEY.
+ENV_NAMES = {"kasse": "LICENSE_KEY"}
 
 
 def _b64(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
 
-def generate_license(private_key, installation_id: str, feature: str) -> str:
-    payload = json.dumps(
-        {"v": 1, "installation_id": installation_id, "feature": feature},
-        separators=(",", ":"),
-    ).encode("utf-8")
+def generate_license(private_key, installation_id: str, feature: str, valid_until: str | None = None) -> str:
+    data = {"v": 1, "installation_id": installation_id, "feature": feature}
+    if valid_until:
+        data["valid_until"] = valid_until  # last valid day, JJJJ-MM-TT
+    payload = json.dumps(data, separators=(",", ":")).encode("utf-8")
     signature = private_key.sign(payload)
     return f"{_b64(payload)}.{_b64(signature)}"
 
@@ -70,7 +75,7 @@ def _run() -> None:
     print()
     print("Welches Feature soll freigeschaltet werden?")
     for num, name in FEATURES.items():
-        print(f"  [{num}] {name.capitalize()}")
+        print(f"  [{num}] {LABELS.get(name, name.capitalize())}")
     choice = input("Auswahl: ").strip()
 
     feature = FEATURES.get(choice)
@@ -78,12 +83,21 @@ def _run() -> None:
         print(f"ERROR: Ungültige Auswahl '{choice}'.")
         sys.exit(1)
 
+    valid_until = input("Gültig bis (JJJJ-MM-TT, leer = unbegrenzt): ").strip() or None
+    if valid_until:
+        try:
+            date.fromisoformat(valid_until)
+        except ValueError:
+            print(f"ERROR: Ungültiges Datum '{valid_until}'.")
+            sys.exit(1)
+
     private_key = load_pem_private_key(PRIVATE_KEY_PATH.read_bytes(), password=None)
-    key = generate_license(private_key, installation_id, feature)
-    env_name = f"{feature.upper()}_LICENSE_KEY"
+    key = generate_license(private_key, installation_id, feature, valid_until)
+    env_name = ENV_NAMES.get(feature, f"{feature.upper()}_LICENSE_KEY")
 
     print()
-    print(f"# Lizenz-Key für installation_id={installation_id}, Feature={feature}")
+    print(f"# Lizenz-Key für installation_id={installation_id}, Feature={feature}"
+          + (f", gültig bis {valid_until}" if valid_until else ""))
     print(f"{env_name}={key}")
 
 

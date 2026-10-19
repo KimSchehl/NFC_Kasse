@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/providers.dart';
+import '../services/backend_cli.dart';
 import '../services/config_env_file.dart';
+import '../services/events_service.dart';
 import '../services/nfc_kasse_paths.dart';
 import '../services/serial_ports.dart';
 import '../services/service_control.dart';
@@ -22,14 +24,13 @@ class ConfigScreen extends ConsumerStatefulWidget {
 class _ConfigScreenState extends ConsumerState<ConfigScreen> {
   static const _textKeys = [
     'HOST', 'PORT',
-    'EVENT_NAME', 'CHIP_DEPOSIT', 'BAR_CHIP_UID',
-    'LEADERBOARD_LICENSE_KEY', 'PAGER_LICENSE_KEY',
+    'BAR_CHIP_UID',
     'WEBAPP_ROUTE', 'ALLOWED_ORIGINS',
     'PRINTER_PORT', 'PRINTER_BAUDRATE', 'PRINTER_HOST', 'PRINTER_LINE_WIDTH',
     'BON_FOOTER_TEXT', 'BON_CASHIER_LABEL',
   ];
   static const _boolKeys = [
-    'LEADERBOARD', 'PAGER', 'PRINTER_AUTO_CUT',
+    'PRINTER_AUTO_CUT',
     'BON_SHOW_EVENT_NAME', 'BON_SHOW_DATETIME', 'BON_SHOW_PRICE', 'BON_SHOW_CASHIER',
   ];
 
@@ -64,10 +65,6 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
   /// First problem found in the form, as a message for the user. Checked
   /// before anything is written, so a typo can't stop the service from starting.
   String? _validationError() {
-    if (_controllers['CHIP_DEPOSIT']!.text.trim().isNotEmpty &&
-        double.tryParse(_controllers['CHIP_DEPOSIT']!.text.trim().replaceAll(',', '.')) == null) {
-      return 'Chip-Pfand: bitte eine Zahl eingeben, z. B. 2,50';
-    }
     if (!_isIntIn(_controllers['PORT']!.text, 1, 65535)) {
       return 'Port: Zahl zwischen 1 und 65535';
     }
@@ -98,7 +95,6 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
     setState(() => _saving = true);
     final updates = <String, String>{
       for (final key in _textKeys) key: _controllers[key]!.text.trim(),
-      'CHIP_DEPOSIT': _controllers['CHIP_DEPOSIT']!.text.trim().replaceAll(',', '.'),
       for (final key in _boolKeys) key: _bools[key]!.toString(),
       'PRINTER_TYPE': _printerType,
       'LOG_LEVEL': _logLevel,
@@ -141,24 +137,8 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
                     _TextRow('Port', _controllers['PORT']!, keyboardType: TextInputType.number),
 
                     const _SectionHeader('Veranstaltung'),
-                    _TextRow('Name der Veranstaltung', _controllers['EVENT_NAME']!),
-                    _TextRow('Chip-Pfand (€)', _controllers['CHIP_DEPOSIT']!,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+                    const _RunningFestSection(),
                     _TextRow('Virtuelle Bar-Chip-UID', _controllers['BAR_CHIP_UID']!),
-
-                    const _SectionHeader('Kostenpflichtige Zusatz-Features'),
-                    _SwitchRow(
-                      'Leaderboard aktiviert',
-                      value: _bools['LEADERBOARD']!,
-                      onChanged: (v) => setState(() => _bools['LEADERBOARD'] = v),
-                    ),
-                    _TextRow('Leaderboard-Lizenzschlüssel', _controllers['LEADERBOARD_LICENSE_KEY']!),
-                    _SwitchRow(
-                      'Pager aktiviert',
-                      value: _bools['PAGER']!,
-                      onChanged: (v) => setState(() => _bools['PAGER'] = v),
-                    ),
-                    _TextRow('Pager-Lizenzschlüssel', _controllers['PAGER_LICENSE_KEY']!),
 
                     const _SectionHeader('Web-Zugriff'),
                     _TextRow('Webapp-Pfad', _controllers['WEBAPP_ROUTE']!),
@@ -317,6 +297,146 @@ class _SectionHeader extends StatelessWidget {
           const Divider(),
         ],
       ),
+    );
+  }
+}
+
+/// Name und Pfand des laufenden Fests — keine config.env-Werte, sondern
+/// Daten des Fests in der Datenbank. Werden sofort und ohne Neustart an
+/// allen Kassen wirksam (admin_cli.py event-update), deshalb mit Rückfrage
+/// und eigenem Knopf statt über „Speichern“. Im internen Betrieb ist nur
+/// der Pfand änderbar.
+class _RunningFestSection extends ConsumerStatefulWidget {
+  const _RunningFestSection();
+
+  @override
+  ConsumerState<_RunningFestSection> createState() => _RunningFestSectionState();
+}
+
+class _RunningFestSectionState extends ConsumerState<_RunningFestSection> {
+  final _name = TextEditingController();
+  final _deposit = TextEditingController();
+  int? _loadedEventId;
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _deposit.dispose();
+    super.dispose();
+  }
+
+  void _fill(KasseEvent fest) {
+    if (_loadedEventId == fest.id) return;
+    _loadedEventId = fest.id;
+    _name.text = fest.displayName;
+    _deposit.text = fest.chipDeposit.toStringAsFixed(2).replaceAll('.', ',');
+  }
+
+  Future<void> _apply(KasseEvent fest) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final name = _name.text.trim();
+    final deposit = double.tryParse(_deposit.text.trim().replaceAll(',', '.'));
+    if (!fest.isIntern && name.isEmpty) {
+      messenger.showSnackBar(const SnackBar(content: Text('Bitte einen Festnamen eingeben.')));
+      return;
+    }
+    if (deposit == null || deposit < 0) {
+      messenger.showSnackBar(const SnackBar(content: Text('Chip-Pfand: bitte eine Zahl eingeben, z. B. 2,50')));
+      return;
+    }
+    final nameChanged = !fest.isIntern && name != fest.name;
+    final depositChanged = (deposit - fest.chipDeposit).abs() > 0.0001;
+    if (!nameChanged && !depositChanged) {
+      messenger.showSnackBar(const SnackBar(content: Text('Keine Änderung.')));
+      return;
+    }
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Für alle Kassen übernehmen?'),
+        content: Text([
+          if (nameChanged) 'Der Festname wird „$name“ — ab sofort in allen Kassen und auf jedem neuen Bon.',
+          if (depositChanged)
+            'Der Pfand wird ${_deposit.text.trim()} € — für jeden Chip, der ab sofort neu ausgegeben wird. '
+                'Chips, die schon beim Gast sind, behalten den Pfand, den sie bezahlt haben.',
+          'Gilt sofort für alle, ohne Neustart.',
+        ].join('\n\n')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Abbrechen')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Für alle übernehmen')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    setState(() => _busy = true);
+    try {
+      await EventsService.updateActive(
+        name: nameChanged ? name : null,
+        chipDeposit: depositChanged ? deposit : null,
+      );
+      _loadedEventId = null; // neu befüllen mit dem gespeicherten Stand
+      ref.read(eventsRefreshProvider.notifier).state++;
+      messenger.showSnackBar(const SnackBar(content: Text('Übernommen — gilt jetzt an allen Kassen.')));
+    } on BackendCliException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final overviewAsync = ref.watch(eventsOverviewProvider);
+    final theme = Theme.of(context);
+    return overviewAsync.when(
+      loading: () => const Padding(padding: EdgeInsets.all(8), child: LinearProgressIndicator()),
+      error: (e, _) => Text('Fest konnte nicht geladen werden: $e'),
+      data: (overview) {
+        final fest = overview.active;
+        _fill(fest);
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                fest.isIntern
+                    ? 'Interner Betrieb — der Name „Intern“ bleibt fest, nur der Pfand ist änderbar.'
+                    : 'Laufendes Fest. Änderungen gelten sofort an allen Kassen.',
+                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
+              ),
+              TextField(
+                controller: _name,
+                enabled: !fest.isIntern && !_busy,
+                decoration: const InputDecoration(labelText: 'Name der Veranstaltung', isDense: true),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _deposit,
+                enabled: !_busy,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Chip-Pfand (€)',
+                  helperText: 'Für neu ausgegebene Chips',
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerRight,
+                child: FilledButton.tonalIcon(
+                  onPressed: _busy ? null : () => _apply(fest),
+                  icon: const Icon(Icons.campaign_outlined, size: 18),
+                  label: const Text('Für alle übernehmen'),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

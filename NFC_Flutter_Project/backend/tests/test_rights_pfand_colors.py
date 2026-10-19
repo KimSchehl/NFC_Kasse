@@ -1,21 +1,18 @@
 import database
 import pytest
 
+from tests.conftest import add_category, add_product
+
 
 @pytest.fixture
 def articles(db):
     with database.get_db() as conn:
-        event_id = conn.execute("SELECT id FROM event LIMIT 1").fetchone()["id"]
-        cat_id = conn.execute(
-            "INSERT INTO category (event_id, name) VALUES (?, ?)", (event_id, "Getränke")
-        ).lastrowid
+        cat_id = add_category(conn, "Getränke")
 
         def insert(name, price, is_payout=0, is_pfand=0, exclude=0):
-            return conn.execute(
-                "INSERT INTO product (category_id, name, price, is_payout, is_pfand, exclude_from_stats) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (cat_id, name, price, is_payout, is_pfand, exclude),
-            ).lastrowid
+            return add_product(
+                conn, cat_id, name, price, is_payout=is_payout, is_pfand=is_pfand, exclude_from_stats=exclude,
+            )
 
         return {
             "category_id": cat_id,

@@ -19,6 +19,10 @@ class CategoryModel {
   final bool canDeactivateArticle;
   final bool canDeleteArticle;
 
+  /// Switched on in the running fest. Categories belong to the Veranstalter;
+  /// a fest only decides which of them the tills show.
+  final bool activeInEvent;
+
   const CategoryModel({
     required this.id,
     required this.name,
@@ -30,6 +34,7 @@ class CategoryModel {
     this.canEditArticle = false,
     this.canDeactivateArticle = false,
     this.canDeleteArticle = false,
+    this.activeInEvent = true,
   });
 
   factory CategoryModel.fromJson(Map<String, dynamic> j) => CategoryModel(
@@ -43,6 +48,7 @@ class CategoryModel {
         canEditArticle: j['can_edit_article'] as bool? ?? false,
         canDeactivateArticle: j['can_deactivate_article'] as bool? ?? false,
         canDeleteArticle: j['can_delete_article'] as bool? ?? false,
+        activeInEvent: j['active_in_event'] as bool? ?? true,
       );
 
   /// True when the user has at least one article-management right.

@@ -14,7 +14,7 @@ from datetime import timezone
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from config import CHIP_DEPOSIT, LEADERBOARD_ENABLED
+from config import LEADERBOARD_ENABLED
 from database import get_db
 from dependencies import get_active_event, get_current_user
 
@@ -34,10 +34,12 @@ def set_chip_name(
     nfc_uid: str,
     body: _ChipSettingsBody,
     current_user: dict = Depends(get_current_user),
+    active_event: dict = Depends(get_active_event),
 ):
-    """Sets/clears the customer-supplied name and leaderboard opt-in for a chip."""
+    """Sets/clears the customer-supplied name and the opt-in for the running event's leaderboard."""
     tenant_id = current_user["tenant_id"]
     name = body.name.strip() or None  # empty string → NULL
+    opt_in = body.leaderboard_opt_in and not active_event["is_intern"]
     with get_db() as db:
         customer = db.execute(
             "SELECT id FROM customer WHERE tenant_id=? AND nfc_uid=?",
@@ -51,15 +53,13 @@ def set_chip_name(
         )
         if LEADERBOARD_ENABLED:
             db.execute("""
-                INSERT INTO leaderboard_score (customer_id, points, opt_in)
-                VALUES (?, 0, ?)
-                ON CONFLICT(customer_id) DO UPDATE SET
-                    opt_in     = excluded.opt_in,
-                    updated_at = datetime('now')
-            """, (customer["id"], 1 if body.leaderboard_opt_in else 0))
+                INSERT INTO leaderboard_entry (event_id, customer_id, opt_in)
+                VALUES (?, ?, ?)
+                ON CONFLICT(event_id, customer_id) DO UPDATE SET opt_in = excluded.opt_in
+            """, (active_event["id"], customer["id"], 1 if opt_in else 0))
     if LEADERBOARD_ENABLED:
         _leaderboard.check_and_notify()
-    return {"ok": True, "name": name, "leaderboard_opt_in": body.leaderboard_opt_in}
+    return {"ok": True, "name": name, "leaderboard_opt_in": opt_in}
 
 
 @router.get("/chip/{nfc_uid}")
@@ -74,7 +74,7 @@ def kiosk_chip_info(
 
     with get_db() as db:
         customer = db.execute(
-            "SELECT id, balance, customer_name, is_available FROM customer WHERE tenant_id=? AND nfc_uid=?",
+            "SELECT id, balance, customer_name, is_available, deposit_paid FROM customer WHERE tenant_id=? AND nfc_uid=?",
             (tenant_id, nfc_uid),
         ).fetchone()
 
@@ -82,7 +82,7 @@ def kiosk_chip_info(
             return {
                 "nfc_uid": nfc_uid,
                 "balance": 0.0,
-                "chip_deposit": CHIP_DEPOSIT,
+                "chip_deposit": active_event["chip_deposit"],
                 "customer_name": None,
                 "leaderboard_opt_in": False,
                 "total_points": 0,
@@ -92,13 +92,17 @@ def kiosk_chip_info(
 
         customer_id = customer["id"]
 
-        # Leaderboard score from dedicated table
+        # Points and opt-in are per event: the sum of this event's sale points,
+        # and the opt-in recorded for this event.
         if LEADERBOARD_ENABLED:
+            total_points = db.execute(
+                "SELECT COALESCE(SUM(points), 0) FROM sale WHERE customer_id=? AND event_id=? AND cancelled=0",
+                (customer_id, event_id),
+            ).fetchone()[0]
             lb = db.execute(
-                "SELECT points, opt_in FROM leaderboard_score WHERE customer_id=?",
-                (customer_id,),
+                "SELECT opt_in FROM leaderboard_entry WHERE customer_id=? AND event_id=?",
+                (customer_id, event_id),
             ).fetchone()
-            total_points = lb["points"] if lb else 0
             leaderboard_opt_in = bool(lb["opt_in"]) if lb else False
         else:
             total_points = 0
@@ -181,7 +185,7 @@ def kiosk_chip_info(
     return {
         "nfc_uid": nfc_uid,
         "balance": customer["balance"],
-        "chip_deposit": CHIP_DEPOSIT,
+        "chip_deposit": active_event["chip_deposit"] if customer["is_available"] else customer["deposit_paid"],
         "customer_name": customer["customer_name"],
         "leaderboard_opt_in": leaderboard_opt_in,
         "total_points": total_points,

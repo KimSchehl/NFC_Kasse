@@ -1,22 +1,19 @@
 """
-Statistics router — revenue summaries, paginated transaction list, CSV export,
-and period management (Tagesabschluss).
+Statistics router — revenue summaries, paginated transaction list and period
+management (Tagesabschluss). The CSV export for accounting lives in the admin
+tool (admin_cli.py csv-export).
 
 All endpoints require the corresponding `statistics.*` permission.
 Time filters use ISO-8601 strings compared directly against the SQLite
 `booked_at` TEXT column (stored as UTC, formatted as `YYYY-MM-DD HH:MM:SS`).
 """
 
-import csv
-import io
 import logging
 
-from fastapi import APIRouter, Depends, Query
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, Query
 
-from config import BAR_CHIP_UID
 from database import get_db
-from dependencies import RequestContext, require_permission
+from dependencies import RequestContext, ensure_event_active, require_permission
 from schemas import (
     CategoryArticle,
     CategoryRevenue,
@@ -138,6 +135,16 @@ def _period_time_bounds(
 # Period management
 # ---------------------------------------------------------------------------
 
+
+# Categories belong to the tenant; a fest's statistics show those switched
+# on in it plus any that were sold in it (switched off or deleted since).
+# Two placeholders: the event id, twice.
+_CATEGORY_OF_EVENT = """(
+                (c.deleted = 0 AND c.id IN (SELECT category_id FROM event_category WHERE event_id = ?))
+                OR c.id IN (SELECT p2.category_id FROM sale s2 JOIN product p2 ON p2.id = s2.product_id
+                            WHERE s2.event_id = ?)
+            )"""
+
 @router.get("/periods", response_model=list[StatsPeriodResponse])
 def list_periods(
     ctx: RequestContext = Depends(require_permission("statistics.revenue")),
@@ -168,7 +175,16 @@ def close_period(
     user_id = ctx["user"]["id"]
     event_id = ctx["event"]["id"]
 
+    if ctx["event"]["is_intern"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Tagesabschluss ist nur während eines laufenden Festes möglich.",
+        )
+
     with get_db(exclusive=True) as db:
+        # Without this, a Tagesabschluss racing "Fest beenden" would reopen
+        # a period on the fest that was just archived.
+        ensure_event_active(db, event_id)
         # Close any currently open period for this event.
         db.execute(
             "UPDATE stats_period SET closed_at = datetime('now') WHERE event_id=? AND closed_at IS NULL",
@@ -192,69 +208,11 @@ def close_period(
     return PeriodCloseResponse(new_period=StatsPeriodResponse(**dict(new_row)))
 
 
-@router.post("/event-reset", response_model=PeriodCloseResponse, status_code=201)
-def event_reset(
-    body: PeriodCloseRequest,
-    ctx: RequestContext = Depends(require_permission("statistics.revenue")),
-):
-    """
-    Neues Event vorbereiten: Tagesabschluss + Kunden-Reset.
 
-    1. Schließt die aktuelle Periode und öffnet eine neue.
-    2. Setzt alle Chip-Guthaben auf 0 und markiert alle Chips als
-       'verfügbar für Neuausgabe' (is_available=1), sodass der nächste
-       Scan eines Chips als neuer Kunde behandelt wird (inkl. Pfand).
-    3. Schließt alle noch offenen Pager-Einträge (Pager-Add-on).
-
-    Artikel, Benutzer und der komplette Buchungsverlauf bleiben erhalten.
-    """
-    user_id = ctx["user"]["id"]
-    event_id = ctx["event"]["id"]
-    tenant_id = ctx["user"]["tenant_id"]
-
-    logger.warning(
-        "Event reset starting: tenant_id=%s event_id=%s by=%s",
-        tenant_id, event_id, ctx["user"]["username"],
-    )
-
-    with get_db(exclusive=True) as db:
-        # Tagesabschluss
-        db.execute(
-            "UPDATE stats_period SET closed_at = datetime('now') WHERE event_id=? AND closed_at IS NULL",
-            (event_id,),
-        )
-        cursor = db.execute(
-            "INSERT INTO stats_period (event_id, label, created_by) VALUES (?, ?, ?)",
-            (event_id, body.label, user_id),
-        )
-        new_id = cursor.lastrowid
-        new_row = db.execute(
-            "SELECT id, label, started_at, closed_at FROM stats_period WHERE id=?",
-            (new_id,),
-        ).fetchone()
-
-        # Alle Kunden zurücksetzen: Guthaben = 0, als neu markieren.
-        # is_available=1 bewirkt beim nächsten Scan: neuer Kunde + Pfand wird erneut erhoben.
-        # BAR-Chip wird ausgenommen — er ist kein echter Gast-Chip.
-        cursor = db.execute(
-            "UPDATE customer SET balance = 0.0, is_available = 1 WHERE tenant_id = ? AND nfc_uid != ?",
-            (tenant_id, BAR_CHIP_UID),
-        )
-        reset_count = cursor.rowcount
-
-        # Offene Pager gehören zu physischen Geräten, die noch beim Gast sind —
-        # anders als sale/topup/print_job (reine Historie) würden sie sonst für
-        # immer als "offen" stehen bleiben, da sich event_id beim Reset nicht ändert.
-        db.execute(
-            "UPDATE pager_order SET status='done', done_at=datetime('now') WHERE event_id=? AND status='open'",
-            (event_id,),
-        )
-
-    logger.warning(
-        "Event reset complete: tenant_id=%s customers_reset=%s new_period_id=%s by=%s",
-        tenant_id, reset_count, new_id, ctx["user"]["username"],
-    )
-    return PeriodCloseResponse(new_period=StatsPeriodResponse(**dict(new_row)))
+# The old event-reset endpoint (Tagesabschluss + zero every balance) was
+# retired together with the event model: Guthaben now always carries over,
+# and starting/ending a fest lives in the admin tool (admin_cli.py /
+# event_lifecycle.py) instead.
 
 
 # ---------------------------------------------------------------------------
@@ -288,11 +246,11 @@ def get_revenue(
                 AND p.is_payout = 0 AND p.exclude_from_stats = 0
             LEFT JOIN sale s ON s.product_id = p.id
                 AND s.event_id=? AND s.cancelled=0 {time_where}
-            WHERE c.event_id=? AND c.deleted=0
+            WHERE {_CATEGORY_OF_EVENT}
             GROUP BY c.id, c.name
-            ORDER BY c.sort_order
+            ORDER BY c.sort_order, c.id
             """,
-            [event_id, *time_params, event_id],
+            [event_id, *time_params, event_id, event_id],
         ).fetchall()
 
         total_row = db.execute(
@@ -322,12 +280,12 @@ def get_revenue(
             JOIN product p ON p.category_id = c.id
             LEFT JOIN sale s ON s.product_id = p.id
                 AND s.event_id = ? AND s.cancelled = 0 {time_where}
-            WHERE c.event_id = ? AND c.deleted = 0
+            WHERE {_CATEGORY_OF_EVENT}
             GROUP BY c.id, p.id, p.name, p.is_payout, p.exclude_from_stats
             HAVING COUNT(s.id) > 0
             ORDER BY c.sort_order, c.id, p.is_payout, p.exclude_from_stats, p.sort_order
             """,
-            [event_id, *time_params, event_id],
+            [event_id, *time_params, event_id, event_id],
         ).fetchall()
 
     articles_by_cat: dict[int, list[CategoryArticle]] = {}
@@ -435,62 +393,3 @@ def get_transactions(
     ]
     return TransactionListResponse(items=items, total=total_row["total"])
 
-
-# ---------------------------------------------------------------------------
-# CSV export
-# ---------------------------------------------------------------------------
-
-@router.get("/export")
-def export_transactions(
-    period_ids: str | None = Query(None),
-    period_id: int | None = Query(None),
-    period_start: str | None = Query(None),
-    period_end: str | None = Query(None),
-    ctx: RequestContext = Depends(require_permission("statistics.export")),
-):
-    event_id = ctx["event"]["id"]
-
-    with get_db() as db:
-        time_where, time_params = _resolve_time_filter(
-            db, event_id, period_ids, period_id, period_start, period_end
-        )
-
-        rows = db.execute(
-            f"""
-            SELECT s.id, s.booked_at, cu.nfc_uid, p.name as product_name,
-                   s.price_at_sale, c.name as category_name,
-                   u.username as booked_by_username, s.cancelled,
-                   s.cancelled_at
-            FROM sale s
-            JOIN customer cu ON s.customer_id = cu.id
-            JOIN product p ON s.product_id = p.id
-            JOIN category c ON p.category_id = c.id
-            JOIN user u ON s.booked_by = u.id
-            WHERE s.event_id=? {time_where}
-            ORDER BY s.booked_at ASC
-            """,
-            [event_id, *time_params],
-        ).fetchall()
-
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow([
-        "id", "booked_at", "nfc_uid", "product_name",
-        "price_at_sale", "category_name", "booked_by", "cancelled", "cancelled_at",
-    ])
-    for r in rows:
-        writer.writerow([
-            r["id"], r["booked_at"], r["nfc_uid"], r["product_name"],
-            r["price_at_sale"], r["category_name"], r["booked_by_username"],
-            r["cancelled"], r["cancelled_at"] or "",
-        ])
-
-    logger.info(
-        "Transactions exported: rows=%s by=%s", len(rows), ctx["user"]["username"],
-    )
-    output.seek(0)
-    return StreamingResponse(
-        iter([output.getvalue()]),
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=transactions.csv"},
-    )

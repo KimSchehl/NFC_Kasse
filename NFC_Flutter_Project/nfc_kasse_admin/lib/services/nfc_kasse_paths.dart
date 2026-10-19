@@ -54,4 +54,5 @@ class NfcKassePaths {
   static String get configEnvPath => '$dataDir\\config.env';
   static String get bonYamlPath => '$dataDir\\bon.yaml';
   static String get logsDir => '$dataDir\\logs';
+  static String get backupsDir => '$dataDir\\backups';
 }

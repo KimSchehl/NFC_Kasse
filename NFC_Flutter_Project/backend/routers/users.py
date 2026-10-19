@@ -2,6 +2,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 
+import catalog
 from database import get_db
 from dependencies import RequestContext, hash_password, require_permission
 from schemas import (
@@ -25,15 +26,15 @@ logger = logging.getLogger(__name__)
 # User CRUD
 # ---------------------------------------------------------------------------
 
-def _blocks_last_manager(db, user_id: int, event_id: int) -> bool:
-    """True if deactivating/deleting `user_id` would leave nobody with
-    users.manage_permissions for this event -- otherwise no one could ever
+def _blocks_last_manager(db, user_id: int, tenant_id: int) -> bool:
+    """True if deactivating/deleting `user_id` would leave nobody of the
+    tenant with users.manage_permissions -- otherwise no one could ever
     fix a permissions mistake again short of direct DB access (same class of
     self-lockout as the kiosk.access admin bug elsewhere in this project).
     A no-op (returns False) if the user doesn't even hold that permission."""
     holds_it = db.execute(
-        "SELECT 1 FROM user_permission WHERE user_id=? AND event_id=? AND permission_id='users.manage_permissions'",
-        (user_id, event_id),
+        "SELECT 1 FROM user_permission WHERE user_id=? AND permission_id='users.manage_permissions'",
+        (user_id,),
     ).fetchone()
     if not holds_it:
         return False
@@ -42,10 +43,10 @@ def _blocks_last_manager(db, user_id: int, event_id: int) -> bool:
         SELECT COUNT(*) as cnt
         FROM user_permission up
         JOIN user u ON u.id = up.user_id
-        WHERE up.permission_id = 'users.manage_permissions' AND up.event_id = ?
+        WHERE up.permission_id = 'users.manage_permissions' AND u.tenant_id = ?
           AND u.active = 1 AND u.deleted = 0 AND u.id != ?
         """,
-        (event_id, user_id),
+        (tenant_id, user_id),
     ).fetchone()
     return other["cnt"] == 0
 
@@ -147,7 +148,6 @@ def set_user_active(
     """Toggles active in both directions -- deactivate AND reactivate go
     through here, mirroring products.py's PATCH /{id}/active."""
     tenant_id = ctx["user"]["tenant_id"]
-    event_id = ctx["event"]["id"]
     current_user_id = ctx["user"]["id"]
 
     if user_id == current_user_id and not body.active:
@@ -161,7 +161,7 @@ def set_user_active(
         if not row:
             raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
-        if not body.active and _blocks_last_manager(db, user_id, event_id):
+        if not body.active and _blocks_last_manager(db, user_id, tenant_id):
             raise HTTPException(
                 status_code=400,
                 detail="Letzter Benutzer mit Benutzerverwaltungs-Rechten kann nicht deaktiviert werden",
@@ -191,7 +191,6 @@ def delete_user(
     comment in main.py's migration for why: relaxing the UNIQUE(tenant_id,
     username) constraint isn't safely doable with foreign_keys=ON)."""
     tenant_id = ctx["user"]["tenant_id"]
-    event_id = ctx["event"]["id"]
     current_user_id = ctx["user"]["id"]
 
     if user_id == current_user_id:
@@ -205,7 +204,7 @@ def delete_user(
         if not row:
             raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
-        if _blocks_last_manager(db, user_id, event_id):
+        if _blocks_last_manager(db, user_id, tenant_id):
             raise HTTPException(
                 status_code=400,
                 detail="Letzter Benutzer mit Benutzerverwaltungs-Rechten kann nicht gelöscht werden",
@@ -232,7 +231,6 @@ def get_user_permissions(
     ctx: RequestContext = Depends(require_permission("users.manage_permissions")),
 ):
     tenant_id = ctx["user"]["tenant_id"]
-    event_id = ctx["event"]["id"]
 
     with get_db() as db:
         user_row = db.execute(
@@ -243,8 +241,8 @@ def get_user_permissions(
             raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
         perm_rows = db.execute(
-            "SELECT permission_id FROM user_permission WHERE user_id=? AND event_id=?",
-            (user_id, event_id),
+            "SELECT permission_id FROM user_permission WHERE user_id=?",
+            (user_id,),
         ).fetchall()
         cat_rows = db.execute(
             """
@@ -254,10 +252,10 @@ def get_user_permissions(
                    uca.can_deactivate_article, uca.can_delete_article
             FROM user_category_access uca
             JOIN category c ON c.id = uca.category_id
-            WHERE uca.user_id=? AND uca.event_id=?
-            ORDER BY c.sort_order
+            WHERE uca.user_id=? AND c.deleted=0
+            ORDER BY c.sort_order, c.id
             """,
-            (user_id, event_id),
+            (user_id,),
         ).fetchall()
 
     return UserPermissionsResponse(
@@ -287,7 +285,6 @@ def set_user_permissions(
     ctx: RequestContext = Depends(require_permission("users.manage_permissions")),
 ):
     tenant_id = ctx["user"]["tenant_id"]
-    event_id = ctx["event"]["id"]
     granter_id = ctx["user"]["id"]
 
     with get_db() as db:
@@ -310,17 +307,11 @@ def set_user_permissions(
         # Full replace pattern: delete all existing rows then insert the new set
         # in one transaction. Simpler than a diff-merge and less error-prone —
         # the client always sends the complete desired state.
-        db.execute(
-            "DELETE FROM user_permission WHERE user_id=? AND event_id=?",
-            (user_id, event_id),
-        )
+        db.execute("DELETE FROM user_permission WHERE user_id=?", (user_id,))
         for perm_id in body.permission_ids:
             db.execute(
-                """
-                INSERT INTO user_permission (user_id, event_id, permission_id, granted_by)
-                VALUES (?, ?, ?, ?)
-                """,
-                (user_id, event_id, perm_id, granter_id),
+                "INSERT OR IGNORE INTO user_permission (user_id, permission_id, granted_by) VALUES (?, ?, ?)",
+                (user_id, perm_id, granter_id),
             )
 
     logger.info(
@@ -336,7 +327,6 @@ def set_user_category_access(
     ctx: RequestContext = Depends(require_permission("users.manage_permissions")),
 ):
     tenant_id = ctx["user"]["tenant_id"]
-    event_id = ctx["event"]["id"]
     granter_id = ctx["user"]["id"]
 
     with get_db() as db:
@@ -348,33 +338,28 @@ def set_user_category_access(
             raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
         for item in body.categories:
-            valid = db.execute(
-                "SELECT 1 FROM category WHERE id=? AND event_id=? AND deleted=0",
-                (item.category_id, event_id),
-            ).fetchone()
-            if not valid:
+            if not catalog.tenant_category(db, tenant_id, item.category_id):
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Kategorie {item.category_id} nicht in diesem Event gefunden",
+                    detail=f"Kategorie {item.category_id} nicht gefunden",
                 )
 
-        # Full replace — same pattern as set_user_permissions above.
-        db.execute(
-            "DELETE FROM user_category_access WHERE user_id=? AND event_id=?",
-            (user_id, event_id),
-        )
+        # Full replace — same pattern as set_user_permissions above. Rights
+        # hold in every fest, so this covers all of the tenant's categories,
+        # also those not switched on in the running fest.
+        db.execute("DELETE FROM user_category_access WHERE user_id=?", (user_id,))
         for item in body.categories:
             db.execute(
                 """
-                INSERT INTO user_category_access (
-                    user_id, event_id, category_id,
+                INSERT OR REPLACE INTO user_category_access (
+                    user_id, category_id,
                     can_book, can_storno_5min, can_storno_unlimited,
                     can_create_article, can_edit_article, can_deactivate_article, can_delete_article,
                     granted_by
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    user_id, event_id, item.category_id,
+                    user_id, item.category_id,
                     1 if item.can_book else 0,
                     1 if item.can_storno_5min else 0,
                     1 if item.can_storno_unlimited else 0,
@@ -456,7 +441,6 @@ def apply_role_template(
     ctx: RequestContext = Depends(require_permission("users.manage_permissions")),
 ):
     tenant_id = ctx["user"]["tenant_id"]
-    event_id = ctx["event"]["id"]
     granter_id = ctx["user"]["id"]
 
     with get_db() as db:
@@ -481,17 +465,11 @@ def apply_role_template(
 
         # Full replace — removes the user's current permissions and grants the
         # template's permission set. Existing category access is not touched.
-        db.execute(
-            "DELETE FROM user_permission WHERE user_id=? AND event_id=?",
-            (user_id, event_id),
-        )
+        db.execute("DELETE FROM user_permission WHERE user_id=?", (user_id,))
         for row in perm_rows:
             db.execute(
-                """
-                INSERT INTO user_permission (user_id, event_id, permission_id, granted_by)
-                VALUES (?, ?, ?, ?)
-                """,
-                (user_id, event_id, row["permission_id"], granter_id),
+                "INSERT OR IGNORE INTO user_permission (user_id, permission_id, granted_by) VALUES (?, ?, ?)",
+                (user_id, row["permission_id"], granter_id),
             )
 
     logger.info(

@@ -5,3 +5,5 @@ NFC_Flutter_Project/backend/logs/*
 # inside this folder to snapshot every save -- that makes it an embedded git
 # repo, which git then flags as a dirty gitlink on every status check.
 .history/
+# graphify knowledge graph (regenerate with: graphify update .)
+graphify-out/

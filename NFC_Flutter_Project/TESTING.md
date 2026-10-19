@@ -157,8 +157,8 @@ Because `tmp_path` is function-scoped in pytest, each test function gets its own
 
 The `seed_default_data()` function creates:
 - One tenant (`id=1`)
-- One active event (`id=1`)
-- One admin user (`username=admin`, `password=admin`) with **all** permissions granted
+- One active fest (`id=1`) plus the permanent, inactive "Intern" event
+- One admin user (`username=admin`, `password=admin`) with every permission except `kiosk.access`, on both events
 
 The admin credentials are used by `auth_headers` to authenticate API requests.
 

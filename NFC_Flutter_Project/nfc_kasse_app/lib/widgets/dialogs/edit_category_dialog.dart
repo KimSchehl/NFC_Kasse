@@ -6,7 +6,11 @@ import '../../providers/providers.dart';
 import '../../services/app_logger.dart';
 import '../../utils/formatters.dart';
 
-/// Dialog for renaming a category or (when [canDelete] is true) deleting it.
+/// Dialog for renaming a category, switching it off for the running fest
+/// (when [canDeactivate] is true) or (when [canDelete] is true) deleting it.
+///
+/// Categories belong to the Veranstalter. Switching one off only hides it in
+/// this fest; it is switched back on in the Artikelverwaltung.
 ///
 /// Deletion is a soft-delete on the server (`deleted=1`) — products and their
 /// sale history are preserved. After save or delete, [categoriesRefreshProvider]
@@ -14,11 +18,13 @@ import '../../utils/formatters.dart';
 class EditCategoryDialog extends ConsumerStatefulWidget {
   final CategoryModel category;
   final bool canDelete;
+  final bool canDeactivate;
 
   const EditCategoryDialog({
     super.key,
     required this.category,
     this.canDelete = false,
+    this.canDeactivate = false,
   });
 
   @override
@@ -27,6 +33,7 @@ class EditCategoryDialog extends ConsumerStatefulWidget {
 
 class _EditCategoryDialogState extends ConsumerState<EditCategoryDialog> {
   late final TextEditingController _name;
+  late bool _activeInEvent = widget.category.activeInEvent;
   bool _loading = false;
   String? _error;
 
@@ -48,11 +55,12 @@ class _EditCategoryDialogState extends ConsumerState<EditCategoryDialog> {
       setState(() => _error = 'Name darf nicht leer sein');
       return;
     }
-    if (name == widget.category.name) {
+    final renamed = name != widget.category.name;
+    final toggled = _activeInEvent != widget.category.activeInEvent;
+    if (!renamed && !toggled) {
       Navigator.of(context).pop();
       return;
     }
-    AppLogger.trace('Kategorie umbenannt: ${widget.category.name} -> $name', logger: 'ui.sidebar');
 
     setState(() {
       _loading = true;
@@ -60,9 +68,27 @@ class _EditCategoryDialogState extends ConsumerState<EditCategoryDialog> {
     });
 
     try {
-      await ref.read(productServiceProvider).updateCategory(widget.category.id, name);
+      final service = ref.read(productServiceProvider);
+      if (renamed) {
+        AppLogger.trace('Kategorie umbenannt: ${widget.category.name} -> $name', logger: 'ui.sidebar');
+        await service.updateCategory(widget.category.id, name);
+      }
+      if (toggled) {
+        AppLogger.trace('Kategorie ${_activeInEvent ? 'eingeschaltet' : 'ausgeschaltet'}: $name',
+            logger: 'ui.sidebar');
+        await service.setCategoryInEvent(widget.category.id, _activeInEvent);
+        if (!_activeInEvent && ref.read(selectedCategoryProvider)?.id == widget.category.id) {
+          ref.read(selectedCategoryProvider.notifier).state = null;
+        }
+        // The till's category list comes from /me. Other devices pick the
+        // change up on their next reload (fest switch, login, or a booking
+        // the server rejects with event_changed).
+        await ref.read(authProvider.notifier).refreshFromServer();
+        ref.invalidate(productsProvider);
+      }
       if (!mounted) return;
       ref.read(categoriesRefreshProvider.notifier).state++;
+      ref.read(adminCategoriesRefreshProvider.notifier).state++;
       Navigator.of(context).pop(true);
     } catch (e) {
       setState(() {
@@ -127,6 +153,18 @@ class _EditCategoryDialogState extends ConsumerState<EditCategoryDialog> {
                 autofocus: true,
                 textCapitalization: TextCapitalization.sentences,
               ),
+              if (widget.canDeactivate) ...[
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('In diesem Fest anzeigen'),
+                  subtitle: Text(_activeInEvent
+                      ? 'Alle Kassen dieses Festes zeigen die Kategorie.'
+                      : 'Ausgeblendet an allen Kassen dieses Festes. Wieder einschalten in der Artikelverwaltung.'),
+                  value: _activeInEvent,
+                  onChanged: _loading ? null : (v) => setState(() => _activeInEvent = v),
+                ),
+              ],
               if (_error != null) ...[
                 const SizedBox(height: 8),
                 Text(

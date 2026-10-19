@@ -73,7 +73,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      body: Center(
+      // No AppBar here, so the status bar inset is this screen's job.
+      body: SafeArea(child: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: ConstrainedBox(
@@ -197,7 +198,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             ),
           ),
         ),
-      ),
+      )),
     );
   }
 }

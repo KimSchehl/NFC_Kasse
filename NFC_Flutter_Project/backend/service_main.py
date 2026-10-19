@@ -18,10 +18,11 @@ NfcKasseBackend.exe (see packaging/pyinstaller/nfc_kasse_backend.spec).
 import os
 import secrets
 import shutil
-import sqlite3
+import sys
 import uuid
-from datetime import datetime
 from pathlib import Path
+
+import db_backup
 
 DATA_DIR = Path(os.environ.get("NFC_KASSE_DATA_DIR", r"C:\ProgramData\NFC-Kasse"))
 CONFIG_PATH = DATA_DIR / "config.env"
@@ -67,27 +68,42 @@ def _ensure_bon_yaml() -> None:
 
 
 def _rotate_backup() -> None:
-    """Mirrors start_backend.bat's existing behavior: one timestamped backup
-    per (re)start, pruned to the 5 newest. Uses sqlite3's own .backup() API
-    (WAL-safe) rather than a plain file copy, since kasse.db runs in WAL
-    mode (init_db.py) and a raw copy could miss un-checkpointed writes."""
-    BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now().strftime("%Y%m%d-%H%M")
-    src = sqlite3.connect(DB_PATH)
-    dest = sqlite3.connect(BACKUPS_DIR / f"kasse_{ts}.db")
-    try:
-        src.backup(dest)
-    finally:
-        dest.close()
-        src.close()
-    backups = sorted(
-        BACKUPS_DIR.glob("kasse_*.db"), key=lambda p: p.stat().st_mtime, reverse=True
-    )
-    for stale in backups[5:]:
-        stale.unlink(missing_ok=True)
+    """One automatic safety copy per (re)start, the 5 newest kept. Written
+    through db_backup so the copy includes un-checkpointed WAL content."""
+    db_backup.create_backup(DB_PATH, BACKUPS_DIR, prefix="kasse")
+    db_backup.prune(BACKUPS_DIR, prefix="kasse", keep=5)
+
+
+def _require_main_license() -> None:
+    """The service only runs with a valid main licence (LICENSE_KEY for the
+    feature "kasse", bound to INSTALLATION_ID). Without one it exits with a
+    German message in logs\\winsw\\ — the admin tool's Lizenzen page shows
+    the same status before that happens."""
+    import licensing
+
+    result = licensing.check("kasse", os.environ.get("INSTALLATION_ID", ""), os.environ.get("LICENSE_KEY", ""))
+    if result["status"] != licensing.VALID:
+        print(
+            f"NFC-Kasse startet nicht: keine gültige Lizenz (LICENSE_KEY, Status: {result['status']}). "
+            "Bitte im Verwaltungstool unter Lizenzen den Lizenzschlüssel eintragen.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
 
 
 def main() -> None:
+    if len(sys.argv) > 1:
+        # Imported only here, never at module top: admin_cli imports
+        # database, which freezes DB_PATH from the environment at import
+        # time — before main() below has set it, that would be the wrong
+        # (relative) path for the service run. admin_cli sets
+        # database.DB_PATH explicitly for its own commands.
+        import admin_cli
+
+        if sys.argv[1] in admin_cli.COMMANDS:
+            sys.exit(admin_cli.main(sys.argv[1:], DATA_DIR))
+        sys.exit(db_backup.main(sys.argv[1:], DATA_DIR))
+
     # 1. Filesystem + config.env must exist before ANYTHING below imports
     #    main/config/logging_config/database/dependencies.
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -111,6 +127,7 @@ def main() -> None:
         "SECRET_KEY was not loaded from config.env before main.py's import — "
         "check the import order above this assertion."
     )
+    _require_main_license()
 
     # 2. First-run DB init OR startup backup rotation — the same branching
     #    start_backend.bat's step 5 does, now against ProgramData.

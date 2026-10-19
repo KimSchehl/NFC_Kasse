@@ -53,8 +53,8 @@ Server-Adresse in den Bildern: `http://nfc-kasse.lan:8000`.
 | `17_statistik_uebersicht` | Statistik: Umsatz gesamt und je Kategorie | Statistik |
 | `18_statistik_transaktionen` | Statistik: Transaktionsliste | Statistik |
 | `19_statistik_chips` | Statistik: Chips mit Guthaben | Statistik |
-| `20_tagesabschluss_dialog` | Dialog „Tagesabschluss“ | Statistik und Tagesabschluss |
-| `21_neues_event_dialog` | Warnung „Neues Event starten“ | Statistik und Tagesabschluss |
+| `20_tagesabschluss_dialog` | Dialog „Tagesabschluss“ | Feste und Tagesabschluss |
+| `21_neues_event_dialog` | Veraltet: Den Knopf „Neues Event“ gibt es nicht mehr, Feste laufen über das Verwaltungstool. Wird in keiner Anleitung mehr verwendet. | – |
 | `22_einstellungen_ueber` | Einstellungen → Über, mit QR-Code zum App-Download | Android-App installieren |
 | `23_einstellungen_design` | Einstellungen → Design | Ansicht anpassen |
 | `24_einstellungen_nfc_lesegeraet` | Einstellungen → NFC-Lesegerät, noch kein Leser gekoppelt | Bluetooth-NFC-Leser koppeln |
@@ -105,6 +105,10 @@ englischen Chromium und ist ein Platzhalter, bis ein deutscher Screenshot vorlie
 
 ## Noch zu liefern (nur am echten Gerät möglich)
 
+Die Statistik-Bilder `17` bis `19` zeigen noch den alten Knopf „Neues Event“ und sollten neu erzeugt werden.
+Die Artikelverwaltung (`13_artikelverwaltung`) hat jetzt die Schalter „Im Fest“, der Kategorie-Dialog den Schalter „In diesem Fest anzeigen“: beide Bilder neu erzeugen. Die Rechtevergabe (`16b`) zeigt jetzt alle Kategorien, auch ausgeblendete mit dem Zusatz „nicht in diesem Fest“.
+Das Verwaltungstool hat jetzt sechs Seiten; die Bilder `05` bis `07b` stammen vom 4. Oktober und zeigen vermutlich noch die alte Seitenleiste mit vier Seiten.
+
 Bitte unter genau diesen Namen ablegen, dann passen die Verweise in der Anleitung.
 
 | Datei | Was aufnehmen |
@@ -116,6 +120,11 @@ Bitte unter genau diesen Namen ablegen, dann passen die Verweise in der Anleitun
 | `windows/08_datenordner.png` | Explorer in `C:\ProgramData\NFC-Kasse\` |
 | `windows/09_dienste.png` | `services.msc` mit Dienst „NFC-Kasse Backend“ (optional) |
 | `windows/10_bluetooth_einstellungen.png` | Windows-Einstellungen → Bluetooth und Geräte |
+| `windows/11_verwaltung_feste.png` | Verwaltungstool, Seite Feste: laufendes Fest, Knöpfe „Fest starten …“ / „Fest beenden …“, Liste der beendeten Feste |
+| `windows/12_verwaltung_fest_starten.png` | Dialog „Fest starten“ mit Festname, Pfand, Artikel-Quelle und Übernahme-Häkchen |
+| `windows/13_verwaltung_daten.png` | Verwaltungstool, Seite Daten mit Sicherungen |
+| `windows/14_verwaltung_veranstalter.png` | Verwaltungstool, Seite Veranstalter mit zwei Veranstaltern, einer „in Betrieb“ |
+| `windows/15_verwaltung_konfiguration_fest.png` | Konfiguration, Bereich Veranstaltung: Name und Pfand des laufenden Festes mit „Für alle übernehmen“ |
 | `browser/01_chrome_flags_de.png` | Wie der englische Platzhalter, aus deutschem Chrome |
 | `browser/02_edge_flags.png` | Dasselbe in Edge (`edge://flags`) |
 | `browser/03_edge_policy.png` | `edge://policy` mit „OverrideSecurityRestrictionsOnInsecureOrigin“ |

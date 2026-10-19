@@ -23,6 +23,11 @@ class ProductModel {
   final int? groupId;
   final String? color;
 
+  /// Switched on in the running fest (an option follows its base article).
+  /// Articles belong to the Veranstalter; price and stock are the same in
+  /// every fest.
+  final bool inEvent;
+
   const ProductModel({
     required this.id,
     required this.name,
@@ -38,6 +43,7 @@ class ProductModel {
     this.requiresPager = false,
     this.groupId,
     this.color,
+    this.inEvent = true,
   });
 
   factory ProductModel.fromJson(Map<String, dynamic> j) => ProductModel(
@@ -55,6 +61,7 @@ class ProductModel {
         requiresPager: j['requires_pager'] as bool? ?? false,
         groupId: j['group_id'] as int?,
         color: j['color'] as String?,
+        inEvent: j['in_event'] as bool? ?? true,
       );
 
   Color? get defaultColor => hexToColor(color);

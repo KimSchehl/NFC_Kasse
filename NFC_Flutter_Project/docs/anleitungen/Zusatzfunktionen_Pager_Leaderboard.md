@@ -1,17 +1,17 @@
 # NFC-Kasse – Zusatzfunktionen Pager und Leaderboard
 
-4. Oktober 2026 · Kim Schehl
+18. Oktober 2026 · Kim Schehl
 
 ## 1. Freischalten
 
 Pager und Leaderboard sind kostenpflichtige Zusatzfunktionen. Jede braucht einen eigenen Lizenzschlüssel, der nur für genau eine Installation gilt. Eine Funktion ist erst aktiv, wenn in `config.env` der Schalter auf `true` steht **und** ein gültiger Schlüssel eingetragen ist.
 
-1. **Installations-ID heraussuchen.** Öffnen Sie die NFC-Kasse Verwaltung, Seite **Info**. Neben **Installations-ID** kopiert das Symbol ganz rechts die ID in die Zwischenablage. Alternativ steht sie in `C:\ProgramData\NFC-Kasse\config.env` in der Zeile `INSTALLATION_ID=…`.
+1. **Installations-ID heraussuchen.** Öffnen Sie die NFC-Kasse Verwaltung, Seite **Lizenzen**. Neben **Installations-ID** kopiert das Symbol die ID in die Zwischenablage. Alternativ steht sie in `C:\ProgramData\NFC-Kasse\config.env` in der Zeile `INSTALLATION_ID=…`.
 
    ![Verwaltungstool, Seite Info mit Installations-ID und Kopier-Symbol](../images/bedieneranleitung/windows/07b_verwaltung_info.png)
 
 2. **Lizenz anfordern.** Die Installations-ID mit der gewünschten Funktion an kontakt@nfc-kasse.de schicken, notfalls an info@nfc-kasse.de. Sie bekommen eine Zeile wie `PAGER_LICENSE_KEY=eyJ2Ij…` zurück.
-3. **Eintragen.** In der Verwaltung unter **Kostenpflichtige Zusatz-Features** den Schalter **Pager aktiviert** bzw. **Leaderboard aktiviert** einschalten und den Schlüssel in das Feld **Pager-Lizenzschlüssel** bzw. **Leaderboard-Lizenzschlüssel** einfügen. Von Hand in `config.env`:
+3. **Eintragen.** In der Verwaltung auf der Seite **Lizenzen** den Schlüssel bei **Pager** bzw. **Leaderboard** einfügen und dort den Schalter **aktiviert** einschalten. Unter dem Feld steht sofort, ob der Schlüssel gültig ist. Von Hand in `config.env`:
 
 ```
 PAGER=true
@@ -85,7 +85,7 @@ Das doppelte Tippen verhindert, dass ein Eintrag aus Versehen verschwindet. Tipp
 - Am Handy gibt es keine Pagerliste, nur das Fenster zum Zuweisen. Für Theken mit Pagern nehmen Sie ein Tablet.
 - Auszahlungen fragen nie nach einem Pager.
 - Eine Stornierung entfernt den Pager nicht aus der Liste. Melden Sie ihn danach mit **Fertig** ab.
-- **Neues Event** in der Statistik schließt alle offenen Pager.
+- **Fest beenden** im Verwaltungstool schließt alle offenen Pager (Bedieneranleitung, Abschnitt 11.3).
 
 ## 4. Leaderboard einrichten
 
@@ -137,9 +137,10 @@ Unter dem Guthaben steht danach „Leaderboard aktiv“. Mit **Name entfernen** 
 
 ### Gut zu wissen
 
-- Punkte sammelt jeder Chip von Anfang an, auch ohne Teilnahme. Wer sich später anmeldet, steht sofort mit allen bisherigen Punkten auf der Liste.
+- Punkte sammelt jeder Chip ab Beginn des Festes, auch ohne Teilnahme. Wer sich später anmeldet, steht sofort mit allen bisherigen Punkten des Festes auf der Liste.
 - Ohne Namen steht der Chip als „Anonym“ auf der Liste.
 - Wird eine Buchung storniert, werden ihre Punkte wieder abgezogen.
 - Bei Punktgleichstand steht der Chip vorne, der zuerst ausgegeben wurde.
-- **Neues Event** in der Statistik setzt die Punkte und Namen nicht zurück. Sie bleiben am Chip, bis der Chip neu vergeben wird.
+- Punkte und Teilnahme gelten pro Fest. Ein neues Fest beginnt für alle bei null, und jeder Gast schaltet die Teilnahme am Kiosk neu ein. Der Name bleibt am Chip.
+- Im internen Betrieb, wenn kein Fest läuft, gibt es keine Punkte und die Bestenliste bleibt leer.
 - Achten Sie auf die Namen: Was ein Gast eintippt, steht groß auf dem Fernseher. Behalten Sie die Liste im Blick und entfernen Sie unpassende Namen am Kiosk mit dem Chip des Gastes.

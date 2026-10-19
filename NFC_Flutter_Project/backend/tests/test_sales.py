@@ -138,9 +138,10 @@ def _leaderboard_points(customer_id):
     import database
     with database.get_db() as conn:
         row = conn.execute(
-            "SELECT points FROM leaderboard_score WHERE customer_id=?", (customer_id,)
+            "SELECT COALESCE(SUM(points), 0) AS total FROM sale WHERE customer_id=? AND cancelled=0",
+            (customer_id,),
         ).fetchone()
-        return row["points"] if row else 0
+        return row["total"]
 
 
 def test_book_option_charges_option_price_and_decrements_base_stock(

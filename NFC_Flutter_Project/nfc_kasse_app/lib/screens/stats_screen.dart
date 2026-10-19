@@ -194,97 +194,20 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
     await _executePeriodClose(label);
   }
 
-  Future<void> _showEventResetDialog() async {
-    AppLogger.trace('Event-Reset-Dialog geöffnet', logger: 'ui.stats');
-    final theme = Theme.of(context);
-    final defaultLabel = 'Neues Event ${_defaultLabel()}';
-    final labelCtrl = TextEditingController(text: defaultLabel);
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.warning_amber_rounded, color: theme.colorScheme.error),
-            const SizedBox(width: 8),
-            const Text('Neues Event starten'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.errorContainer,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                'Diese Aktion setzt ALLE NFC-Chips zurück:\n\n'
-                '• Alle Guthaben werden auf 0,00 € gesetzt\n'
-                '• Alle Chips gelten beim nächsten Scan\n'
-                '   als neue Kunden (Pfand wird erneut erhoben)\n'
-                '• Ein Tagesabschluss wird automatisch gemacht\n\n'
-                'Artikel, Benutzer und der Buchungsverlauf\n'
-                'bleiben vollständig erhalten.',
-                style: TextStyle(
-                  color: theme.colorScheme.onErrorContainer,
-                  fontSize: 13,
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: labelCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Bezeichnung der neuen Periode',
-                border: OutlineInputBorder(),
-              ),
-              autofocus: true,
-              textCapitalization: TextCapitalization.sentences,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Abbrechen'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(
-              backgroundColor: theme.colorScheme.error,
-              foregroundColor: theme.colorScheme.onError,
-            ),
-            child: const Text('Zurücksetzen'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true || !mounted) return;
-    final label = labelCtrl.text.trim().isEmpty ? defaultLabel : labelCtrl.text.trim();
-    AppLogger.trace('Event-Reset bestätigt: label=$label', logger: 'ui.stats');
-
-    try {
-      final newPeriod = await ref.read(statsServiceProvider).eventReset(label);
-      await _loadPeriods();
-      if (!mounted) return;
-      setState(() => _selectedPeriodIds = {newPeriod.id});
-      ref.invalidate(_statsProvider(_periodKey));
-      ref.invalidate(_txProvider);
-      ref.invalidate(_chipSummaryProvider(_periodKey));
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Alle Chips zurückgesetzt — bereit für neues Event.')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Fehler: ${formatApiError(e)}'),
-        backgroundColor: Theme.of(context).colorScheme.error,
-      ));
-    }
+  /// A fest was started or ended in the admin tool (see
+  /// ActiveEventWatcher in providers.dart): the periods now belong to the
+  /// new active event, so the old selection is meaningless — start over on
+  /// its open period, same as when the screen first opens.
+  Future<void> _reloadAfterEventChange() async {
+    setState(() {
+      _selectedPeriodIds = {};
+      _loadingPeriods = true;
+    });
+    await _loadPeriods(autoSelect: true);
+    if (!mounted) return;
+    ref.invalidate(_statsProvider);
+    ref.invalidate(_txProvider);
+    ref.invalidate(_chipSummaryProvider);
   }
 
   String _periodLabel(StatsPeriod p) {
@@ -324,6 +247,9 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
     final theme = Theme.of(context);
     final user = ref.watch(authProvider).valueOrNull;
     final canClose = user?.hasPermission('statistics.revenue') ?? false;
+    // Tagesabschluss only during a fest — the server refuses it on Intern.
+    final isIntern = user?.eventIsIntern ?? true;
+    ref.listen(activeEventRevisionProvider, (_, _) => _reloadAfterEventChange());
 
     return Column(
       children: [
@@ -372,8 +298,9 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
                         ),
                       ),
               ),
-              // Row 2: action buttons
-              if (canClose)
+              // Row 2: Tagesabschluss — Fest starten/beenden, Vorlagen und der
+              // CSV-Export leben im Admin-Tool auf dem Server.
+              if (canClose && !isIntern)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 2, 12, 6),
                   child: Row(
@@ -386,19 +313,6 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
                         style: FilledButton.styleFrom(
                           backgroundColor: theme.colorScheme.secondary,
                           foregroundColor: theme.colorScheme.onSecondary,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 10),
-                          textStyle: const TextStyle(fontSize: 14),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      FilledButton.icon(
-                        onPressed: _showEventResetDialog,
-                        icon: const Icon(Icons.restart_alt, size: 18),
-                        label: const Text('Neues Event'),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: theme.colorScheme.error,
-                          foregroundColor: theme.colorScheme.onError,
                           padding: const EdgeInsets.symmetric(
                               horizontal: 16, vertical: 10),
                           textStyle: const TextStyle(fontSize: 14),

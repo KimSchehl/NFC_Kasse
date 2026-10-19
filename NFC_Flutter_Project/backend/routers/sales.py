@@ -5,10 +5,19 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 
+import catalog
 import stock
-from config import CHIP_DEPOSIT, LEADERBOARD_ENABLED, PAGER_ENABLED
+from config import LEADERBOARD_ENABLED, PAGER_ENABLED
 from database import get_db
-from dependencies import RequestContext, get_active_event, get_current_user, raise_if_missing_permission
+from dependencies import (
+    NOT_IN_EVENT,
+    EventChangedError,
+    RequestContext,
+    ensure_event_active,
+    get_active_event,
+    get_current_user,
+    raise_if_missing_permission,
+)
 from schemas import BalanceResponse, BookingRequest, BookingResponse, CancelResponse
 
 if LEADERBOARD_ENABLED:
@@ -18,22 +27,6 @@ router = APIRouter(prefix="/api/sales", tags=["sales"])
 logger = logging.getLogger(__name__)
 
 CANCEL_WINDOW_MINUTES = 5
-
-# Manager permissions — any of these bypasses per-category can_book / can_storno checks.
-_MANAGER_PERMS = ('categories.create', 'categories.edit', 'categories.deactivate', 'categories.delete')
-
-
-def _is_manager(db, user_id: int, event_id: int) -> bool:
-    row = db.execute(
-        f"""
-        SELECT 1 FROM user_permission
-        WHERE user_id=? AND event_id=?
-        AND permission_id IN ({','.join('?' * len(_MANAGER_PERMS))})
-        LIMIT 1
-        """,
-        (user_id, event_id, *_MANAGER_PERMS),
-    ).fetchone()
-    return row is not None
 
 
 def _get_or_create_customer(db, tenant_id: int, nfc_uid: str) -> tuple[int, bool]:
@@ -135,22 +128,23 @@ def get_balance(
     tenant_id = current_user["tenant_id"]
     with get_db() as db:
         row = db.execute(
-            "SELECT balance, is_available FROM customer WHERE tenant_id=? AND nfc_uid=?",
+            "SELECT balance, is_available, deposit_paid FROM customer WHERE tenant_id=? AND nfc_uid=?",
             (tenant_id, nfc_uid),
         ).fetchone()
 
     if row:
+        is_new = bool(row["is_available"])
         return BalanceResponse(
             nfc_uid=nfc_uid,
             balance=row["balance"],
-            is_new_customer=bool(row["is_available"]),
-            chip_deposit=CHIP_DEPOSIT,
+            is_new_customer=is_new,
+            chip_deposit=active_event["chip_deposit"] if is_new else row["deposit_paid"],
         )
     return BalanceResponse(
         nfc_uid=nfc_uid,
         balance=0.0,
         is_new_customer=True,
-        chip_deposit=CHIP_DEPOSIT,
+        chip_deposit=active_event["chip_deposit"],
     )
 
 
@@ -171,6 +165,7 @@ def create_booking(
     # BEGIN EXCLUSIVE: balance read + deduction must be atomic to prevent two
     # concurrent bookings from both reading the same pre-deduction balance.
     with get_db(exclusive=True) as db:
+        ensure_event_active(db, event_id)
         customer_id, is_new = _get_or_create_customer(db, tenant_id, body.nfc_uid)
 
         # Reject duplicate submissions: same customer + cashier within 2 seconds.
@@ -200,20 +195,25 @@ def create_booking(
         placeholders = ",".join("?" * len(unique_ids))
         products = db.execute(
             f"""
-            SELECT p.id, p.name, p.price, p.active, p.category_id, p.is_payout, p.is_pfand, p.points, p.stock, p.requires_pager, p.group_id, c.event_id
+            SELECT p.id, p.name, p.price, p.active, p.category_id, p.is_payout, p.is_pfand, p.points, p.stock, p.requires_pager, p.group_id,
+                   {catalog.PRODUCT_IN_EVENT_SQL} AND {catalog.CATEGORY_IN_EVENT_SQL} AS in_event
             FROM product p
             JOIN category c ON p.category_id = c.id
-            WHERE p.id IN ({placeholders}) AND p.deleted=0
+            WHERE p.id IN ({placeholders}) AND p.deleted=0 AND c.tenant_id=?
             """,
-            unique_ids,
+            [event_id, event_id, *unique_ids, tenant_id],
         ).fetchall()
 
         if len(products) != len(unique_ids):
             raise HTTPException(status_code=404, detail="Ein oder mehrere Artikel nicht gefunden")
 
         for p in products:
-            if p["event_id"] != event_id:
-                raise HTTPException(status_code=400, detail="Artikel gehört nicht zu diesem Event")
+            if not p["in_event"]:
+                # The device still shows an article (or category) that isn't
+                # switched on in this fest — a fest switch it hasn't noticed
+                # yet (see ActiveEventWatcher), or someone just switched it
+                # off. Either way the app reloads on this error.
+                raise EventChangedError(NOT_IN_EVENT)
             if not p["active"]:
                 raise HTTPException(status_code=400, detail=f"Artikel {p['id']} ist nicht verfügbar")
 
@@ -254,21 +254,21 @@ def create_booking(
         # deliberate exception to the topup rule ("Pfand -" is a negative price
         # without being an Aufladung).
         if is_payout_booking:
-            raise_if_missing_permission(db, user_id, event_id, "guthaben.payout")
+            raise_if_missing_permission(db, user_id, "guthaben.payout")
         if any(p["price"] < 0 and not p["is_pfand"] and not p["is_payout"] for p in products):
-            raise_if_missing_permission(db, user_id, event_id, "guthaben.topup")
+            raise_if_missing_permission(db, user_id, "guthaben.topup")
 
         # Per-category booking permission check.
         # Managers (any categories.* permission) and payout bookings bypass this.
-        if not is_payout_booking and not _is_manager(db, user_id, event_id):
+        if not is_payout_booking and not catalog.is_manager(db, user_id):
             unique_cat_ids = list(set(p["category_id"] for p in products))
             cat_placeholders = ",".join("?" * len(unique_cat_ids))
             authorized = db.execute(
                 f"""
                 SELECT COUNT(*) as cnt FROM user_category_access
-                WHERE user_id=? AND event_id=? AND category_id IN ({cat_placeholders}) AND can_book=1
+                WHERE user_id=? AND category_id IN ({cat_placeholders}) AND can_book=1
                 """,
-                [user_id, event_id, *unique_cat_ids],
+                [user_id, *unique_cat_ids],
             ).fetchone()["cnt"]
 
             if authorized < len(unique_cat_ids):
@@ -282,18 +282,20 @@ def create_booking(
                 )
 
         balance_row = db.execute(
-            "SELECT balance FROM customer WHERE id=?", (customer_id,)
+            "SELECT balance, deposit_paid FROM customer WHERE id=?", (customer_id,)
         ).fetchone()
         current_balance = balance_row["balance"]
 
         # ---- Payout flow ------------------------------------------------
-        # Give back the full balance plus the chip deposit. Record the payout
-        # as a single sale row at the actual cash-out amount and mark the chip
-        # as available for re-issuance (is_available=1).
+        # Give back the full balance plus the deposit taken for this chip —
+        # exactly what was taken, even if the event deposit has changed since.
+        # Record the payout as a single sale row at the actual cash-out amount
+        # and mark the chip as available for re-issuance (is_available=1).
         if is_payout_booking:
-            payout_amount = current_balance + CHIP_DEPOSIT
+            refund = balance_row["deposit_paid"]
+            payout_amount = current_balance + refund
             db.execute(
-                "UPDATE customer SET balance=0.0, is_available=1 WHERE id=?",
+                "UPDATE customer SET balance=0.0, is_available=1, deposit_paid=0 WHERE id=?",
                 (customer_id,),
             )
             cursor = db.execute(
@@ -307,7 +309,7 @@ def create_booking(
                 success=True,
                 new_balance=0.0,
                 sale_ids=[cursor.lastrowid],
-                chip_deposit_refunded=CHIP_DEPOSIT,
+                chip_deposit_refunded=refund,
                 low_stock_warnings=low_stock_warnings,
             )
 
@@ -319,25 +321,30 @@ def create_booking(
             total_price = sum(product_map[pid] for pid in body.product_ids)
 
             # Deduct chip deposit on first issuance (new chip or returned chip).
-            chip_deposit_applied = CHIP_DEPOSIT if is_new else 0.0
+            # The amount is the running event's deposit and is kept on the chip,
+            # so the payout can refund exactly this amount later.
+            chip_deposit_applied = active_event["chip_deposit"] if is_new else 0.0
             new_balance = current_balance - total_price - chip_deposit_applied
 
             # Negative balances are allowed — the client guards against them with the
             # "Rest Guthaben" check, but we do not enforce it here so a manager can
             # override (e.g. vendor accepting cash debt at the stand).
             db.execute(
-                "UPDATE customer SET balance=? WHERE id=?",
-                (new_balance, customer_id),
+                "UPDATE customer SET balance=?, deposit_paid=? WHERE id=?",
+                (new_balance, chip_deposit_applied if is_new else balance_row["deposit_paid"], customer_id),
             )
 
+            # Intern bookings are not part of any leaderboard.
+            points_award = not active_event["is_intern"]
             sale_ids = []
             for product_id in body.product_ids:
+                points = _effective(products_by_id, base_rows, product_id, "points") if points_award else 0
                 cursor = db.execute(
                     """
-                    INSERT INTO sale (event_id, customer_id, product_id, price_at_sale, booked_by)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO sale (event_id, customer_id, product_id, price_at_sale, points, booked_by)
+                    VALUES (?, ?, ?, ?, ?, ?)
                     """,
-                    (event_id, customer_id, product_id, product_map[product_id], user_id),
+                    (event_id, customer_id, product_id, product_map[product_id], points, user_id),
                 )
                 sale_ids.append(cursor.lastrowid)
 
@@ -365,19 +372,6 @@ def create_booking(
                         """,
                         (event_id, user_id, item_summary, body.pager_number, json.dumps(pager_sale_ids)),
                     )
-
-            if LEADERBOARD_ENABLED:
-                total_pts = sum(
-                    _effective(products_by_id, base_rows, pid, "points") for pid in body.product_ids
-                )
-                if total_pts != 0:
-                    db.execute("""
-                        INSERT INTO leaderboard_score (customer_id, points, opt_in)
-                        VALUES (?, ?, 0)
-                        ON CONFLICT(customer_id) DO UPDATE SET
-                            points     = points + excluded.points,
-                            updated_at = datetime('now')
-                    """, (customer_id, total_pts))
 
             _resp = BookingResponse(
                 success=True,
@@ -417,6 +411,7 @@ def cancel_booking(
     event_id = active_event["id"]
 
     with get_db(exclusive=True) as db:
+        ensure_event_active(db, event_id)
         sale = db.execute(
             """
             SELECT s.*, p.category_id, p.group_id
@@ -431,7 +426,7 @@ def cancel_booking(
         if sale["cancelled"]:
             raise HTTPException(status_code=400, detail="Buchung wurde bereits storniert")
 
-        manager = _is_manager(db, user_id, event_id)
+        manager = catalog.is_manager(db, user_id)
 
         if manager:
             # Managers can always cancel — no time restriction
@@ -442,9 +437,9 @@ def cancel_booking(
                 """
                 SELECT can_storno_5min, can_storno_unlimited
                 FROM user_category_access
-                WHERE user_id=? AND event_id=? AND category_id=?
+                WHERE user_id=? AND category_id=?
                 """,
-                (user_id, event_id, sale["category_id"]),
+                (user_id, sale["category_id"]),
             ).fetchone()
 
             has_unlimited = access and bool(access["can_storno_unlimited"])
@@ -501,18 +496,6 @@ def cancel_booking(
             "WHERE id=? AND stock IS NOT NULL",
             (stock_points_owner_id,),
         )
-        if LEADERBOARD_ENABLED:
-            pts_row = db.execute(
-                "SELECT points FROM product WHERE id=?", (stock_points_owner_id,)
-            ).fetchone()
-            cancelled_pts = pts_row["points"] if pts_row else 0
-            if cancelled_pts != 0:
-                db.execute("""
-                    UPDATE leaderboard_score
-                    SET points = points - ?, updated_at = datetime('now')
-                    WHERE customer_id = ?
-                """, (cancelled_pts, sale["customer_id"]))
-
     logger.info(
         "Booking cancelled: sale_id=%s customer_id=%s refunded=%.2f by=%s",
         sale_id, sale["customer_id"], refunded, current_user["username"],

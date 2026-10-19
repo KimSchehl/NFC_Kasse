@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 
-from config import BAR_CHIP_UID, CHIP_DEPOSIT
+from config import BAR_CHIP_UID
 from database import get_db
 from dependencies import RequestContext, require_permission
 from routers.stats import _period_time_bounds
@@ -58,7 +58,8 @@ def chip_summary(
             SELECT
                 COUNT(*) AS total_chips,
                 COUNT(CASE WHEN is_available = 0 THEN 1 END) AS active_chips,
-                COALESCE(SUM(balance), 0.0) AS total_balance
+                COALESCE(SUM(balance), 0.0) AS total_balance,
+                COALESCE(SUM(CASE WHEN is_available = 0 THEN deposit_paid END), 0.0) AS pending_pfand
             FROM customer
             WHERE tenant_id = ? AND nfc_uid != ?
             """,
@@ -90,11 +91,16 @@ def chip_summary(
 
         # Aufladungen die als Artikel gebucht wurden (negative price_at_sale)
         # gehen in die sale-Tabelle, nicht in topup — beide Quellen addieren.
+        # Pfand-Artikel mit negativem Preis (z. B. Becher-Rückgabe) sind keine
+        # Aufladung: dabei wird kein Geld eingenommen. Gleiche Abgrenzung wie
+        # im CSV-Export (event_lifecycle.export_csv).
         article_topup_row = db.execute(
             f"""
-            SELECT COALESCE(SUM(ABS(price_at_sale)), 0.0) AS topup_from_articles
-            FROM sale
-            WHERE event_id = ? AND cancelled = 0 AND price_at_sale < 0 {time_where}
+            SELECT COALESCE(SUM(ABS(s.price_at_sale)), 0.0) AS topup_from_articles
+            FROM sale s
+            JOIN product p ON p.id = s.product_id
+            WHERE s.event_id = ? AND s.cancelled = 0 AND s.price_at_sale < 0
+              AND p.is_pfand = 0 AND p.is_payout = 0 {time_where}
             """,
             (event_id, *time_params),
         ).fetchone()
@@ -103,7 +109,7 @@ def chip_summary(
         total_chips=chip_row["total_chips"],
         active_chips=chip_row["active_chips"],
         total_balance=chip_row["total_balance"],
-        pending_pfand=chip_row["active_chips"] * CHIP_DEPOSIT,
+        pending_pfand=chip_row["pending_pfand"],
         total_topup=topup_row["total_topup"] + article_topup_row["topup_from_articles"],
         total_payout=topup_row["total_payout"],
     )

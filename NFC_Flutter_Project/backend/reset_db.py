@@ -7,7 +7,9 @@ WICHTIG: Backend (start_backend.bat) muss gestoppt sein!
 import os
 import sqlite3
 import sys
-from datetime import datetime
+from pathlib import Path
+
+from db_backup import create_backup
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kasse.db")
 BACKUP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backups")
@@ -35,13 +37,9 @@ def _check_db():
 
 
 def _backup():
-    """Erstellt ein Backup von kasse.db vor dem Reset."""
-    os.makedirs(BACKUP_DIR, exist_ok=True)
-    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-    dest = os.path.join(BACKUP_DIR, f"kasse_vor_reset_{ts}.db")
-    import shutil
-    shutil.copy2(DB_PATH, dest)
-    return dest
+    """Sichert kasse.db vor dem Reset. Kein Datei-Kopieren: die WAL-Datei
+    würde sonst fehlen (siehe db_backup.py)."""
+    return create_backup(Path(DB_PATH), Path(BACKUP_DIR), prefix="vor-reset")
 
 
 def _get_db():
@@ -61,11 +59,7 @@ def _confirm(warnung: str) -> bool:
 
 
 def _stats(conn) -> dict:
-    lb_table = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='leaderboard_score'"
-    ).fetchone()
-    opt_in = conn.execute("SELECT COUNT(*) FROM leaderboard_score WHERE opt_in=1").fetchone()[0] \
-        if lb_table else 0
+    opt_in = conn.execute("SELECT COUNT(*) FROM leaderboard_entry WHERE opt_in=1").fetchone()[0]
     return {
         "chips":  conn.execute("SELECT COUNT(*) FROM customer").fetchone()[0],
         "sales":  conn.execute("SELECT COUNT(*) FROM sale").fetchone()[0],
@@ -107,7 +101,7 @@ def reset_chips_komplett():
     conn = _get_db()
     conn.execute("DELETE FROM sale")
     conn.execute("DELETE FROM topup")
-    conn.execute("DELETE FROM leaderboard_score")
+    conn.execute("DELETE FROM leaderboard_entry")
     conn.execute("DELETE FROM customer")
     conn.commit()
     conn.close()
@@ -143,44 +137,15 @@ def reset_chip_guthaben():
     print(f"  ✓ Fertig. Backup gespeichert: {os.path.basename(backup)}")
 
 
-def reset_chip_punkte():
-    """Setzt alle gespeicherten Leaderboard-Punkte auf 0 (Transaktionen bleiben erhalten)."""
-    _header()
-    print("  Option 3 — Chip Punkte (Leaderboard) zurücksetzen")
-    _hr()
-    print()
-    print("  Alle Punkte in der leaderboard_score Tabelle werden")
-    print("  auf 0 gesetzt. Buchungshistorie und Guthaben bleiben")
-    print("  unverändert. Das Leaderboard startet neu bei 0.")
-    print()
-    conn = _get_db()
-    opt_in = conn.execute("SELECT COUNT(*) FROM leaderboard_score WHERE opt_in=1").fetchone()[0]
-    total  = conn.execute("SELECT COUNT(*) FROM leaderboard_score").fetchone()[0]
-    conn.close()
-    print(f"     Einträge in leaderboard_score: {total}")
-    print(f"     Aktive Teilnehmer:             {opt_in}")
-
-    if not _confirm("Leaderboard-Punkte werden auf 0 zurückgesetzt!"):
-        return
-
-    backup = _backup()
-    conn = _get_db()
-    conn.execute("UPDATE leaderboard_score SET points = 0, updated_at = datetime('now')")
-    conn.commit()
-    conn.close()
-    print()
-    print(f"  ✓ Fertig. Backup gespeichert: {os.path.basename(backup)}")
-
-
 def reset_transaktionen():
     """Löscht alle Buchungen und Aufladungen (Chips + Guthaben bleiben)."""
     _header()
-    print("  Option 4 — Transaktionen zurücksetzen")
+    print("  Option 3 — Transaktionen zurücksetzen")
     _hr()
     print()
     print("  Alle gebuchten Artikel und Aufladungen werden gelöscht.")
     print("  Chip-UIDs, Namen und Guthaben bleiben erhalten.")
-    print("  Leaderboard-Punkte werden auf 0 gesetzt.")
+    print("  Leaderboard-Punkte entfallen mit den Buchungen.")
     print()
     conn = _get_db()
     s = _stats(conn)
@@ -195,7 +160,6 @@ def reset_transaktionen():
     conn = _get_db()
     conn.execute("DELETE FROM sale")
     conn.execute("DELETE FROM topup")
-    conn.execute("UPDATE leaderboard_score SET points = 0, updated_at = datetime('now')")
     conn.commit()
     conn.close()
     print()
@@ -203,16 +167,16 @@ def reset_transaktionen():
 
 
 def reset_leaderboard_teilnahme():
-    """Setzt opt_in aller Chips auf 0 (niemand nimmt teil)."""
+    """Setzt opt_in aller Chips im Leaderboard auf 0 (niemand nimmt teil)."""
     _header()
-    print("  Option 5 — Leaderboard-Teilnahme zurücksetzen")
+    print("  Option 4 — Leaderboard-Teilnahme zurücksetzen")
     _hr()
     print()
     print("  Alle Chips werden vom Leaderboard abgemeldet.")
-    print("  Punkte und Buchungshistorie bleiben erhalten.")
+    print("  Buchungshistorie bleibt erhalten.")
     print()
     conn = _get_db()
-    opt_in = conn.execute("SELECT COUNT(*) FROM leaderboard_score WHERE opt_in=1").fetchone()[0]
+    opt_in = conn.execute("SELECT COUNT(*) FROM leaderboard_entry WHERE opt_in=1").fetchone()[0]
     conn.close()
     print(f"     Aktive Teilnehmer: {opt_in}")
 
@@ -221,7 +185,7 @@ def reset_leaderboard_teilnahme():
 
     backup = _backup()
     conn = _get_db()
-    conn.execute("UPDATE leaderboard_score SET opt_in = 0, updated_at = datetime('now')")
+    conn.execute("UPDATE leaderboard_entry SET opt_in = 0")
     conn.commit()
     conn.close()
     print()
@@ -255,10 +219,8 @@ def main():
         print()
         print("  [1]  Chips komplett          — Alle UIDs + Buchungen löschen")
         print("  [2]  Chip Guthaben           — Alle Guthaben auf 0,00 € setzen")
-        print("  [3]  Chip Punkte             — Leaderboard-Punkte auf 0 setzen")
-        print("       (Buchungen bleiben, Punkte starten neu)")
-        print("  [4]  Transaktionen           — Alle Buchungen + Aufladungen löschen")
-        print("  [5]  Leaderboard-Teilnahme   — Alle Chips austragen")
+        print("  [3]  Transaktionen           — Alle Buchungen + Aufladungen löschen")
+        print("  [4]  Leaderboard-Teilnahme   — Alle Chips austragen")
         print()
         print("  [0]  Beenden")
         print()
@@ -275,10 +237,8 @@ def main():
         elif wahl == "2":
             reset_chip_guthaben()
         elif wahl == "3":
-            reset_chip_punkte()
-        elif wahl == "4":
             reset_transaktionen()
-        elif wahl == "5":
+        elif wahl == "4":
             reset_leaderboard_teilnahme()
         else:
             print("  Ungültige Eingabe.")

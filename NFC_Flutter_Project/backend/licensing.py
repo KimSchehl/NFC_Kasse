@@ -6,6 +6,7 @@ A license key is a compact, offline-verifiable token:
     base64url(payload_json) + "." + base64url(signature)
 
 where payload_json is `{"v": 1, "installation_id": "<uuid>", "feature": "<name>"}`
+plus an optional `"valid_until": "JJJJ-MM-TT"` (last valid day; absent = no expiry)
 (compact, no padding on either base64url segment) and signature is an
 Ed25519 signature over the raw payload_json bytes.
 
@@ -15,6 +16,8 @@ the developer's own machine; see license_tool/ at the repo root, which is
 NOT part of this package and must never be bundled into a build.
 
 One key is scoped to exactly one feature on exactly one installation.
+The feature "kasse" is the main software licence (LICENSE_KEY): without a
+valid one the Windows service refuses to start (service_main.py).
 config.py combines this with the existing PAGER=true/LEADERBOARD=true
 config.env flags — the flag says "the operator wants this on", a valid
 license key says "they're allowed to turn it on"; a feature only actually
@@ -24,6 +27,7 @@ activates when both agree.
 import base64
 import json
 import logging
+from datetime import date
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -47,31 +51,45 @@ def _load_public_key() -> Ed25519PublicKey:
     return Ed25519PublicKey.from_public_bytes(_b64_decode(PUBLIC_KEY_B64))
 
 
-def verify_feature(feature: str, installation_id: str, license_key: str) -> bool:
+# Results of check(); the admin tool shows them on its Lizenzen page.
+VALID = "valid"
+MISSING = "missing"
+INVALID = "invalid"                    # malformed or forged
+WRONG_FEATURE = "wrong_feature"        # a valid key, but for another feature
+WRONG_INSTALLATION = "wrong_installation"
+EXPIRED = "expired"
+
+
+def check(feature: str, installation_id: str, license_key: str, today: date | None = None) -> dict:
     """
-    True if license_key is a validly-signed grant of `feature` for exactly
-    this installation_id. Every failure mode (missing key, malformed key,
-    wrong feature, wrong installation, bad signature) just returns False —
-    callers treat that identically to "no license present"; nothing here
-    ever raises.
+    {"status": one of the constants above, "valid_until": "JJJJ-MM-TT"|None}.
+    Never raises — a broken key is just a status.
     """
-    if not license_key or not installation_id:
-        return False
+    if not license_key:
+        return {"status": MISSING, "valid_until": None}
     try:
-        payload_b64, sig_b64 = license_key.split(".", 1)
+        payload_b64, sig_b64 = license_key.strip().split(".", 1)
         payload_bytes = _b64_decode(payload_b64)
-        signature = _b64_decode(sig_b64)
-        _load_public_key().verify(signature, payload_bytes)
+        _load_public_key().verify(_b64_decode(sig_b64), payload_bytes)
         payload = json.loads(payload_bytes)
-        if payload.get("feature") == feature and payload.get("installation_id") == installation_id:
-            return True
-        logger.warning(
-            "License key for '%s' has a valid signature but wrong feature/installation_id", feature
-        )
-        return False
+        valid_until = payload.get("valid_until")
+        if payload.get("feature") != feature:
+            return {"status": WRONG_FEATURE, "valid_until": valid_until}
+        if not installation_id or payload.get("installation_id") != installation_id:
+            return {"status": WRONG_INSTALLATION, "valid_until": valid_until}
+        if valid_until and date.fromisoformat(valid_until) < (today or date.today()):
+            return {"status": EXPIRED, "valid_until": valid_until}
+        return {"status": VALID, "valid_until": valid_until}
     except InvalidSignature:
-        logger.warning("License key for '%s' failed signature verification", feature)
-        return False
-    except (ValueError, KeyError, TypeError, UnicodeDecodeError) as e:
-        logger.warning("License key for '%s' is malformed: %s", feature, e)
-        return False
+        return {"status": INVALID, "valid_until": None}
+    except (ValueError, KeyError, TypeError, UnicodeDecodeError, AttributeError):
+        return {"status": INVALID, "valid_until": None}
+
+
+def verify_feature(feature: str, installation_id: str, license_key: str) -> bool:
+    """True if license_key is a valid, unexpired grant of `feature` for
+    exactly this installation_id. Every failure just returns False."""
+    result = check(feature, installation_id, license_key)
+    if result["status"] not in (VALID, MISSING):
+        logger.warning("License key for '%s' rejected: %s", feature, result["status"])
+    return result["status"] == VALID

@@ -34,6 +34,7 @@ from pathlib import Path
 import yaml
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+import catalog
 import stock
 from config import (
     BAR_CHIP_UID,
@@ -51,7 +52,14 @@ from config import (
     PRINTER_TYPE,
 )
 from database import get_db
-from dependencies import RequestContext, raise_if_missing_permission, require_permission
+from dependencies import (
+    NOT_IN_EVENT,
+    EventChangedError,
+    RequestContext,
+    ensure_event_active,
+    raise_if_missing_permission,
+    require_permission,
+)
 from routers.sales import _resolve_base_products
 from schemas import PrintBonRequest, PrintBonResponse, PrintJobStatus, PrintJobsStatusResponse
 
@@ -402,6 +410,7 @@ def print_bon(
     product_map: dict[int, dict] = {}
 
     with get_db(exclusive=True) as db:
+        ensure_event_active(db, event_id)
         bar_row = db.execute(
             "SELECT id FROM customer WHERE tenant_id = ? AND nfc_uid = ?",
             (tenant_id, BAR_CHIP_UID),
@@ -421,12 +430,16 @@ def print_bon(
         unique_ids = list(set(product_ids_flat))
         ph = ",".join("?" * len(unique_ids))
         products = db.execute(
-            f"SELECT p.id, p.name, p.price, p.stock, p.group_id, p.is_payout, p.is_pfand "
+            f"SELECT p.id, p.name, p.price, p.stock, p.group_id, p.is_payout, p.is_pfand, "
+            f"{catalog.PRODUCT_IN_EVENT_SQL} AND {catalog.CATEGORY_IN_EVENT_SQL} AS in_event "
             f"FROM product p "
             f"JOIN category c ON p.category_id = c.id "
-            f"WHERE p.id IN ({ph}) AND p.deleted = 0 AND p.active = 1 AND c.event_id = ?",
-            [*unique_ids, event_id],
+            f"WHERE p.id IN ({ph}) AND p.deleted = 0 AND p.active = 1 AND c.tenant_id = ?",
+            [event_id, event_id, *unique_ids, tenant_id],
         ).fetchall()
+        if any(not p["in_event"] for p in products):
+            # Same as sales.py: an article not switched on in this fest.
+            raise EventChangedError(NOT_IN_EVENT)
 
         if len(products) != len(unique_ids):
             found_ids = {p["id"] for p in products}
@@ -439,9 +452,9 @@ def print_bon(
         # Same rights as sales.py's booking endpoint — the BAR-cash print path
         # moves the same balances, so it must not be a way around them.
         if any(p["is_payout"] for p in products):
-            raise_if_missing_permission(db, user_id, event_id, "guthaben.payout")
+            raise_if_missing_permission(db, user_id, "guthaben.payout")
         if any(p["price"] < 0 and not p["is_pfand"] and not p["is_payout"] for p in products):
-            raise_if_missing_permission(db, user_id, event_id, "guthaben.topup")
+            raise_if_missing_permission(db, user_id, "guthaben.topup")
 
         product_map = {
             p["id"]: {"name": p["name"], "price": p["price"], "stock": p["stock"], "group_id": p["group_id"]}

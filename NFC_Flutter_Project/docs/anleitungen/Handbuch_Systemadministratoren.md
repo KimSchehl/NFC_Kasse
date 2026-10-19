@@ -1,6 +1,6 @@
 # NFC-Kasse – Handbuch für Systemadministratoren
 
-4. Oktober 2026 · Kim Schehl
+18. Oktober 2026 · Kim Schehl
 
 ## 1. Überblick
 
@@ -182,13 +182,7 @@ Windows startet nach Updates gern von selbst neu. Der Kassendienst startet danac
 
 ### 5.1 Installieren
 
-1. Laden Sie **NFC-Kasse-Setup.exe** von **nfc-kasse.de/download** herunter.
-2. Doppelklicken Sie die Datei und bestätigen Sie die Benutzerkontensteuerung mit **Ja**.
-3. Meldet Windows „Der Computer wurde durch Windows geschützt“, klicken Sie auf **Weitere Informationen** und dann **Trotzdem ausführen**.
-4. Auf der Seite **Installationsmodus** ist **Installieren** schon gewählt. Ist die Kasse bereits installiert, steht dort **Aktualisieren** (Abschnitt 11).
-5. Zielordner so lassen (`C:\Program Files\NFC-Kasse`). Auf Wunsch **Desktop-Symbol erstellen** anhaken.
-6. **Installieren**. Das Setup richtet den Dienst ein, startet ihn und öffnet am Ende mit **NFC-Kasse jetzt öffnen** die Kasse im Browser.
-7. Melden Sie sich mit **admin** / **admin** an und ändern Sie das Passwort sofort: Menü **Benutzer**, beim Administrator auf den Stift tippen, Feld **Neues Passwort**.
+Die Installation Schritt für Schritt steht in der Bedieneranleitung, Abschnitt 2.2. Danach sofort das Passwort von **admin** ändern (Bedieneranleitung, Abschnitt 4.2). Ist die Kasse schon installiert, bietet das Setup **Aktualisieren** an (Abschnitt 11).
 
 ### 5.2 Was das Setup einrichtet
 
@@ -203,27 +197,11 @@ Windows startet nach Updates gern von selbst neu. Der Kassendienst startet danac
 
 ### 5.3 Das Verwaltungstool
 
-Öffnen Sie im Startmenü **NFC-Kasse → NFC-Kasse Verwaltung** und bestätigen Sie die Benutzerkontensteuerung. Das Tool hat links vier Seiten.
+Die Bedienung aller Seiten beschreibt die Bedieneranleitung in Abschnitt 3 (Dashboard, Veranstalter, Konfiguration, Bon-Layout, Info) und Abschnitt 11 (Feste, Daten). Technisch gilt:
 
-**Dashboard** zeigt, ob der Dienst läuft (grüner Punkt, „Läuft“). Darunter: **Starten**, **Stoppen**, **Neu starten**. **Weboberfläche öffnen** öffnet die Kasse am Laptop, **Protokolle öffnen** den Ordner mit den Protokolldateien.
-
-![Verwaltungstool, Dashboard: Dienst läuft, Knöpfe Starten, Stoppen, Neu starten und Schnellzugriff](../images/bedieneranleitung/windows/05_verwaltung_dashboard.png)
-
-**Konfiguration** bearbeitet die Datei `config.env` (alle Felder in Abschnitt 7). Unten stehen zwei Knöpfe: **Speichern** schreibt nur die Datei. **Speichern & Dienst neu starten** schreibt und startet den Dienst neu, erst dann gelten die Änderungen.
-
-![Verwaltungstool, Konfiguration: Netzwerk, Veranstaltung und Zusatz-Features](../images/bedieneranleitung/windows/06_verwaltung_konfiguration.png)
-
-![Konfiguration weiter unten: Lizenzschlüssel, Web-Zugriff und Bondrucker](../images/bedieneranleitung/windows/06b_verwaltung_konfiguration_lizenzen_web_drucker.png)
-
-![Konfiguration ganz unten: Bondrucker und Bon-Inhalt](../images/bedieneranleitung/windows/06c_verwaltung_konfiguration_bondrucker_inhalt.png)
-
-**Bon-Layout** bearbeitet die Datei `bon.yaml` (Abschnitt 9). Hier gibt es nur **Speichern**. Starten Sie danach auf dem Dashboard den Dienst neu.
-
-![Verwaltungstool, Bon-Layout](../images/bedieneranleitung/windows/07_verwaltung_bon_layout.png)
-
-**Info** zeigt Version, Installations-ID und die Ordner. Die Symbole rechts kopieren den jeweiligen Wert.
-
-![Verwaltungstool, Info mit Installations-ID und Ordnern](../images/bedieneranleitung/windows/07b_verwaltung_info.png)
+- Das Tool läuft als Administrator und braucht keine Anmeldung an der Kasse. Wer den Server-Laptop bedient, darf alles.
+- **Konfiguration** bearbeitet `config.env` (Abschnitt 7), **Bon-Layout** bearbeitet `bon.yaml` (Abschnitt 9.4). Beide gelten erst nach einem Neustart des Dienstes.
+- **Veranstalter**, **Feste**, **Daten** sowie Name und Pfand unter **Konfiguration** rufen `NfcKasseBackend.exe` im Programmordner mit einem Befehl auf, auch bei laufendem Dienst. Name und Pfand stehen in der Datenbank beim Fest, nicht in `config.env`, und gelten sofort. Die Kassen merken einen Festwechsel über ihre Statusabfrage alle 10 Sekunden.
 
 Jeder Neustart unterbricht alle Kassen für einige Sekunden und legt eine Datensicherung an. Starten Sie nicht während des größten Andrangs neu.
 
@@ -245,10 +223,10 @@ Alles, was die Kasse speichert, liegt in \*\*C:\\ProgramData\\NFC-Kasse\*\*. Der
 
 | Datei oder Ordner | Inhalt |
 | --- | --- |
-| `config.env` | alle Einstellungen (Abschnitt 7) |
+| `config.env` | alle Einstellungen des Servers (Abschnitt 7). Name und Pfand eines Festes stehen nicht hier, sondern in der Datenbank. |
 | `bon.yaml` | Bon-Layout (Abschnitt 9) |
-| `kasse.db` mit `kasse.db-wal` und `kasse.db-shm` | die Datenbank: Benutzer, Artikel, Chips, Guthaben, Buchungen |
-| `backups\kasse_JJJJMMTT-HHMM.db` | Sicherung bei jedem Dienststart, die fünf neuesten bleiben (Abschnitt 10) |
+| `kasse.db` mit `kasse.db-wal` und `kasse.db-shm` | die Datenbank: Veranstalter, Feste, Benutzer, Rechte, Artikel, Chips, Guthaben, Buchungen |
+| `backups\` | alle Sicherungen der Datenbank (Abschnitt 10) |
 | `logs\kasse_JJJJ-MM-TT_HH.log` | Protokoll der Kasse, eine Datei pro Stunde, aufbewahrt für 7 Tage |
 | `logs\winsw\` | Protokoll des Dienst-Rahmens. Hier stehen Fehler, die schon beim Start passieren, etwa eine fehlerhafte `config.env`. |
 
@@ -269,14 +247,13 @@ Die Datei liegt in `C:\ProgramData\NFC-Kasse\config.env`. Am einfachsten bearbei
 | `HOST` | Netzwerkschnittstelle (HOST) | `0.0.0.0` | `0.0.0.0` = aus dem ganzen Netz erreichbar. `127.0.0.1` = nur am Laptop selbst. |
 | `PORT` | Port | `8000` | Nicht ändern. Alle Adressen, die App-Voreinstellungen und die Browser-Richtlinien setzen 8000 voraus. |
 | `SECRET_KEY` | (nicht angezeigt) | zufällig | Schlüssel für die Anmeldungen. Eine Änderung meldet alle Geräte ab. |
-| `INSTALLATION_ID` | Seite Info | zufällig | Kennung dieser Installation. Nie ändern, alle Lizenzschlüssel hängen daran. |
-| `EVENT_NAME` | Name der Veranstaltung | `Hauptveranstaltung` | erscheint in der App und auf den Bons |
-| `CHIP_DEPOSIT` | Chip-Pfand (€) | `3.00` | Pfand je Chip in Euro. `0` schaltet das Pfand ab. |
+| `INSTALLATION_ID` | Seite Info, Seite Lizenzen | zufällig | Kennung dieser Installation. Nie ändern, alle Lizenzschlüssel hängen daran. |
+| `LICENSE_KEY` | Lizenzen → Kasse (Hauptlizenz) | leer | Hauptlizenz für diese Installation. Ohne gültigen Schlüssel beendet sich der Dienst beim Start mit einer Meldung in `logs\winsw\`. |
 | `BAR_CHIP_UID` | Virtuelle Bar-Chip-UID | `BAR` | Kennung des virtuellen Chips für Barverkäufe an der Bonkasse. Sein Guthaben darf ins Minus gehen. |
-| `LEADERBOARD` | Leaderboard aktiviert | `false` | Bestenliste, braucht zusätzlich den Lizenzschlüssel |
-| `LEADERBOARD_LICENSE_KEY` | Leaderboard-Lizenzschlüssel | leer | Lizenz für diese Installation |
-| `PAGER` | Pager aktiviert | `false` | Pager-Funktion, braucht zusätzlich den Lizenzschlüssel |
-| `PAGER_LICENSE_KEY` | Pager-Lizenzschlüssel | leer | Lizenz für diese Installation |
+| `LEADERBOARD` | Lizenzen → Leaderboard aktiviert | `false` | Bestenliste, braucht zusätzlich den Lizenzschlüssel |
+| `LEADERBOARD_LICENSE_KEY` | Lizenzen → Leaderboard | leer | Lizenz für diese Installation |
+| `PAGER` | Lizenzen → Pager aktiviert | `false` | Pager-Funktion, braucht zusätzlich den Lizenzschlüssel |
+| `PAGER_LICENSE_KEY` | Lizenzen → Pager | leer | Lizenz für diese Installation |
 | `WEBAPP_ROUTE` | Webapp-Pfad | `/webapp` | Nicht ändern, die Web-App ist für diesen Pfad gebaut. |
 | `ALLOWED_ORIGINS` | Erlaubte Herkunfts-Adressen (CORS) | `http://localhost:8000,http://127.0.0.1:8000` | siehe unten |
 | `LOG_LEVEL` | Protokoll-Level | `INFO` | `TRACE`, `DEBUG`, `INFO`, `WARNING`, `ERROR` oder `FATAL` |
@@ -401,44 +378,44 @@ Die Kasse legt jeden Bon in eine Warteschlange und druckt der Reihe nach. Ist de
 
 ### 9.4 Bon gestalten
 
-Was auf dem Bon steht, stellen Sie im Verwaltungstool unter **Konfiguration → Bon-Inhalt** ein (Veranstaltungsname, Datum, Preis, Fußzeile, Kassierer). Wie es aussieht, auf der Seite **Bon-Layout**. Beides gilt erst nach einem Neustart des Dienstes. So sieht ein Bon mit den Standardwerten und der Fußzeile „Vielen Dank!“ aus:
+Was die Felder bewirken und wie ein Bon aussieht, steht in der Bedieneranleitung, Abschnitt 8.4 und 8.5. Die Seite **Bon-Layout** schreibt in `C:\ProgramData\NFC-Kasse\bon.yaml`:
 
-```
-             Sommerfest 2026
-          04.10.2026  19:30 Uhr
-------------------------------------------
-Bier 0,5 l                        3,50 EUR
-Vielen Dank!
-Kassierer: bonkasse
-```
-
-Der Veranstaltungsname und der Artikelname werden fett gedruckt. Hinter „Kassierer:“ steht der Anmeldename des Kontos, das gebucht hat.
-
-| Feld auf der Seite Bon-Layout | Eintrag in bon.yaml | Wirkung |
+| Feld auf der Seite Bon-Layout | Eintrag in bon.yaml | Hinweis |
 | --- | --- | --- |
-| Trennlinie vor dem Kopfbereich | `header: separator_before` | Linie über dem Veranstaltungsnamen |
-| Trennlinie nach Datum/Uhrzeit | `header: separator_after` | Linie zwischen Kopf und Artikel |
+| Trennlinie vor dem Kopfbereich | `header: separator_before` |  |
+| Trennlinie nach Datum/Uhrzeit | `header: separator_after` |  |
 | Trennzeichen | `header: separator_char` | `-`, `=`, `*` oder `─`. Nicht jeder Drucker kann `─`, im Zweifel `-` nehmen. |
 | Artikelname fett | `article: bold` |  |
 | Artikelname in GROSSBUCHSTABEN | `article: uppercase` |  |
-| Preis in derselben Zeile wie der Artikel | `article: price_same_line` | aus = Preis in eigener, rechtsbündiger Zeile |
-| Leerzeilen vor dem Abschneiden | `footer: blank_lines` | Papiervorschub, damit der Text nicht abgeschnitten wird |
+| Preis in derselben Zeile wie der Artikel | `article: price_same_line` |  |
+| Leerzeilen vor dem Abschneiden | `footer: blank_lines` |  |
 
 Die Datei `bon_template.yaml` im Programmordner erklärt alle Einträge und enthält Beispiel-Layouts. Sie wird selbst nicht gelesen. Ändern Sie immer `C:\ProgramData\NFC-Kasse\bon.yaml`.
 
 ## 10. Datensicherung, Wiederherstellung und Umzug
 
-### 10.1 Automatische Sicherung
+Eine Sicherung enthält die ganze Datenbank: alle Feste, Artikel, Benutzer, Buchungen und das Guthaben aller Chips. `config.env` und `bon.yaml` sind nicht enthalten. Bedient wird das auf der Seite **Daten** im Verwaltungstool (Bedieneranleitung, Abschnitt 11.6). Die Sicherung läuft über die Backup-Funktion von SQLite und ist deshalb auch bei laufendem Dienst vollständig.
 
-Bei jedem Start des Dienstes sichert die Kasse die Datenbank nach `C:\ProgramData\NFC-Kasse\backups\kasse_JJJJMMTT-HHMM.db`. Das passiert bei jedem Windows-Start und bei jedem **Neu starten** im Verwaltungstool. Nur die fünf neuesten Sicherungen bleiben.
+### 10.1 Automatische Sicherungen
 
-Achtung: Fünf Neustarts kurz hintereinander, etwa beim Einrichten des Druckers, verdrängen alle älteren Sicherungen. Die automatische Sicherung ersetzt deshalb keine eigene.
+Alle Sicherungen liegen in `C:\ProgramData\NFC-Kasse\backups\`. Der Anfang des Dateinamens sagt, woher sie kommt:
+
+| Datei | Entsteht | Aufbewahrt |
+| --- | --- | --- |
+| `kasse_…db` | bei jedem Start des Dienstes, also bei jedem Windows-Start und jedem **Neu starten** | die fünf neuesten |
+| `vor-festwechsel_…db` | vor jedem **Fest starten** und **Fest beenden** | alle |
+| `vor-veranstalterwechsel_…db` | vor jedem Wechsel des Veranstalters | alle |
+| `vor-update_…db` | einmal, bevor ein Update die Datenbank umbaut | alle |
+| `vor-wiederherstellung_…db` | vor jedem **Wiederherstellen** und **Sicherung importieren** | alle |
+| `manuell_…db` | mit **Jetzt sichern** auf der Seite Daten | alle |
+
+Fünf Neustarts kurz hintereinander, etwa beim Einrichten des Druckers, verdrängen alle älteren `kasse_`-Sicherungen. Die anderen Sicherungen löscht die Kasse nie, räumen Sie den Ordner gelegentlich selbst auf.
 
 ### 10.2 Eigene Sicherung nach jedem Veranstaltungstag
 
-1. Im Verwaltungstool auf dem Dashboard **Neu starten**. Dabei entsteht eine frische, vollständige Sicherung.
-2. Im Ordner `backups` die neueste Datei auf einen USB-Stick kopieren.
-3. Zusätzlich `config.env` und `bon.yaml` mitkopieren, falls sich daran etwas geändert hat.
+1. Im Verwaltungstool auf der Seite **Daten** **Jetzt sichern** klicken, als Bezeichnung zum Beispiel den Tag eintragen.
+2. Bei der neuen Sicherung in der Liste auf das Symbol **Exportieren** klicken und sie auf einen USB-Stick speichern.
+3. Zusätzlich `config.env` und `bon.yaml` aus `C:\ProgramData\NFC-Kasse\` mitkopieren, falls sich daran etwas geändert hat.
 
 Kopieren Sie `kasse.db` nicht einfach im laufenden Betrieb. Die letzten Buchungen stehen dann eventuell noch in `kasse.db-wal` und fehlen in der Kopie.
 
@@ -446,11 +423,11 @@ Kopieren Sie `kasse.db` nicht einfach im laufenden Betrieb. Die letzten Buchunge
 
 Alle Buchungen nach dem Zeitpunkt der Sicherung gehen dabei verloren. Guthaben stehen wieder auf dem damaligen Stand.
 
-1. Die gewünschte Sicherung zuerst auf den Desktop kopieren.
-2. Im Verwaltungstool **Stoppen**.
-3. In `C:\ProgramData\NFC-Kasse\` die Datei `kasse.db` in `kasse_alt.db` umbenennen. `kasse.db-wal` und `kasse.db-shm` ebenfalls umbenennen oder löschen. Das ist wichtig: Bleiben sie liegen, mischt die Kasse sie in die zurückgespielte Datenbank.
-4. Die Sicherung vom Desktop in den Ordner kopieren und in `kasse.db` umbenennen.
-5. Im Verwaltungstool **Starten**. In der App unter **Statistik** prüfen, ob die Zahlen stimmen.
+1. Im Verwaltungstool die Seite **Daten** öffnen.
+2. Bei der gewünschten Sicherung auf das Symbol **Wiederherstellen** klicken, oder **Sicherung importieren** für eine Datei vom USB-Stick.
+3. Zur Bestätigung `WIEDERHERSTELLEN` eintippen.
+4. Das Tool sichert den aktuellen Stand, hält den Dienst an, spielt die Sicherung ein und startet den Dienst wieder.
+5. In der App unter **Statistik** prüfen, ob die Zahlen stimmen.
 
 ### 10.4 Umzug auf einen anderen Laptop
 
@@ -470,7 +447,9 @@ Ziehen Sie `config.env` mit um, dann bleibt die Installations-ID gleich und alle
 1. Machen Sie eine eigene Sicherung (Abschnitt 10.2).
 2. Laden Sie die neueste **NFC-Kasse-Setup.exe** von **nfc-kasse.de/download**.
 3. Starten Sie sie. Auf der Seite **Installationsmodus** ist **Aktualisieren** schon gewählt. Weiter bis **Installieren**.
-4. Das Setup stoppt den Dienst, ersetzt die Programmdateien und startet den Dienst neu. `config.env`, `bon.yaml` und die Datenbank bleiben unverändert.
+4. Das Setup stoppt den Dienst, ersetzt die Programmdateien und startet den Dienst neu. `config.env`, `bon.yaml` und die Daten bleiben erhalten. Bringt das Update einen neuen Aufbau der Datenbank mit, baut der Dienst sie beim ersten Start um und legt vorher die Sicherung `vor-update_…` an (Abschnitt 10.1).
+
+Beim Update auf die Version mit Veranstaltern werden gleichnamige Kategorien und Artikel aus den bisherigen Festen zu jeweils einer zusammengeführt. Jedes alte Fest zeigt weiter genau das, was es vorher hatte. Statistik und Abrechnung alter Feste bleiben unverändert. Als Rechte jedes Kontos gelten die aus dem gerade laufenden Betrieb.
 
 Updaten Sie nie während einer Veranstaltung.
 
@@ -486,17 +465,9 @@ Zuerst fragt das Programm, ob auch alle Daten gelöscht werden sollen. **Nein** 
 
 Dienst, Firewall-Regel und Browser-Richtlinien entfernt die Deinstallation immer.
 
-### 11.4 Lizenzen für Pager und Leaderboard
+### 11.4 Lizenzen
 
-Pager und Leaderboard sind kostenpflichtige Zusatzfunktionen. Ein Lizenzschlüssel gilt für genau eine Installations-ID und eine Funktion.
-
-1. Installations-ID im Verwaltungstool auf der Seite **Info** kopieren.
-2. Per E-Mail an **kontakt@nfc-kasse.de** schicken, notfalls an **info@nfc-kasse.de**, mit der gewünschten Funktion.
-3. Den Schlüssel im Verwaltungstool unter **Konfiguration → Kostenpflichtige Zusatz-Features** eintragen, den Schalter der Funktion einschalten, **Speichern & Dienst neu starten**.
-
-Ist der Schalter an, der Schlüssel aber ungültig, bleibt die Funktion aus. Im Protokoll steht dann `PAGER=true but no valid PAGER_LICENSE_KEY — feature stays disabled` (bzw. `LEADERBOARD=…`). Die Einrichtung im Alltag beschreibt die Zusatzanleitung **Pager und Leaderboard**.
-
-Wer `config.env` löscht, bekommt beim nächsten Start eine neue Installations-ID. Alle Lizenzen sind dann ungültig.
+Es gibt die Hauptlizenz der Kasse (`LICENSE_KEY`, ohne sie startet der Dienst nicht) und die Lizenzen für Pager und Leaderboard. Eintragen und prüfen: Bedieneranleitung, Abschnitt 3.5. Ein Lizenzschlüssel gilt für genau eine Installations-ID und eine Funktion und kann ein Ablaufdatum haben. Wer `config.env` löscht, bekommt beim nächsten Start eine neue Installations-ID, alle Lizenzen sind dann ungültig. Ziehen Sie deshalb beim Umzug `config.env` mit um (Abschnitt 10.4).
 
 ## 12. Fehlersuche
 
@@ -507,7 +478,7 @@ Der schnellste Test ist immer **http://nfc-kasse.lan:8000/health** im Browser de
 | App zeigt „Keine Verbindung zum Server“ | Gerät im falschen WLAN, Laptop schläft, Dienst gestoppt | WLAN prüfen (kein Gäste-WLAN), Laptop wecken (Abschnitt 4.1), Dienst im Verwaltungstool starten |
 | Mit IP geht es, mit nfc-kasse.lan nicht | DNS-Eintrag fehlt oder Gerät fragt einen fremden DNS-Server | Abschnitt 2.4 prüfen. Android: **Einstellungen → Netzwerk → Privates DNS** auf **Aus**. Chrome: **Einstellungen → Datenschutz → Sicherheit → Sicheres DNS** ausschalten. Notfalls IP nehmen (Abschnitt 3.2). |
 | Laptop bekommt nicht 192.168.1.2 | Reservierung hängt an einer anderen MAC-Adresse (Kabel statt WLAN, zufällige MAC) | Abschnitt 2.3 |
-| Dashboard zeigt „Gestoppt“, Starten hilft nicht | Port 8000 belegt oder `config.env` fehlerhaft | Eingabeaufforderung: `netstat -ano \| findstr :8000` zeigt, wer den Port belegt. In `logs\winsw\` den Fehler lesen. Häufig: Komma statt Punkt, z. B. `CHIP_DEPOSIT=3,00` statt `3.00`. |
+| Dashboard zeigt „Gestoppt“, Starten hilft nicht | Port 8000 belegt oder `config.env` fehlerhaft | Eingabeaufforderung: `netstat -ano \| findstr :8000` zeigt, wer den Port belegt. In `logs\winsw\` den Fehler lesen. Häufig: ein Tippfehler, z. B. Buchstaben in `PORT` oder `PRINTER_BAUDRATE`. |
 | Im Browser lässt sich der Bluetooth-Leser nicht wählen | Adresse nicht als sicher eingetragen, Firefox, Bluetooth aus | Abschnitt 8. Chrome oder Edge nehmen, Bluetooth in Windows einschalten. |
 | Anmeldung im Browser schlägt fehl, die App geht | Seite unter anderer Adresse geöffnet als der eingestellte Server | `ALLOWED_ORIGINS` ergänzen (Abschnitt 7) oder Seite unter derselben Adresse öffnen |
 | Bons kommen nicht | Drucker aus, kein Papier, Deckel offen, falsche Adresse oder COM-Port | Drucker prüfen. Im Protokoll steht dann `Print worker: could not open printer`. Die Bons warten und kommen nach (Abschnitt 9.3). |

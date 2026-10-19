@@ -1,8 +1,9 @@
 import '../models/stats_models.dart';
 import 'api_client.dart';
 
-/// Fetches revenue summaries, transaction lists, export URLs, and manages
-/// stats periods (Tagesabschluss).
+/// Fetches revenue summaries and transaction lists, and manages stats
+/// periods (Tagesabschluss). The CSV export for accounting is in the admin
+/// tool, not here.
 class StatsService {
   final ApiClient _client;
   StatsService(this._client);
@@ -18,17 +19,6 @@ class StatsService {
   Future<StatsPeriod> closePeriod(String label) async {
     final resp = await _client.dio.post(
       '/api/stats/periods/close',
-      data: {'label': label},
-    );
-    return StatsPeriod.fromJson(
-      resp.data['new_period'] as Map<String, dynamic>,
-    );
-  }
-
-  /// Tagesabschluss + alle Chip-Guthaben auf 0 zurücksetzen.
-  Future<StatsPeriod> eventReset(String label) async {
-    final resp = await _client.dio.post(
-      '/api/stats/event-reset',
       data: {'label': label},
     );
     return StatsPeriod.fromJson(
@@ -62,10 +52,5 @@ class StatsService {
     return (resp.data['items'] as List)
         .map((j) => TransactionItem.fromJson(j as Map<String, dynamic>))
         .toList();
-  }
-
-  String exportUrl({String? periodIds}) {
-    final base = '${_client.dio.options.baseUrl}/api/stats/export';
-    return periodIds != null ? '$base?period_ids=$periodIds' : base;
   }
 }

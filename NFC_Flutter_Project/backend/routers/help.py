@@ -107,12 +107,14 @@ async def ws_endpoint(ws: WebSocket, token: str = Query(...)) -> None:
 
     with get_db() as db:
         user = db.execute(
-            "SELECT id FROM user WHERE id=? AND active=1", (user_id,)
+            "SELECT id, tenant_id FROM user WHERE id=? AND active=1", (user_id,)
         ).fetchone()
         if not user:
             await ws.close(code=1008)
             return
-        event = db.execute("SELECT id FROM event WHERE active=1 LIMIT 1").fetchone()
+        event = db.execute(
+            "SELECT id FROM event WHERE tenant_id=? AND active=1", (user["tenant_id"],)
+        ).fetchone()
         event_id = event["id"] if event else 1
         active = _load_active_requests(db, event_id)
 
@@ -187,8 +189,8 @@ async def respond(
     with get_db() as db:
         perm = db.execute(
             "SELECT 1 FROM user_permission "
-            "WHERE user_id=? AND event_id=? AND permission_id='help.receive'",
-            (user_id, event_id),
+            "WHERE user_id=? AND permission_id='help.receive'",
+            (user_id,),
         ).fetchone()
         if not perm:
             raise HTTPException(403, "Berechtigung 'help.receive' erforderlich")
@@ -240,8 +242,8 @@ async def resolve(
 
         is_ec = db.execute(
             "SELECT 1 FROM user_permission "
-            "WHERE user_id=? AND event_id=? AND permission_id='help.receive'",
-            (user_id, event_id),
+            "WHERE user_id=? AND permission_id='help.receive'",
+            (user_id,),
         ).fetchone()
 
         if req["requester_id"] != user_id and not is_ec:

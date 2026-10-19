@@ -16,11 +16,16 @@ from logging_config import setup_logging
 setup_logging()
 
 import device_registry
+import tenants
+import database
 from database import get_db
+from migrations import migrate_v3, run_migrations
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from config import ALLOWED_ORIGINS, BAR_CHIP_UID, EVENT_NAME, LEADERBOARD_ENABLED, PAGER_ENABLED, WEBAPP_ROUTE
+from config import ALLOWED_ORIGINS, BAR_CHIP_UID, LEADERBOARD_ENABLED, PAGER_ENABLED, WEBAPP_ROUTE
+from dependencies import EventChangedError
 from middleware import TraceIdMiddleware
 from routers import auth, customers, display, download, help, kiosk, logs as logs_router, preferences, printer, products, sales, stats, topup, update, users
 if LEADERBOARD_ENABLED:
@@ -188,17 +193,9 @@ def _migrate() -> None:
             """)
         except Exception:
             pass  # old columns may not exist on fresh installs
-        # Sync event name from config.env on every start
-        db.execute(
-            "UPDATE event SET name = ? WHERE id = 1",
-            (EVENT_NAME,),
-        )
-        # Create BAR virtual chip for cash sales if not yet present (tenant_id=1 for local installs)
-        db.execute("""
-            INSERT OR IGNORE INTO customer (tenant_id, nfc_uid, balance, is_available)
-            SELECT 1, ?, 0.0, 0
-            WHERE EXISTS (SELECT 1 FROM tenant WHERE id = 1)
-        """, (BAR_CHIP_UID,))
+        run_migrations(db, bar_chip_uid=BAR_CHIP_UID)
+        # Virtual BAR chip for cash sales — one per Veranstalter.
+        tenants.ensure_bar_chips(db, BAR_CHIP_UID)
         # Print job queue table
         db.execute("""
             CREATE TABLE IF NOT EXISTS print_job (
@@ -230,9 +227,14 @@ def _migrate() -> None:
             )
         """)
         db.execute("CREATE INDEX IF NOT EXISTS idx_pager_order_operator ON pager_order(created_by, event_id, status)")
+    # Own connection (foreign keys off for the table rebuilds), so only after
+    # the block above has committed.
+    migrate_v3(database.DB_PATH)
 
 
 _migrate()
+if LEADERBOARD_ENABLED:
+    leaderboard.check_and_notify()
 
 app = FastAPI(
     title="NFC-Kasse API",
@@ -283,6 +285,13 @@ app.include_router(update.router)
 app.include_router(download.router)
 app.include_router(logs_router.router)
 
+@app.exception_handler(EventChangedError)
+async def _event_changed(_request, exc: EventChangedError):
+    # "detail" is what every client already shows as the error text; "code"
+    # lets the app react (reload articles/rights) without parsing that text.
+    return JSONResponse(status_code=409, content={"detail": str(exc), "code": "event_changed"})
+
+
 # Start the background print-queue worker (daemon thread — stops with the server).
 printer.start_worker()
 
@@ -300,7 +309,16 @@ def health(
     label: str | None = None,
 ):
     log_level = device_registry.touch(device_id, platform, label) if device_id else None
-    return {"status": "ok", "log_level": log_level}
+    # Feste are switched from the admin tool (admin_cli.py), not from any
+    # device — this is how the devices notice: every client already polls
+    # /health every 10s, and reloads its event-scoped data (articles,
+    # rights, periods) as soon as this list changes.
+    # The active Veranstalter's running event; a Veranstalter switch logs
+    # every device out anyway (see tenants.activate_tenant).
+    with get_db() as db:
+        event = tenants.active_event(db)
+    active_events = [event["id"]] if event else []
+    return {"status": "ok", "log_level": log_level, "active_events": active_events}
 
 
 # ---------------------------------------------------------------------------

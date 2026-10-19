@@ -3,10 +3,14 @@ import 'package:flutter/material.dart';
 import 'bon_layout_screen.dart';
 import 'config_screen.dart';
 import 'dashboard_screen.dart';
+import 'data_screen.dart';
+import 'events_screen.dart';
 import 'info_screen.dart';
+import 'licenses_screen.dart';
+import 'tenants_screen.dart';
 
 /// Root layout: a persistent NavigationRail (this tool is desktop/admin-only,
-/// no phone-narrow layout needed) switching between the four screens.
+/// no phone-narrow layout needed) switching between the screens.
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
 
@@ -19,8 +23,12 @@ class _HomeShellState extends State<HomeShell> {
 
   static const _screens = [
     DashboardScreen(),
+    TenantsScreen(),
+    EventsScreen(),
     ConfigScreen(),
+    LicensesScreen(),
     BonLayoutScreen(),
+    DataScreen(),
     InfoScreen(),
   ];
 
@@ -45,14 +53,34 @@ class _HomeShellState extends State<HomeShell> {
                 label: Text('Dashboard'),
               ),
               NavigationRailDestination(
+                icon: Icon(Icons.groups_outlined),
+                selectedIcon: Icon(Icons.groups),
+                label: Text('Veranstalter'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.celebration_outlined),
+                selectedIcon: Icon(Icons.celebration),
+                label: Text('Feste'),
+              ),
+              NavigationRailDestination(
                 icon: Icon(Icons.settings_outlined),
                 selectedIcon: Icon(Icons.settings),
                 label: Text('Konfiguration'),
               ),
               NavigationRailDestination(
+                icon: Icon(Icons.key_outlined),
+                selectedIcon: Icon(Icons.key),
+                label: Text('Lizenzen'),
+              ),
+              NavigationRailDestination(
                 icon: Icon(Icons.receipt_long_outlined),
                 selectedIcon: Icon(Icons.receipt_long),
                 label: Text('Bon-Layout'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.storage_outlined),
+                selectedIcon: Icon(Icons.storage),
+                label: Text('Daten'),
               ),
               NavigationRailDestination(
                 icon: Icon(Icons.info_outline),

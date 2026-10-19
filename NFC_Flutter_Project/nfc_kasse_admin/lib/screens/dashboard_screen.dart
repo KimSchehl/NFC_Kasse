@@ -1,10 +1,12 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/providers.dart';
 import '../services/config_env_file.dart';
+import '../services/network_info.dart';
 import '../services/nfc_kasse_paths.dart';
 import '../services/service_control.dart';
 
@@ -24,6 +26,8 @@ class DashboardScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final statusAsync = ref.watch(serviceStatusProvider);
+    final addressesAsync = ref.watch(serverAddressesProvider);
+    final port = ref.watch(configEnvProvider).valueOrNull?.values['PORT'] ?? '8000';
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -74,6 +78,44 @@ class DashboardScreen extends ConsumerWidget {
             orElse: () => const SizedBox.shrink(),
           ),
           const SizedBox(height: 32),
+          Row(
+            children: [
+              Text('Server-Adresse', style: theme.textTheme.titleMedium),
+              const Spacer(),
+              IconButton(
+                tooltip: 'Aktualisieren',
+                icon: const Icon(Icons.refresh, size: 20),
+                onPressed: () => ref.invalidate(serverAddressesProvider),
+              ),
+            ],
+          ),
+          Text(
+            'Das trägt ein Tablet im Server-Feld der App ein.',
+            style: theme.textTheme.bodySmall,
+          ),
+          const SizedBox(height: 12),
+          addressesAsync.when(
+            loading: () => const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: LinearProgressIndicator(),
+            ),
+            error: (e, _) => Text(
+              'Adresse konnte nicht ermittelt werden: $e',
+              style: TextStyle(color: theme.colorScheme.error),
+            ),
+            data: (addresses) {
+              if (addresses.isEmpty) {
+                return const Text('Kein Netzwerk gefunden.');
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final address in addresses) _AddressRow(address: address, port: port),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 32),
           Text('Schnellzugriff', style: theme.textTheme.titleMedium),
           const SizedBox(height: 12),
           Wrap(
@@ -93,6 +135,39 @@ class DashboardScreen extends ConsumerWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _AddressRow extends StatelessWidget {
+  final ServerAddress address;
+  final String port;
+
+  const _AddressRow({required this.address, required this.port});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final url = 'http://${address.ip}:$port';
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        dense: true,
+        leading: const Icon(Icons.lan_outlined),
+        title: SelectableText(url, style: theme.textTheme.titleSmall),
+        subtitle: Text(address.interfaceName),
+        trailing: IconButton(
+          tooltip: 'Kopieren',
+          icon: const Icon(Icons.copy_outlined, size: 20),
+          onPressed: () async {
+            await Clipboard.setData(ClipboardData(text: url));
+            if (context.mounted) {
+              ScaffoldMessenger.of(context)
+                  .showSnackBar(const SnackBar(content: Text('Adresse kopiert.')));
+            }
+          },
+        ),
       ),
     );
   }

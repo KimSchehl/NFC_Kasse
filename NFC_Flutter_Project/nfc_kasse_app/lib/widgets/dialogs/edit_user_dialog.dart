@@ -75,7 +75,9 @@ class _EditUserDialogState extends ConsumerState<EditUserDialog> {
     final svc = ref.read(usersServiceProvider);
     final permTree = await svc.getPermissionTree();
     if (!mounted) return;
-    final cats = await ref.read(productServiceProvider).getCategories();
+    // Every category of the Veranstalter: rights hold in every fest, also in
+    // categories the running fest doesn't show.
+    final cats = await ref.read(productServiceProvider).getCategories(all: true);
 
     Map<int, CategoryModel> catAccess = {};
     Set<String> perms = {};
@@ -294,6 +296,7 @@ class _EditUserDialogState extends ConsumerState<EditUserDialog> {
 
               const SizedBox(height: 20),
               Text('Kategorien & Berechtigungen', style: theme.textTheme.titleSmall),
+              Text('Gilt in jedem Fest.', style: theme.textTheme.bodySmall),
               const Divider(),
 
               // ── Per-category tree ────────────────────────────────────────
@@ -494,7 +497,7 @@ class _CategoryTreeTile extends StatelessWidget {
           _CheckRow(
             value: _categoryState,
             tristate: true,
-            label: category.name,
+            label: category.activeInEvent ? category.name : '${category.name} (nicht in diesem Fest)',
             bold: true,
             onChanged: (_) => _toggleCategory(),
           ),

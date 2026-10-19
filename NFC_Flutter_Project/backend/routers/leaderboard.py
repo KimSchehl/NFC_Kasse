@@ -6,8 +6,9 @@ Architecture:
   GET /api/leaderboard          — JSON top 10 (no auth)
   GET /api/leaderboard/stream   — SSE stream (no auth)
 
-Points are calculated on-the-fly: SUM(product.points) per chip for all
-non-cancelled sales where the chip has leaderboard_opt_in=1.
+Points are the sum of sale.points per chip for the running event's non-cancelled
+sales, for chips opted in for that event (leaderboard_entry). Nothing shown while
+the kasse runs as Intern.
 
 SSE only fires when the actual top-10 changes (by uid + score), so bookings
 that only move the 11th place do not cause a client refresh.
@@ -21,6 +22,7 @@ import json
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse, StreamingResponse
 
+import tenants
 from database import get_db
 
 # ---------------------------------------------------------------------------
@@ -34,17 +36,24 @@ _current_key: tuple = ()
 
 def _fetch_top10() -> list[dict]:
     with get_db() as db:
+        # No login on the TV page: it shows the active Veranstalter's fest.
+        event = tenants.active_event(db)
+        if event is None or event["is_intern"]:
+            return []
         rows = db.execute("""
             SELECT
                 c.nfc_uid,
                 COALESCE(c.customer_name, 'Anonym') AS display_name,
-                ls.points AS total_points
-            FROM leaderboard_score ls
-            JOIN customer c ON ls.customer_id = c.id
-            WHERE ls.opt_in = 1
-            ORDER BY ls.points DESC, ls.customer_id ASC
+                COALESCE(SUM(s.points), 0) AS total_points
+            FROM leaderboard_entry le
+            JOIN customer c ON c.id = le.customer_id
+            LEFT JOIN sale s ON s.customer_id = le.customer_id
+                AND s.event_id = le.event_id AND s.cancelled = 0
+            WHERE le.event_id = ? AND le.opt_in = 1
+            GROUP BY c.id
+            ORDER BY total_points DESC, c.id ASC
             LIMIT 10
-        """).fetchall()
+        """, (event["id"],)).fetchall()
     return [
         {
             "rank": i + 1,
