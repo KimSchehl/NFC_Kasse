@@ -11,12 +11,15 @@ Design notes:
   set in a single transaction.
 """
 
+import math
 import re
 from typing import Any
 
 from pydantic import BaseModel, field_validator
 
 _HEX_COLOR = re.compile(r"#[0-9A-Fa-f]{6}")
+
+MAX_TOPUP = 1000.0  # euros per top-up
 
 
 def _normalize_color(v: str | None) -> str | None:
@@ -293,8 +296,9 @@ class TopupRequest(BaseModel):
     @field_validator("amount")
     @classmethod
     def amount_must_be_positive(cls, v: float) -> float:
-        if v <= 0:
-            raise ValueError("Betrag muss größer als 0 sein")
+        # isfinite: "NaN" passes both comparisons and would poison the balance.
+        if not math.isfinite(v) or v <= 0 or v > MAX_TOPUP:
+            raise ValueError(f"Betrag muss größer als 0 und höchstens {MAX_TOPUP:.0f} € sein")
         return v
 
 

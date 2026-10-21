@@ -23,6 +23,10 @@ class ServerHistoryService {
     return result;
   }
 
+  /// Whether a login has ever been attempted on this device.
+  static Future<bool> hasHistory(AppStorage storage) async =>
+      (await storage.readList(key: _key))?.isNotEmpty ?? false;
+
   /// Call after a successful (or attempted) login with a non-empty URL —
   /// moves it to the front, dedupes, and trims to [_maxEntries].
   static Future<void> remember(AppStorage storage, String url) async {

@@ -363,6 +363,8 @@ def update_active_event(db, *, tenant_id: int, name: str | None = None, chip_dep
         if chip_deposit < 0:
             raise EventError("Der Pfand-Betrag darf nicht negativ sein.")
         db.execute("UPDATE event SET chip_deposit=? WHERE id=?", (chip_deposit, active["id"]))
+    # Devices show the fest name from /me — make them reload it.
+    catalog.bump_revision(db, tenant_id)
     return _event_dict(db.execute("SELECT * FROM event WHERE id=?", (active["id"],)).fetchone())
 
 

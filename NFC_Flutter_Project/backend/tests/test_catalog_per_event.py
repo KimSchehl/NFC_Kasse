@@ -120,3 +120,26 @@ def test_other_veranstalter_cannot_touch_the_catalog(client, auth_headers, catal
     assert resp.status_code == 404
     resp = client.post("/api/products/", json={"name": "X", "price": 1.0, "category_id": foreign}, headers=auth_headers)
     assert resp.status_code == 404
+
+
+def test_catalog_writes_bump_the_revision_other_devices_poll(client, auth_headers, catalog):
+    def rev():
+        return client.get("/health").json()["catalog_rev"]
+
+    start = rev()
+    resp = client.post(
+        "/api/products/", json={"category_id": catalog["drinks"], "name": "Wasser", "price": 1.0},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201, resp.text
+    assert rev() == start + 1
+    assert client.patch(
+        f"/api/products/{catalog['bier']}/event-active", json={"active": False}, headers=auth_headers,
+    ).status_code == 200
+    assert client.patch(
+        f"/api/products/categories/{catalog['coffee']}/active", json={"active": True}, headers=auth_headers,
+    ).status_code == 200
+    assert rev() == start + 3
+    # Reads leave it alone.
+    client.get(f"/api/products/?category_id={catalog['drinks']}", headers=auth_headers)
+    assert rev() == start + 3

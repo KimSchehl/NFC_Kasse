@@ -51,6 +51,10 @@ Gut zu wissen:
 
 Ist die Pager-Funktion aktiv, zeigt die Kasse auf Tablet und PC links neben den Artikeln die Spalte **Pager**. Dort stehen die offenen Bestellungen, die Sie selbst gebucht haben, jeweils mit Artikel und Pager-Nummer. Die Breite der Spalte lässt sich am Griff ‖ rechts davon verschieben.
 
+Die Spalte erscheint nur, wenn die gewählte Kategorie mindestens einen Artikel mit **Pager erforderlich** hat. Bei Kategorien ohne solche Artikel, etwa Getränken, bleibt der Platz für die Artikel frei. Ihre offenen Pager gehen dabei nicht verloren, sie stehen wieder in der Liste, sobald Sie zurück in eine Kategorie mit Pager-Artikeln wechseln.
+
+Mit dem Knopf oben rechts in der Spalte klappen Sie die Liste zu einem schmalen Streifen ein. Der Streifen zeigt die Zahl Ihrer offenen Pager, ein Tipp darauf klappt die Liste wieder auf. Wer die Liste an einem Gerät gar nicht braucht, schaltet sie unter **Einstellungen → Design → Pager → Pagerliste anzeigen** aus. Beides gilt nur für dieses Gerät.
+
 ![Kasse mit Pagerliste links: zwei offene Bestellungen mit den Pagern 7 und 12](../images/bedieneranleitung/zusatz/pager/01_kasse_mit_pagerliste.png)
 
 ### Bestellung mit Pager buchen

@@ -543,7 +543,7 @@ Der Preis steht als „EUR“, weil viele Bondrucker das Euro-Zeichen nicht druc
 
 ### 8.6 Bons an der Kasse drucken
 
-Dafür braucht das Konto das Recht **Bon drucken** (Abschnitt 6.2).
+Dafür braucht das Konto das Recht **Bon drucken** (Abschnitt 6.2) und in der Warengruppe das Recht **Buchen**.
 
 1. Kategorie wählen und die Artikel antippen. **Keinen Chip scannen.**
 2. Solange kein Chip gescannt ist, heißt der Knopf unten **Drucken** statt Buchen.
@@ -619,7 +619,7 @@ Nach jeder Buchung erscheint unter dem großen Knopf **Letzte Buchung stornieren
 
 ![Fenster „Buchung stornieren?“ mit den Artikeln der letzten Buchung](../images/bedieneranleitung/app/tablet/06_storno_dialog.png)
 
-Stornieren lässt sich nur die letzte Buchung dieses Geräts. Nach der nächsten Buchung geht das nicht mehr. Wer nur „Storno 5 min“ hat, kann außerdem nur in den ersten fünf Minuten stornieren. Danach meldet die Kasse „Storno-Zeitfenster von 5 Minuten abgelaufen“, dann die Schichtleitung holen.
+Stornieren lässt sich nur die letzte Buchung dieses Geräts. Nach der nächsten Buchung geht das nicht mehr. Wer nur „Storno 5 min“ hat, kann außerdem nur in den ersten fünf Minuten stornieren. Danach meldet die Kasse „Storno-Zeitfenster von 5 Minuten abgelaufen“, dann die Schichtleitung holen. Eine Auszahlung lässt sich nie stornieren, das Geld ist ja schon beim Gast.
 
 ### 9.6 Guthaben auszahlen (Bonkasse)
 

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/providers.dart';
 import '../services/app_logger.dart';
+import '../services/server_discovery_service.dart';
 import '../services/server_history_service.dart';
 import '../utils/formatters.dart';
 
@@ -34,8 +35,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Future<void> _loadServerOptions() async {
-    final options = await ServerHistoryService.load(ref.read(storageProvider));
+    final storage = ref.read(storageProvider);
+    final options = await ServerHistoryService.load(storage);
     if (mounted) setState(() => _serverOptions = options);
+
+    // Servers found on the LAN go to the top of the dropdown. Only a device
+    // that never logged in anywhere gets the field filled in for it.
+    var autoFill = !await ServerHistoryService.hasHistory(storage);
+    await ServerDiscoveryService.scan((url) {
+      if (!mounted) return;
+      setState(() => _serverOptions = [url, ..._serverOptions.where((o) => o != url)]);
+      final controller = _serverUrlController;
+      if (autoFill && controller != null) {
+        controller.text = url;
+        autoFill = false;
+      }
+    });
   }
 
   @override

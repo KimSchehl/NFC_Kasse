@@ -43,6 +43,7 @@ def init_db():
         name        TEXT    NOT NULL,
         plan        TEXT    NOT NULL DEFAULT 'local',  -- 'local' | 'cloud'
         active      INTEGER NOT NULL DEFAULT 0,        -- local: the one Veranstalter in use
+        catalog_rev INTEGER NOT NULL DEFAULT 0,        -- bumped on every catalog write, devices reload on change (/health)
         created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
     )""")
 

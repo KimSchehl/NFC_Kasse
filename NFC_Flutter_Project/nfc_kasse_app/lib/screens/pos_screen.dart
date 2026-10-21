@@ -47,7 +47,7 @@ class PosScreen extends ConsumerWidget {
 }
 
 /// Tablet / wide layout: product grid in the middle, cart on the right, and
-/// (pager add-on only) an open-pager list on the left. The cart and pager
+/// (pager add-on only) an open-pager list on the left, collapsible to a strip. The cart and pager
 /// columns are both independently drag-resizable in width — see
 /// [_VerticalDragHandle] and `clampPanelWidth`.
 class _WidePosLayout extends ConsumerWidget {
@@ -57,27 +57,38 @@ class _WidePosLayout extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final pagerEnabled = ref.watch(authProvider).valueOrNull?.pagerEnabled ?? false;
+    // Shown only with the add-on, the Settings switch on, and a category that
+    // has a pager article (options inherit the flag from their base, which is
+    // in the same list). Collapsed, it shrinks to [PagerListStrip].
+    final categoryHasPager = category != null &&
+        (ref.watch(productsProvider(category!.id)).valueOrNull?.any((p) => p.requiresPager) ??
+            false);
+    final showPager = (ref.watch(authProvider).valueOrNull?.pagerEnabled ?? false) &&
+        ref.watch(pagerListEnabledProvider) &&
+        categoryHasPager;
+    final pagerCollapsed = showPager && ref.watch(pagerListCollapsedProvider);
+    final pagerOpen = showPager && !pagerCollapsed;
 
     return LayoutBuilder(
       builder: (context, constraints) {
         final rawCartWidth = ref.watch(cartWidthProvider);
         final rawPagerWidth = ref.watch(pagerWidthProvider);
         final totalHandleWidth =
-            pagerEnabled ? _VerticalDragHandle.width * 2 : _VerticalDragHandle.width;
+            (pagerOpen ? _VerticalDragHandle.width * 2 : _VerticalDragHandle.width) +
+                (pagerCollapsed ? PagerListStrip.width : 0.0);
 
         final cartWidth = clampPanelWidth(
           rawCartWidth,
           constraints.maxWidth,
-          (pagerEnabled ? rawPagerWidth : 0.0) + totalHandleWidth,
+          (pagerOpen ? rawPagerWidth : 0.0) + totalHandleWidth,
         );
-        final pagerWidth = pagerEnabled
+        final pagerWidth = pagerOpen
             ? clampPanelWidth(rawPagerWidth, constraints.maxWidth, cartWidth + totalHandleWidth)
             : 0.0;
 
         return Row(
           children: [
-            if (pagerEnabled) ...[
+            if (pagerOpen) ...[
               SizedBox(width: pagerWidth, child: const PagerListPanel()),
               _VerticalDragHandle(
                 onDragUpdate: (dx) => ref.read(pagerWidthProvider.notifier).state = clampPanelWidth(
@@ -88,6 +99,7 @@ class _WidePosLayout extends ConsumerWidget {
                 onDragEnd: () => setPagerWidth(ref, ref.read(pagerWidthProvider)),
               ),
             ],
+            if (pagerCollapsed) const PagerListStrip(),
 
             // Middle: NFC input + product grid
             Expanded(
@@ -114,7 +126,7 @@ class _WidePosLayout extends ConsumerWidget {
               onDragUpdate: (dx) => ref.read(cartWidthProvider.notifier).state = clampPanelWidth(
                 cartWidth - dx,
                 constraints.maxWidth,
-                (pagerEnabled ? pagerWidth : 0.0) + totalHandleWidth,
+                (pagerOpen ? pagerWidth : 0.0) + totalHandleWidth,
               ),
               onDragEnd: () => setCartWidth(ref, ref.read(cartWidthProvider)),
             ),

@@ -208,6 +208,7 @@ def create_category(
             (user_id, new_id),
         )
         row = catalog.tenant_category(db, tenant_id, new_id)
+        catalog.bump_revision(db, tenant_id)
     logger.info(
         "Category created: category_id=%s name=%s by=%s",
         new_id, body.name, ctx["user"]["username"],
@@ -235,6 +236,7 @@ def update_category(
         )
         row = catalog.tenant_category(db, tenant_id, category_id)
         in_event = catalog.category_in_event(db, event_id, category_id)
+        catalog.bump_revision(db, tenant_id)
     logger.info(
         "Category updated: category_id=%s name=%s by=%s",
         category_id, new_name, ctx["user"]["username"],
@@ -255,6 +257,7 @@ def set_category_active_in_event(
     with get_db(exclusive=True) as db:
         row = _category_or_404(db, tenant_id, category_id)
         catalog.set_category_in_event(db, event_id, category_id, body.active)
+        catalog.bump_revision(db, tenant_id)
     logger.info(
         "Category %s in event %s: category_id=%s by=%s",
         "switched on" if body.active else "switched off", event_id, category_id, ctx["user"]["username"],
@@ -272,6 +275,7 @@ def delete_category(
     with get_db() as db:
         _category_or_404(db, tenant_id, category_id)
         db.execute("UPDATE category SET deleted=1 WHERE id=?", (category_id,))
+        catalog.bump_revision(db, tenant_id)
 
     logger.warning(
         "Category deleted: category_id=%s by=%s", category_id, ctx["user"]["username"],
@@ -500,6 +504,7 @@ def create_product(
         if body.group_id is None:
             catalog.set_product_in_event(db, event_id, new_id, True)
         in_event = catalog.product_in_event(db, event_id, {"id": new_id, "group_id": body.group_id})
+        catalog.bump_revision(db, tenant_id)
 
     logger.info(
         "Product created: product_id=%s name=%s price=%s category_id=%s by=%s",
@@ -601,6 +606,7 @@ def update_product(
                 (new_category_id, product_id),
             )
         in_event = catalog.product_in_event(db, event_id, {"id": product_id, "group_id": new_group_id})
+        catalog.bump_revision(db, tenant_id)
 
     logger.info(
         "Product updated: product_id=%s name=%s price=%s by=%s",
@@ -635,6 +641,7 @@ def set_product_active(
             (1 if body.active else 0, product_id),
         )
         in_event = catalog.product_in_event(db, event_id, row)
+        catalog.bump_revision(db, tenant_id)
 
     logger.info(
         "Product %s: product_id=%s by=%s",
@@ -674,6 +681,7 @@ def set_product_in_event(
             raise HTTPException(status_code=400, detail="Eine Option folgt ihrem Basis-Artikel")
         _require_category_flag(db, user_id, row["category_id"], "can_deactivate_article")
         catalog.set_product_in_event(db, event_id, product_id, body.active)
+        catalog.bump_revision(db, tenant_id)
 
     logger.info(
         "Product %s in event %s: product_id=%s by=%s",
@@ -707,6 +715,7 @@ def delete_product(
             "UPDATE product SET deleted=1, updated_at=datetime('now') WHERE group_id=? AND deleted=0",
             (product_id,),
         )
+        catalog.bump_revision(db, tenant_id)
 
     logger.warning(
         "Product deleted: product_id=%s by=%s", product_id, current_user["username"],

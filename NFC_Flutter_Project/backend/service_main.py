@@ -74,6 +74,38 @@ def _rotate_backup() -> None:
     db_backup.prune(BACKUPS_DIR, prefix="kasse", keep=5)
 
 
+def _advertise(port: int):
+    """Announces the backend as `_nfc-kasse._tcp` via mDNS/DNS-SD so the
+    Android app's login screen finds it without typing an address
+    (nfc_kasse_app/lib/services/server_discovery_service.dart). Best-effort:
+    on failure the service still runs, only auto-discovery is missing.
+    Returns the Zeroconf instance to close on shutdown, or None."""
+    import logging
+    import socket
+
+    try:
+        from zeroconf import IPVersion, ServiceInfo, Zeroconf
+
+        host = socket.gethostname()
+        # shortcut: announces every IPv4 of this PC (VPN/second NIC included),
+        # the app lists them all; pin one via config.env if that confuses users.
+        addresses = [ip for ip in socket.gethostbyname_ex(host)[2] if not ip.startswith("127.")]
+        info = ServiceInfo(
+            "_nfc-kasse._tcp.local.",
+            f"NFC-Kasse {host}._nfc-kasse._tcp.local.",
+            port=port,
+            parsed_addresses=addresses,
+            server=f"{host}.local.",
+        )
+        zc = Zeroconf(ip_version=IPVersion.V4Only)
+        zc.register_service(info, allow_name_change=True)
+        logging.getLogger(__name__).info("mDNS-Ankündigung aktiv: %s:%s", addresses, port)
+        return zc
+    except Exception:
+        logging.getLogger(__name__).warning("mDNS-Ankündigung fehlgeschlagen", exc_info=True)
+        return None
+
+
 def _require_main_license() -> None:
     """The service only runs with a valid main licence (LICENSE_KEY for the
     feature "kasse", bound to INSTALLATION_ID). Without one it exits with a
@@ -152,7 +184,12 @@ def main() -> None:
     # guard, device_registry's in-memory dict, and help.py's _HelpManager are
     # all per-process singletons. Multiple uvicorn workers would each run an
     # independent print queue and duplicate every receipt.
-    uvicorn.run(app, host=host, port=port, reload=False)
+    zc = _advertise(port)
+    try:
+        uvicorn.run(app, host=host, port=port, reload=False)
+    finally:
+        if zc is not None:
+            zc.close()  # sends the mDNS goodbye so apps drop the entry
 
 
 if __name__ == "__main__":

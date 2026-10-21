@@ -157,6 +157,9 @@ final connectionStatusProvider = StreamProvider<bool>((ref) {
         unawaited(ref
             .read(activeEventWatcherProvider.notifier)
             .observe((response.data['active_events'] as List?)?.cast<int>()));
+        unawaited(ref
+            .read(catalogRevisionWatcherProvider.notifier)
+            .observe(response.data['catalog_rev'] as int?));
         // Fire-and-forget: piggybacks the product-catalog change check on
         // the same 10s cadence without blocking this stream on its result.
         unawaited(ref.read(productSyncProvider.notifier).checkForChanges());
@@ -1105,6 +1108,22 @@ void setPagerWidth(WidgetRef ref, double width) {
   ref.read(storageProvider).write(key: 'display_pagerWidth', value: width.toString());
 }
 
+/// Pager list on the wide POS layout: [pagerListEnabledProvider] is the
+/// Settings → Design switch (off = never shown), [pagerListCollapsedProvider]
+/// the quick collapse toggle in the list's header. Same persistence pattern.
+final pagerListEnabledProvider = StateProvider<bool>((ref) => true);
+final pagerListCollapsedProvider = StateProvider<bool>((ref) => false);
+
+void setPagerListEnabled(WidgetRef ref, bool enabled) {
+  ref.read(pagerListEnabledProvider.notifier).state = enabled;
+  ref.read(storageProvider).write(key: 'display_pagerList', value: enabled.toString());
+}
+
+void setPagerListCollapsed(WidgetRef ref, bool collapsed) {
+  ref.read(pagerListCollapsedProvider.notifier).state = collapsed;
+  ref.read(storageProvider).write(key: 'display_pagerListCollapsed', value: collapsed.toString());
+}
+
 enum AppScreen { pos, stats, users, settings, account, logs, articleAdmin }
 
 final currentScreenProvider = StateProvider<AppScreen>((ref) => AppScreen.pos);
@@ -1250,6 +1269,44 @@ class ActiveEventWatcher extends Notifier<List<int>?> {
 
 final activeEventWatcherProvider = NotifierProvider<ActiveEventWatcher, List<int>?>(
   ActiveEventWatcher.new,
+);
+
+/// Fed by the same 10s /health poll: the server bumps `catalog_rev` on every
+/// catalog write on any device (article/category created, edited, deleted,
+/// switched on/off, fest renamed). On a change this device reloads /me
+/// (its category list), categories and articles — unlike a fest switch,
+/// the cart stays.
+class CatalogRevisionWatcher extends Notifier<int?> {
+  @override
+  int? build() => null;
+
+  Future<void> observe(int? revision) async {
+    if (revision == null) return; // older server without catalog_rev
+    final previous = state;
+    state = revision;
+    // First poll only establishes the baseline.
+    if (previous == null || previous == revision) return;
+
+    AppLogger.info('Katalog geändert: $previous -> $revision', logger: 'events');
+    if (ref.read(authProvider).valueOrNull != null) {
+      await ref.read(authProvider.notifier).refreshFromServer();
+      // A category switched off/deleted elsewhere must not stay selected
+      // (null → the POS screen picks the first one); a renamed one gets its new name.
+      final selected = ref.read(selectedCategoryProvider);
+      if (selected != null) {
+        final categories = ref.read(authProvider).valueOrNull?.categories ?? const [];
+        ref.read(selectedCategoryProvider.notifier).state =
+            categories.where((c) => c.id == selected.id).firstOrNull;
+      }
+    }
+    ref.invalidate(categoriesProvider);
+    ref.invalidate(productsProvider);
+    ref.read(adminCategoriesRefreshProvider.notifier).state++;
+  }
+}
+
+final catalogRevisionWatcherProvider = NotifierProvider<CatalogRevisionWatcher, int?>(
+  CatalogRevisionWatcher.new,
 );
 
 // ---------------------------------------------------------------------------

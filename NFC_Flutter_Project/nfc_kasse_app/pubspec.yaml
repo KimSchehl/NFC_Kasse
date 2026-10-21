@@ -3,7 +3,7 @@ description: NFC-based cashless POS system for events.
 publisher: "Kim Schehl"
 publish_to: 'none'
 # Major, Minor, Patch
-version: 1.0.90+92
+version: 1.0.94+96
 
 environment:
   sdk: ^3.11.4
@@ -24,6 +24,7 @@ dependencies:
   flutter_local_notifications: ^18.0.0
   flutter_blue_plus: ^2.3.11
   permission_handler: ^13.0.0
+  bonsoir: ^7.1.5
 
 dev_dependencies:
   flutter_test:

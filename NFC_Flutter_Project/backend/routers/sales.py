@@ -196,10 +196,11 @@ def create_booking(
         products = db.execute(
             f"""
             SELECT p.id, p.name, p.price, p.active, p.category_id, p.is_payout, p.is_pfand, p.points, p.stock, p.requires_pager, p.group_id,
+                   {catalog.BASE_ACTIVE_SQL} AS base_active,
                    {catalog.PRODUCT_IN_EVENT_SQL} AND {catalog.CATEGORY_IN_EVENT_SQL} AS in_event
             FROM product p
             JOIN category c ON p.category_id = c.id
-            WHERE p.id IN ({placeholders}) AND p.deleted=0 AND c.tenant_id=?
+            WHERE p.id IN ({placeholders}) AND p.deleted=0 AND c.deleted=0 AND c.tenant_id=?
             """,
             [event_id, event_id, *unique_ids, tenant_id],
         ).fetchall()
@@ -214,7 +215,7 @@ def create_booking(
                 # yet (see ActiveEventWatcher), or someone just switched it
                 # off. Either way the app reloads on this error.
                 raise EventChangedError(NOT_IN_EVENT)
-            if not p["active"]:
+            if not p["active"] or not p["base_active"]:
                 raise HTTPException(status_code=400, detail=f"Artikel {p['id']} ist nicht verfügbar")
 
         products_by_id = {p["id"]: p for p in products}
@@ -262,16 +263,7 @@ def create_booking(
         # Managers (any categories.* permission) and payout bookings bypass this.
         if not is_payout_booking and not catalog.is_manager(db, user_id):
             unique_cat_ids = list(set(p["category_id"] for p in products))
-            cat_placeholders = ",".join("?" * len(unique_cat_ids))
-            authorized = db.execute(
-                f"""
-                SELECT COUNT(*) as cnt FROM user_category_access
-                WHERE user_id=? AND category_id IN ({cat_placeholders}) AND can_book=1
-                """,
-                [user_id, *unique_cat_ids],
-            ).fetchone()["cnt"]
-
-            if authorized < len(unique_cat_ids):
+            if not catalog.can_book_all(db, user_id, unique_cat_ids):
                 logger.warning(
                     "Booking denied: user_id=%s missing can_book for category_ids=%s",
                     user_id, unique_cat_ids,
@@ -363,7 +355,7 @@ def create_booking(
                     item_summary = _build_pager_item_summary(pager_product_ids, products_by_id)
                     pager_sale_ids = [
                         sid for pid, sid in zip(body.product_ids, sale_ids)
-                        if products_by_id[pid]["requires_pager"]
+                        if _effective(products_by_id, base_rows, pid, "requires_pager")
                     ]
                     db.execute(
                         """
@@ -414,7 +406,7 @@ def cancel_booking(
         ensure_event_active(db, event_id)
         sale = db.execute(
             """
-            SELECT s.*, p.category_id, p.group_id
+            SELECT s.*, p.category_id, p.group_id, p.is_payout
             FROM sale s
             JOIN product p ON s.product_id = p.id
             WHERE s.id=? AND s.event_id=?
@@ -425,6 +417,9 @@ def cancel_booking(
             raise HTTPException(status_code=404, detail="Buchung nicht gefunden")
         if sale["cancelled"]:
             raise HTTPException(status_code=400, detail="Buchung wurde bereits storniert")
+        if sale["is_payout"]:
+            # The guest already has the cash; the chip is marked free and may be re-issued.
+            raise HTTPException(status_code=400, detail="Eine Auszahlung kann nicht storniert werden")
 
         manager = catalog.is_manager(db, user_id)
 

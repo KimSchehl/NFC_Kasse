@@ -64,6 +64,7 @@ def run_migrations(
     _add_column(db, "event", "ended_at", "TEXT")
     _add_column(db, "customer", "deposit_paid", "REAL NOT NULL DEFAULT 0")
     _add_column(db, "sale", "points", "INTEGER NOT NULL DEFAULT 0")
+    _add_column(db, "tenant", "catalog_rev", "INTEGER NOT NULL DEFAULT 0")
 
     db.execute("""
         CREATE TABLE IF NOT EXISTS leaderboard_entry (

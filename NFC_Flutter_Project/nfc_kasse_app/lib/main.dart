@@ -47,11 +47,16 @@ Future<void> main() async {
     final storage = AppStorage(prefs);
     await AppLogger.loadPersisted(prefs);
 
-    // Restore server URL.
+    // Restore server URL. A release web build is always served by the backend
+    // itself (WEBAPP_ROUTE), so the page's own origin is the server — on any
+    // device that could open the page. Debug web runs (flutter run -d chrome)
+    // are served by Flutter's dev server instead and keep the saved URL.
     final savedUrl = await storage.read(key: 'server_url');
-    final initialUrl = (savedUrl != null && savedUrl.isNotEmpty)
-        ? savedUrl
-        : ApiConfig.defaultBaseUrl;
+    final initialUrl = (kIsWeb && !kDebugMode)
+        ? Uri.base.origin
+        : (savedUrl != null && savedUrl.isNotEmpty)
+            ? savedUrl
+            : ApiConfig.defaultBaseUrl;
 
     // Restore display settings.
     final textScaleStr = await storage.read(key: 'display_textScale');
@@ -68,6 +73,9 @@ Future<void> main() async {
     final pagerWidthStr = await storage.read(key: 'display_pagerWidth');
     final initialCartWidth = double.tryParse(cartWidthStr ?? '') ?? 300.0;
     final initialPagerWidth = double.tryParse(pagerWidthStr ?? '') ?? 260.0;
+    final initialPagerList = (await storage.read(key: 'display_pagerList')) != 'false';
+    final initialPagerListCollapsed =
+        (await storage.read(key: 'display_pagerListCollapsed')) == 'true';
 
     // Restore (or generate + persist once) this device's stable log-correlation ID.
     var deviceId = await storage.read(key: 'log_device_id');
@@ -89,6 +97,8 @@ Future<void> main() async {
         sidebarCollapsedProvider.overrideWith((ref) => initialSidebarCollapsed),
         cartWidthProvider.overrideWith((ref) => initialCartWidth),
         pagerWidthProvider.overrideWith((ref) => initialPagerWidth),
+        pagerListEnabledProvider.overrideWith((ref) => initialPagerList),
+        pagerListCollapsedProvider.overrideWith((ref) => initialPagerListCollapsed),
         deviceIdProvider.overrideWith((ref) => deviceId!),
         localLogLevelProvider.overrideWith((ref) => initialLogLevel),
         deviceLabelProvider.overrideWith((ref) => initialDeviceLabel),

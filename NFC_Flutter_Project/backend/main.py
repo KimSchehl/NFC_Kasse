@@ -26,6 +26,7 @@ from fastapi.staticfiles import StaticFiles
 
 from config import ALLOWED_ORIGINS, BAR_CHIP_UID, LEADERBOARD_ENABLED, PAGER_ENABLED, WEBAPP_ROUTE
 from dependencies import EventChangedError
+from event_lifecycle import EventError
 from middleware import TraceIdMiddleware
 from routers import auth, customers, display, download, help, kiosk, logs as logs_router, preferences, printer, products, sales, stats, topup, update, users
 if LEADERBOARD_ENABLED:
@@ -315,10 +316,24 @@ def health(
     # rights, periods) as soon as this list changes.
     # The active Veranstalter's running event; a Veranstalter switch logs
     # every device out anyway (see tenants.activate_tenant).
-    with get_db() as db:
-        event = tenants.active_event(db)
+    try:
+        with get_db() as db:
+            event = tenants.active_event(db)
+            # Any catalog change (article, category, show/hide, fest name):
+            # devices reload their catalog when this number changes.
+            catalog_rev = db.execute(
+                "SELECT catalog_rev FROM tenant WHERE active = 1"
+            ).fetchone()
+    except EventError as exc:
+        # Empty database (no Veranstalter): the kasse can't work, so report unhealthy.
+        return JSONResponse(status_code=503, content={"status": "error", "detail": str(exc)})
     active_events = [event["id"]] if event else []
-    return {"status": "ok", "log_level": log_level, "active_events": active_events}
+    return {
+        "status": "ok",
+        "log_level": log_level,
+        "active_events": active_events,
+        "catalog_rev": catalog_rev[0] if catalog_rev else 0,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -327,6 +342,16 @@ def health(
 # To rebuild after changing the route:
 #   flutter build web --release --base-href /your-route/
 # ---------------------------------------------------------------------------
+class _RevalidatingStaticFiles(StaticFiles):
+    # The Flutter build's file names carry no hash, so without this browsers
+    # keep serving the old main.dart.js after an update (heuristic caching).
+    # no-cache still lets them reuse it after a cheap ETag check.
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 _webapp_dir = Path(__file__).parent / "webapp"
 if _webapp_dir.is_dir():
-    app.mount(WEBAPP_ROUTE, StaticFiles(directory=str(_webapp_dir), html=True), name="webapp")
+    app.mount(WEBAPP_ROUTE, _RevalidatingStaticFiles(directory=str(_webapp_dir), html=True), name="webapp")

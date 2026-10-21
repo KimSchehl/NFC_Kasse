@@ -77,20 +77,13 @@ uint8_t batteryMillivoltsToPercent(float millivolts) {
   return (uint8_t)(percent + 0.5f);
 }
 
-uint8_t readBatteryLevelPercent() {
-  float batteryMillivolts = readBatteryVoltageMv();
-  return batteryMillivoltsToPercent(batteryMillivolts);
-}
-
 // Doubles as the connected central's only liveness heartbeat (see
 // nfc_kasse_app's BleReaderNotifier._startWebHealthCheck, which has no other
 // way to detect a quietly-dead Web Bluetooth link) -- so this must notify on
 // every call past the rate limit, not just when the percentage has actually
-// moved. A battery sitting at the same rounded percent for several minutes
-// used to mean bleBas.write() (and therefore the BLE notify) never fired at
-// all after the first one at boot, silently starving every reconnect's
-// health check until it gave up at ~90-100s -- observed as a several-times-
-// per-hour disconnect/reconnect cycle on every reader, all day.
+// moved. bleBas.write() only sets the GATT value and never notifies, so
+// without the explicit notify() the app's health check gave up after
+// ~90-110s on every connection (a reconnect roughly every 1-2 minutes).
 void updateBatteryService(bool force = false) {
   uint32_t now = millis();
   if (!force && (now - lastBatteryUpdateMs) < 60000UL) {
@@ -98,7 +91,11 @@ void updateBatteryService(bool force = false) {
   }
 
   lastBatteryUpdateMs = now;
-  bleBas.write(readBatteryLevelPercent());
+  float millivolts = readBatteryVoltageMv();
+  uint8_t level = batteryMillivoltsToPercent(millivolts);
+  Serial.printf("[BAT] %d mV -> %u%%\n", (int)millivolts, level);
+  bleBas.write(level);  // value for read()
+  bleBas.notify(level); // write() alone never notifies -- this is the heartbeat
 }
 
 // Diagnostic-only: prints connection/security lifecycle over USB serial so a
@@ -171,6 +168,11 @@ void setup() {
   bleBas.begin();
 
   analogReadResolution(12);
+  // The 2x 1MOhm divider has 500kOhm source impedance; the default 3us
+  // acquisition time only suits <10kOhm, so readings jumped by hundreds of mV.
+  // 40us covers up to 800kOhm (nRF52840 PS, SAADC); oversampling averages noise.
+  analogSampleTime(40);
+  analogOversampling(8);
   updateBatteryService(true);
 
   nfcService.begin();
@@ -234,7 +236,7 @@ void loop() {
     lastUidLength = 0;
   }
 
-  updateBatteryService();
   pn532PowerDown();
+  updateBatteryService(); // measure after power-down, not under the PN532's ~100mA load
   delay(500); // PN532 is in Power Down for this whole window
 }

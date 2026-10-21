@@ -430,11 +430,12 @@ def print_bon(
         unique_ids = list(set(product_ids_flat))
         ph = ",".join("?" * len(unique_ids))
         products = db.execute(
-            f"SELECT p.id, p.name, p.price, p.stock, p.group_id, p.is_payout, p.is_pfand, "
+            f"SELECT p.id, p.name, p.price, p.stock, p.group_id, p.is_payout, p.is_pfand, p.category_id, "
             f"{catalog.PRODUCT_IN_EVENT_SQL} AND {catalog.CATEGORY_IN_EVENT_SQL} AS in_event "
             f"FROM product p "
             f"JOIN category c ON p.category_id = c.id "
-            f"WHERE p.id IN ({ph}) AND p.deleted = 0 AND p.active = 1 AND c.tenant_id = ?",
+            f"WHERE p.id IN ({ph}) AND p.deleted = 0 AND p.active = 1 AND {catalog.BASE_ACTIVE_SQL} = 1 "
+            f"AND c.deleted = 0 AND c.tenant_id = ?",
             [event_id, event_id, *unique_ids, tenant_id],
         ).fetchall()
         if any(not p["in_event"] for p in products):
@@ -455,6 +456,15 @@ def print_bon(
             raise_if_missing_permission(db, user_id, "guthaben.payout")
         if any(p["price"] < 0 and not p["is_pfand"] and not p["is_payout"] for p in products):
             raise_if_missing_permission(db, user_id, "guthaben.topup")
+        if (
+            not any(p["is_payout"] for p in products)
+            and not catalog.is_manager(db, user_id)
+            and not catalog.can_book_all(db, user_id, list({p["category_id"] for p in products}))
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail="Keine Buchungsberechtigung für eine oder mehrere Warengruppen",
+            )
 
         product_map = {
             p["id"]: {"name": p["name"], "price": p["price"], "stock": p["stock"], "group_id": p["group_id"]}

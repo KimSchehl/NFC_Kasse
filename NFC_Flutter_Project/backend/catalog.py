@@ -21,6 +21,8 @@ FULL_ACCESS = {flag: True for flag in ACCESS_FLAGS}
 PRODUCT_IN_EVENT_SQL = "COALESCE(p.group_id, p.id) IN (SELECT product_id FROM event_product WHERE event_id = ?)"
 # Same for `category c`.
 CATEGORY_IN_EVENT_SQL = "c.id IN (SELECT category_id FROM event_category WHERE event_id = ?)"
+# For `product p`: an option of a sold-out ("inactive") base article is sold out too.
+BASE_ACTIVE_SQL = "COALESCE((SELECT b.active FROM product b WHERE b.id = p.group_id), 1)"
 
 
 def is_manager(db, user_id: int) -> bool:
@@ -31,6 +33,15 @@ def is_manager(db, user_id: int) -> bool:
         f"SELECT 1 FROM user_permission WHERE user_id=? AND permission_id IN ({placeholders}) LIMIT 1",
         (user_id, *MANAGER_PERMS),
     ).fetchone() is not None
+
+
+def can_book_all(db, user_id: int, category_ids: list[int]) -> bool:
+    """True if the user has can_book in every one of the categories."""
+    placeholders = ",".join("?" * len(category_ids))
+    return db.execute(
+        f"SELECT COUNT(*) FROM user_category_access WHERE user_id=? AND category_id IN ({placeholders}) AND can_book=1",
+        (user_id, *category_ids),
+    ).fetchone()[0] >= len(category_ids)
 
 
 def category_access(db, user_id: int, category_id: int) -> dict | None:
@@ -75,6 +86,12 @@ def product_in_event(db, event_id: int, product) -> bool:
     return db.execute(
         "SELECT 1 FROM event_product WHERE event_id=? AND product_id=?", (event_id, base_id)
     ).fetchone() is not None
+
+
+def bump_revision(db, tenant_id: int) -> None:
+    """Every device polls this via /health and reloads categories, articles
+    and /me when it changes — call it on any catalog write."""
+    db.execute("UPDATE tenant SET catalog_rev = catalog_rev + 1 WHERE id=?", (tenant_id,))
 
 
 def _touch_products(db, base_ids: list[int]) -> None:

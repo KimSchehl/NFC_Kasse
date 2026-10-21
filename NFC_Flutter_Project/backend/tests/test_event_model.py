@@ -1,3 +1,4 @@
+import hashlib
 import sqlite3
 import time
 
@@ -101,7 +102,7 @@ def test_leaderboard_points_and_opt_in_belong_to_one_event(client, auth_headers,
     )
     assert booking.status_code == 201, booking.text
     assert leaderboard._fetch_top10() == [
-        {"rank": 1, "name": "Anna", "nfc_uid": "LB000001", "points": 2}
+        {"rank": 1, "name": "Anna", "chip_id": hashlib.sha256(b"LB000001").hexdigest()[:12], "points": 2}
     ]
 
     with database.get_db() as conn:

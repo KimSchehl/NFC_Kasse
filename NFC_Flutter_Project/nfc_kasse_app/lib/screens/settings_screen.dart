@@ -334,6 +334,18 @@ class _DesignTab extends ConsumerWidget {
           onChangeEnd: (v) => _saveDouble(
               ref, cartTextScaleProvider, 'display_cartTextScale', v),
         ),
+
+        if (ref.watch(authProvider).valueOrNull?.pagerEnabled ?? false) ...[
+          const SizedBox(height: 24),
+          _SectionHeader('Pager'),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Pagerliste anzeigen'),
+            subtitle: const Text('Nur bei Kategorien mit Pager-Artikeln'),
+            value: ref.watch(pagerListEnabledProvider),
+            onChanged: (v) => setPagerListEnabled(ref, v),
+          ),
+        ],
       ],
     );
   }

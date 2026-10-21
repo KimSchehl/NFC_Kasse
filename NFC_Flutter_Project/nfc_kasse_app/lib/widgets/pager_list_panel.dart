@@ -24,7 +24,16 @@ class PagerListPanel extends ConsumerWidget {
           color: theme.colorScheme.surfaceContainerHigh,
           child: Row(
             children: [
-              Text('Pager', style: theme.textTheme.headlineSmall),
+              Expanded(child: Text('Pager', style: theme.textTheme.headlineSmall)),
+              IconButton(
+                icon: const Icon(Icons.menu_open, size: 20),
+                tooltip: 'Pagerliste einklappen',
+                color: theme.colorScheme.primary,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                visualDensity: VisualDensity.compact,
+                onPressed: () => setPagerListCollapsed(ref, true),
+              ),
             ],
           ),
         ),
@@ -119,5 +128,35 @@ class PagerListPanel extends ConsumerWidget {
         ),
       );
     }
+  }
+}
+
+/// Collapsed form of [PagerListPanel]: a narrow strip with an expand button
+/// and the number of open pagers, so they aren't forgotten while collapsed.
+class PagerListStrip extends ConsumerWidget {
+  const PagerListStrip({super.key});
+
+  static const width = 48.0;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final count = ref.watch(pagerListProvider).valueOrNull?.length ?? 0;
+    return Container(
+      width: width,
+      color: theme.colorScheme.surfaceContainerHigh,
+      padding: const EdgeInsets.only(top: 8),
+      alignment: Alignment.topCenter,
+      child: IconButton(
+        tooltip: 'Pagerliste einblenden',
+        color: theme.colorScheme.primary,
+        onPressed: () => setPagerListCollapsed(ref, false),
+        icon: Badge(
+          isLabelVisible: count > 0,
+          label: Text('$count'),
+          child: const Icon(Icons.vibration),
+        ),
+      ),
+    );
   }
 }

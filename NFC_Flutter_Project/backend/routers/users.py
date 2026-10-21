@@ -304,6 +304,12 @@ def set_user_permissions(
             if not valid:
                 raise HTTPException(status_code=400, detail=f"Ungültige Berechtigung: '{perm_id}'")
 
+        if "users.manage_permissions" not in body.permission_ids and _blocks_last_manager(db, user_id, tenant_id):
+            raise HTTPException(
+                status_code=400,
+                detail="Letzter Benutzer mit Benutzerverwaltungs-Rechten kann dieses Recht nicht verlieren",
+            )
+
         # Full replace pattern: delete all existing rows then insert the new set
         # in one transaction. Simpler than a diff-merge and less error-prone —
         # the client always sends the complete desired state.
@@ -462,6 +468,15 @@ def apply_role_template(
             "SELECT permission_id FROM role_template_permission WHERE role_template_id=?",
             (template_id,),
         ).fetchall()
+
+        if (
+            "users.manage_permissions" not in {r["permission_id"] for r in perm_rows}
+            and _blocks_last_manager(db, user_id, tenant_id)
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="Letzter Benutzer mit Benutzerverwaltungs-Rechten kann dieses Recht nicht verlieren",
+            )
 
         # Full replace — removes the user's current permissions and grants the
         # template's permission set. Existing category access is not touched.

@@ -17,6 +17,7 @@ Call check_and_notify() from any router that mutates sales or leaderboard_opt_in
 """
 
 import asyncio
+import hashlib
 import json
 
 from fastapi import APIRouter
@@ -58,7 +59,8 @@ def _fetch_top10() -> list[dict]:
         {
             "rank": i + 1,
             "name": r["display_name"],
-            "nfc_uid": r["nfc_uid"],
+            # Public page: never the UID itself, a cloned UID would spend the chip.
+            "chip_id": hashlib.sha256(r["nfc_uid"].encode()).hexdigest()[:12],
             "points": r["total_points"],
         }
         for i, r in enumerate(rows)
@@ -66,7 +68,7 @@ def _fetch_top10() -> list[dict]:
 
 
 def _make_key(top10: list[dict]) -> tuple:
-    return tuple((e["nfc_uid"], e["points"]) for e in top10)
+    return tuple((e["chip_id"], e["points"]) for e in top10)
 
 
 def check_and_notify() -> None:

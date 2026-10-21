@@ -27,6 +27,13 @@ if not exist "nfc_kasse_admin\build\windows\x64\runner\Release\NfcKasseAdmin.exe
     goto :error
 )
 
+REM --- Step 0b: install everything the frozen backend needs ---
+REM PyInstaller only bundles what is installed in this Python, so a new
+REM requirements.txt entry would otherwise silently miss the installer.
+echo Installing Python dependencies...
+python -m pip install -r backend\requirements.txt pyinstaller
+if errorlevel 1 goto :error
+
 REM --- Step 1: stage the newest APK only (not the full updates/ history) ---
 echo [1/5] Staging update seed...
 python packaging\pyinstaller\stage_updates_seed.py
