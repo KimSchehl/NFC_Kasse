@@ -1,6 +1,6 @@
 # NFC-Kasse – Bedieneranleitung
 
-18. Oktober 2026 · Kim Schehl
+4. November 2026 · Kim Schehl
 
 ## 1. Überblick
 
@@ -88,7 +88,8 @@ Neue Versionen bietet die App danach selbst an: Sie zeigt **Update verfügbar**,
 
 1. Die neue **NFC-Kasse-Setup.exe** von https://nfc-kasse.de/download herunterladen.
 2. Ausführen. Auf der Seite Installationsmodus ist jetzt **Aktualisieren** vorgewählt.
-3. Durchklicken bis **Fertigstellen**. Das Setup stoppt den Dienst, ersetzt das Programm und startet den Dienst wieder.
+3. Ist die **NFC-Kasse Verwaltung** gerade offen, bietet das Setup an, sie zu schließen. Das bestätigen, nach dem Update öffnet das Setup sie wieder.
+4. Durchklicken bis **Fertigstellen**. Das Setup stoppt den Dienst, wartet, bis er ganz beendet ist, ersetzt das Programm und startet den Dienst wieder. Lässt sich der Dienst ausnahmsweise nicht beenden, bricht das Setup mit einer Meldung ab, ohne etwas zu verändern. Dann den Laptop neu starten und das Setup noch einmal ausführen.
 
 Datenbank, Einstellungen und Bon-Layout bleiben dabei erhalten. Aktualisieren Sie nicht während des Verkaufs, für kurze Zeit sind keine Buchungen möglich.
 
@@ -108,6 +109,8 @@ Mit der **NFC-Kasse Verwaltung** steuern Sie den Server am Laptop: Dienst starte
 2. Die Frage der Benutzerkontensteuerung mit **Ja** beantworten.
 3. Links sind acht Seiten: **Dashboard**, **Veranstalter** (Abschnitt 3.6), **Feste** (Abschnitt 11), **Konfiguration**, **Lizenzen** (Abschnitt 3.5), **Bon-Layout**, **Daten** (Abschnitt 11.6) und **Info**.
 
+Das Verwaltungstool sagt **Warengruppen**, wo die Kasse **Kategorien** sagt. Gemeint ist dasselbe.
+
 ### 3.2 Dashboard
 
 ![Verwaltungstool, Dashboard: Dienst läuft, Knöpfe Starten, Stoppen, Neu starten und Schnellzugriff](../images/bedieneranleitung/windows/05_verwaltung_dashboard.png)
@@ -122,12 +125,12 @@ Während der Dienst neu startet, sind für einige Sekunden keine Buchungen mögl
 
 ### 3.3 Konfiguration
 
+![Verwaltungstool, Seite Konfiguration oben: Netzwerk, Veranstaltung mit Chip-Pfand und „Für alle übernehmen“, Web-Zugriff](../images/bedieneranleitung/windows/06_verwaltung_konfiguration.png)
+
 Hier stehen die Einstellungen des Servers. Ganz unten sind zwei Knöpfe:
 
 - **Speichern & Dienst neu starten** speichert und übernimmt die Änderung sofort. Das ist der Normalfall.
 - **Speichern** speichert nur. Die Änderung wirkt erst beim nächsten Neustart, die Verwaltung zeigt dann „Neustart nötig“.
-
-![Konfiguration oben: Netzwerk, Veranstaltung und kostenpflichtige Zusatz-Features](../images/bedieneranleitung/windows/06_verwaltung_konfiguration.png)
 
 | Feld | Was eintragen |
 | --- | --- |
@@ -136,19 +139,19 @@ Hier stehen die Einstellungen des Servers. Ganz unten sind zwei Knöpfe:
 | Name der Veranstaltung, Chip-Pfand (€) | Name und Pfand des laufenden Festes. Diese beiden Felder haben einen eigenen Knopf **Für alle übernehmen**: Nach einer Rückfrage gelten sie sofort an allen Kassen und auf jedem neuen Bon, ohne Neustart. Ein neuer Pfand gilt für Chips, die ab dann ausgegeben werden, Chips beim Gast behalten ihren bezahlten Pfand. Im internen Betrieb heißt die Kasse immer „Intern“, dort ist nur der Pfand änderbar. |
 | Virtuelle Bar-Chip-UID | `BAR` lassen. Auf diesen gedachten Chip werden Barverkäufe mit Papierbon gebucht. |
 
-![Konfiguration Mitte: Lizenzschlüssel, Web-Zugriff und Beginn der Bondrucker-Einstellungen](../images/bedieneranleitung/windows/06b_verwaltung_konfiguration_lizenzen_web_drucker.png)
-
 | Feld | Was eintragen |
 | --- | --- |
 | Webapp-Pfad | `/webapp` lassen. |
 | Erlaubte Herkunfts-Adressen (CORS) | Empfohlen: `http://localhost:8000,http://127.0.0.1:8000,http://nfc-kasse.lan:8000,http://192.168.1.2:8000`. Dann klappt die Anmeldung im Browser unter beiden Adressen. |
 | Protokoll-Level | `INFO` lassen. `DEBUG` nur zur Fehlersuche, das erzeugt sehr viele Einträge. |
 
+![Konfiguration Mitte: Web-Zugriff, Protokoll-Level und Bondrucker](../images/bedieneranleitung/windows/06b_verwaltung_konfiguration_web_drucker.png)
+
 ![Konfiguration unten: Bondrucker und Bon-Inhalt](../images/bedieneranleitung/windows/06c_verwaltung_konfiguration_bondrucker_inhalt.png)
 
 Die Bereiche **Bondrucker** und **Bon-Inhalt** sind in Abschnitt 8 Schritt für Schritt erklärt.
 
-Wichtig beim Ausfüllen der übrigen Felder: Beträge mit Punkt schreiben, nicht mit Komma (`2.50`, nicht `2,50`). In Zahlenfelder wie Port oder Baudrate gehören nur Ziffern. Ein falscher Wert kann verhindern, dass der Dienst startet. Steht das Dashboard nach dem Speichern auf „Gestoppt“, korrigieren Sie den zuletzt geänderten Wert und speichern erneut.
+Vor dem Speichern prüft das Verwaltungstool die Zahlenfelder: Port und TCP-Port (1 bis 65535), COM-Port (in der Form `COM3`), Baudrate und Zeichen pro Zeile. Stimmt ein Wert nicht, erscheint unten eine Meldung wie „Baudrate: nur Zahlen, z. B. 9600“, und es wird nichts gespeichert. Den Chip-Pfand dürfen Sie mit Komma oder Punkt schreiben (`2,50` oder `2.50`).
 
 ### 3.4 Bon-Layout
 
@@ -159,6 +162,8 @@ Hier legen Sie fest, wie der gedruckte Bon aussieht: Trennlinien, Trennzeichen, 
 Diese Seite hat nur **Speichern**. Danach auf dem **Dashboard** auf **Neu starten** klicken, sonst druckt die Kasse weiter mit dem alten Layout.
 
 ### 3.5 Lizenzen und Info
+
+![Verwaltungstool, Seite Lizenzen: Hauptlizenz und Pager gültig, Leaderboard ohne Schlüssel](../images/bedieneranleitung/windows/06d_verwaltung_lizenzen.png)
 
 Die Seite **Lizenzen** zeigt oben die **Installations-ID** dieser Installation. Darunter steht für jede Lizenz ein Feld für den Schlüssel:
 
@@ -183,13 +188,17 @@ Die Seite **Info** zeigt die Version des Verwaltungstools, die Installations-ID 
 
 Ein Server kann die Kassen mehrerer Veranstalter verwalten, zum Beispiel wenn er für verschiedene Vereine oder Weingüter im Einsatz ist. Jeder Veranstalter hat seine eigene, komplett getrennte Kasse: eigene Benutzer und Rechte, eigene Kategorien und Artikel, eigene Chips mit eigenem Guthaben und eigene Feste. In Betrieb ist immer genau einer. Nur dessen Benutzer können sich anmelden.
 
-Bei der Installation gibt es einen Veranstalter „Lokal“. Für eine einzige Kasse brauchen Sie diese Seite nicht.
+![Verwaltungstool, Seite Veranstalter mit dem Veranstalter „Lokal · in Betrieb“](../images/bedieneranleitung/windows/05b_verwaltung_veranstalter.png)
+
+Bei der Installation gibt es einen Veranstalter „Lokal“. Für eine einzige Kasse brauchen Sie diese Seite nicht. Die Zeile zeigt, was bei ihm gerade läuft (Intern oder der Name des Festes) und wie viele Benutzer, Warengruppen und Feste er hat.
 
 **Neuen Veranstalter anlegen**
 
 1. Seite **Veranstalter** öffnen und auf **Neuer Veranstalter** klicken.
 2. **Name** eingeben, dazu **Benutzername** und **Passwort** des ersten Administrators (mindestens 6 Zeichen, zweimal). Mit diesem Konto richtet der Veranstalter seine Kasse ein.
 3. **Anlegen**. Der neue Veranstalter startet leer und im internen Betrieb.
+
+![Dialog „Neuer Veranstalter“ mit Name, Benutzername des Administrators und Passwort](../images/bedieneranleitung/windows/05c_verwaltung_veranstalter_neu.png)
 
 **Zu einem anderen Veranstalter wechseln**
 
@@ -208,7 +217,7 @@ Alles ab hier machen Sie in der Kasse, also in der App auf dem Tablet oder in de
 ![Anmeldeseite mit Benutzername, Passwort und Server-URL](../images/bedieneranleitung/app/tablet/01_anmeldung.png)
 
 1. Die App öffnen, oder im Browser `http://nfc-kasse.lan:8000/webapp` aufrufen.
-2. Unten im Feld **Server-URL** steht bereits `http://nfc-kasse.lan:8000`. Wenn Sie ins Feld tippen, schlägt die App außerdem `http://192.168.1.2:8000` und früher benutzte Adressen vor. Klappt die Anmeldung mit dem Namen nicht, wählen Sie die Adresse mit der Zahl.
+2. Unten im Feld **Server-URL** steht die Adresse des Servers. Die Android-App sucht den Server beim Öffnen der Anmeldeseite selbst im WLAN: Findet sie ihn, steht seine Adresse ganz oben in der Auswahl, und ein Gerät, das sich zum ersten Mal anmeldet, bekommt sie automatisch eingetragen. Wenn Sie ins Feld tippen, schlägt die App außerdem `http://nfc-kasse.lan:8000`, `http://192.168.1.2:8000` und früher benutzte Adressen vor. Klappt die Anmeldung mit dem Namen nicht, wählen Sie die Adresse mit der Zahl. In der Weboberfläche ist die Adresse immer die der Seite, dort müssen Sie nichts auswählen.
 3. **Benutzername** und **Passwort** eingeben und auf **Anmelden** tippen.
 
 Die Kasse bleibt angemeldet, auch nach einem Neustart des Geräts. Beim allerersten Mal melden Sie sich mit Benutzer **admin** und Passwort **admin** an.
@@ -250,7 +259,7 @@ Kategorien und Artikel legen Sie einmal an, sie bleiben über alle Feste erhalte
 
 Eine neue Kategorie ist im laufenden Fest sofort eingeschaltet.
 
-Umbenennen, ausblenden oder löschen: In der Kasse unten in der Seitenleiste **Bearbeitungsmodus** einschalten. Neben jeder Kategorie erscheint ein Stift. Antippen, Namen ändern und speichern, mit **In diesem Fest anzeigen** für dieses Fest ausblenden (Recht „Kategorie deaktivieren“) oder die Kategorie löschen (Recht „Kategorie löschen“). Gelöscht ist sie in allen Festen.
+Umbenennen, Farbe ändern, ausblenden oder löschen: In der Kasse unten in der Seitenleiste **Bearbeitungsmodus** einschalten. Neben jeder Kategorie erscheint ein Stift. Antippen, Namen oder **Standard-Farbe (für alle)** ändern und speichern, mit **In diesem Fest anzeigen** für dieses Fest ausblenden (Recht „Kategorie deaktivieren“) oder die Kategorie löschen (Recht „Kategorie löschen“). Gelöscht ist sie in allen Festen.
 
 Tipp: Legen Sie für die Bonkasse eine eigene Kategorie an. Dort liegen die Aufladeartikel und der Auszahlungs-Artikel, und nur das Personal der Bonkasse bekommt Zugriff darauf.
 
@@ -300,6 +309,7 @@ Wichtig:
 - Sobald ein Artikel Optionen hat, verschwindet sein eigenes Preisfeld („Preis wird pro Option unten festgelegt“). Gebucht wird immer eine Option. Soll es die Currywurst auch ohne Beilage geben, braucht sie dazu eine eigene Option wie „pur“.
 - Im Warenkorb und auf dem Bon steht der volle Name, zum Beispiel „Currywurst mit Pommes“.
 - Optionen teilen sich Bestand, Leaderboard-Punkte und Pager mit ihrem Artikel.
+- Jede Option kann eine eigene Farbe bekommen: Auf den Farbkreis neben der Option tippen, Farbe wählen, **Übernehmen**. Die Farbe gilt im Auswahlfenster an allen Kassen. Eine Option ohne eigene Farbe bleibt grau, sie übernimmt nicht die Farbe des Artikels.
 - Eine Option entfernen Sie mit dem Mülleimer-Symbol neben ihr.
 
 So sieht das an der Kasse aus: Kachel **Currywurst** antippen, dann die gewünschte Option. Mit **Schließen** wird nichts in den Warenkorb gelegt.
@@ -317,12 +327,13 @@ So sieht das an der Kasse aus: Kachel **Currywurst** antippen, dann die gewünsc
 1. In der Kasse unten in der Seitenleiste **Bearbeitungsmodus** tippen.
 2. Eine Kachel lange drücken und an die neue Stelle ziehen.
 3. Mit den runden Knöpfen unten rechts fügen Sie eine leere Position ein oder entfernen die letzte wieder. So lassen sich Gruppen bilden, zum Beispiel alle alkoholfreien Getränke in einer Reihe.
-4. Eine Kachel antippen öffnet ein kleines Fenster für **Farbe** und **Bestand**, praktisch zum Nachfüllen während des Betriebs.
-5. Zum Beenden wieder auf **Bearbeitungsmodus** tippen.
+4. Eine Kachel antippen öffnet ein kleines Fenster für **Button-Farbe** und **Bestand**, praktisch zum Nachfüllen während des Betriebs. Hat der Artikel Optionen, stehen darunter auch die **Farben der Optionen**. Eine hier gewählte Farbe gilt nur für Ihr Konto, ohne Auswahl gilt die Standard-Farbe aus der Artikelverwaltung.
+5. Kategorien in der Seitenleiste lassen sich am Griff links neben dem Namen in eine andere Reihenfolge ziehen. Das Farbpaletten-Symbol daneben gibt einer Kategorie eine eigene Farbe. Beides gilt nur für Ihr Konto, andere Mitarbeiter behalten ihre Reihenfolge und sehen die Standard-Farbe.
+6. Zum Beenden wieder auf **Bearbeitungsmodus** tippen.
 
 ![Kasse im Bearbeitungsmodus: Stifte neben den Kategorien, Knöpfe für leere Positionen unten rechts](../images/bedieneranleitung/app/tablet/10_bearbeitungsmodus.png)
 
-Anordnung und eigene Farbe der Kacheln speichert die Kasse für das Benutzerkonto, mit dem Sie sie ändern, getrennt für Hoch- und Querformat. Sie gelten auf jedem Gerät, an dem sich dieses Konto anmeldet, andere Konten sehen ihre eigene Anordnung. Richten Sie die Kacheln deshalb mit dem Konto ein, das später am Stand kassiert. Der Bestand gilt dagegen für alle Kassen.
+Anordnung und eigene Farben von Kacheln und Kategorien speichert die Kasse für das Benutzerkonto, mit dem Sie sie ändern, getrennt für Hoch- und Querformat. Sie gelten auf jedem Gerät, an dem sich dieses Konto anmeldet, andere Konten sehen ihre eigene Anordnung. Ist dasselbe Konto an mehreren Geräten angemeldet, übernehmen die anderen Geräte eine Änderung nach etwa 10 Sekunden von selbst. Ein Gerät, an dem gerade der Bearbeitungsmodus offen ist, wartet damit, bis er beendet ist. Richten Sie die Kacheln deshalb mit dem Konto ein, das später am Stand kassiert. Der Bestand gilt dagegen für alle Kassen.
 
 ### 5.6 Was ein Fest zeigt
 
@@ -332,7 +343,7 @@ Die **Artikelverwaltung** zeigt alle Kategorien und Artikel, auch die, die im la
 - Der Schalter neben einem Artikel blendet ihn für das laufende Fest ein oder aus, mit seinen Optionen. Dafür braucht es in der Kategorie das Recht „Deaktivieren“.
 - Ausgeblendet heißt: nicht in der Kasse und nicht buchbar. Anders als **Aktiv (buchbar)** im Artikel-Dialog: Ein inaktiver Artikel steht grau in der Kasse, zum Beispiel wenn er ausverkauft ist, und das in jedem Fest.
 
-Welche Kategorien ein neues Fest zeigt, wählen Sie beim Start im Verwaltungstool (Abschnitt 11.2). Andere Kassen sehen ein Ein- oder Ausblenden spätestens nach dem nächsten Neuladen, zum Beispiel nach einer Anmeldung.
+Welche Kategorien ein neues Fest zeigt, wählen Sie beim Start im Verwaltungstool (Abschnitt 11.2). Andere Kassen übernehmen jede Änderung an Kategorien und Artikeln nach etwa 10 Sekunden von selbst, auch das Ein- und Ausblenden. Der Warenkorb bleibt dabei erhalten.
 
 ## 6. Mitarbeiter-Konten und Rechte
 
@@ -409,7 +420,15 @@ Unter **Kategorien & Berechtigungen** stehen alle Kategorien, auch die, die das 
 
 ## 7. Bluetooth-NFC-Leser verbinden
 
-Der NFC-Leser ist ein kleines Gerät mit Akku. Er liest den Chip und schickt dessen Nummer per Bluetooth an die Kasse. Er hat nur zwei Bedienelemente: einen **Schiebeschalter** zum Ein- und Ausschalten und eine **USB-C-Buchse** zum Laden. Auf der Rückseite steht sein Name, zum Beispiel **NFC-Reader\_0001**. Am Leser selbst müssen Sie nichts einstellen.
+Der NFC-Leser ist ein kleines Gerät mit Akku. Er liest den Chip und schickt dessen Nummer per Bluetooth an die Kasse. Er hat nur zwei Bedienelemente: einen **Schiebeschalter** zum Ein- und Ausschalten und eine **USB-C-Buchse** zum Laden, beide an derselben Seite. Auf der Rückseite steht sein Name, zum Beispiel **NFC-Reader\_0001**. Am Leser selbst müssen Sie nichts einstellen.
+
+![Der NFC-Leser von oben mit Chip-Logo und Schriftzug NFC-Kasse](../images/bedieneranleitung/hardware/01_nfc_leser.jpg)
+
+![Seite des Lesers: Schiebeschalter (links OFF, rechts ON) und USB-C-Buchse](../images/bedieneranleitung/hardware/01b_nfc_leser_schalter_usbc.jpg)
+
+Zum Lesen legen oder halten Sie den Chip auf das Chip-Logo oben auf dem Leser.
+
+![Ein Chip liegt auf dem Logo des Lesers](../images/bedieneranleitung/hardware/02_chip_an_leser.jpg)
 
 Jeder Leser gehört zu genau einer Kasse. Kleben Sie am besten die Nummer des Lesers auch auf das passende Tablet.
 
@@ -417,11 +436,11 @@ Jeder Leser gehört zu genau einer Kasse. Kleben Sie am besten die Nummer des Le
 
 1. Ein USB-C-Kabel an die Buchse des Lesers stecken, das andere Ende an ein USB-Netzteil oder an den Laptop.
 2. Vor jeder Veranstaltung voll laden. Den Akkustand zeigt die Kasse an, sobald der Leser verbunden ist.
-3. Nach der Veranstaltung den Leser mit dem Schiebeschalter ausschalten.
+3. Nach der Veranstaltung den Leser mit dem Schiebeschalter ausschalten (nach links auf **OFF**).
 
 ### 7.2 Mit der Android-App verbinden
 
-1. Den Leser mit dem Schiebeschalter einschalten.
+1. Den Leser mit dem Schiebeschalter einschalten (Schalter nach rechts auf **ON**).
 2. Am Tablet Bluetooth einschalten. Den Leser **nicht** in den Bluetooth-Einstellungen von Android koppeln, das erledigt die App.
 3. In der App **Einstellungen** öffnen, Reiter **NFC-Lesegerät**.
 4. Auf **Nach Geräten suchen** tippen.
@@ -468,12 +487,11 @@ Der Bondrucker ist optional. Er ist für Gäste gedacht, die keinen Chip möchte
 
 NFC-Kasse ist an kein bestimmtes Modell gebunden. Geeignet ist jeder Bondrucker (Thermodrucker) mit dem Standard ESC/POS, für 80-mm- oder 58-mm-Papier. Empfohlen sind Drucker mit **Netzwerkanschluss (LAN)**: Sie können überall im Netz stehen, und es gibt keine Probleme mit Treibern oder COM-Ports.
 
-Diese Modelle wurden getestet:
+Dieses Modell wurde getestet:
 
 | Modell | Anschluss | Einstellungen |
 | --- | --- | --- |
 | Epson TM-T88II | seriell, am Laptop über einen USB-Seriell-Adapter | 80 mm, 42 Zeichen pro Zeile, 9600 Baud, mit Abschneider |
-| Zweites getestetes Modell (Angabe folgt) |  |  |
 
 ### 8.2 Netzwerkdrucker einrichten (empfohlen)
 
@@ -548,10 +566,10 @@ Dafür braucht das Konto das Recht **Bon drucken** (Abschnitt 6.2) und in der Wa
 1. Kategorie wählen und die Artikel antippen. **Keinen Chip scannen.**
 2. Solange kein Chip gescannt ist, heißt der Knopf unten **Drucken** statt Buchen.
 3. Den Betrag unter **Gesamt** bar kassieren.
-4. **Drucken** tippen. Die Meldung „3 Bons gedruckt“ erscheint.
+4. **Drucken** tippen. Erst steht unten „3 Bons werden gedruckt …“, sobald der Drucker fertig ist, die grüne Meldung „3 Bons gedruckt“.
 5. Die Bons dem Gast geben. Am Stand gibt der Gast einen Bon pro Artikel ab.
 
-![Warenkorb ohne Chip mit 2× Bier und 1× Cola, Knopf „Drucken“](../images/bedieneranleitung/app/tablet/32_bondruck_warenkorb.png)
+![Warenkorb ohne Chip mit Weinschorle, Cola und Wasser, Knopf „Drucken“](../images/bedieneranleitung/app/tablet/32_bondruck_warenkorb.png)
 
 ![Grüne Meldung „3 Bons gedruckt“](../images/bedieneranleitung/app/tablet/33_bons_gedruckt.png)
 
@@ -559,7 +577,8 @@ Gedruckt wird ein Bon pro Stück: zwei Bier und eine Cola ergeben drei Bons. Der
 
 ### 8.7 Wenn nichts gedruckt wird
 
-- Bons gehen nie verloren. Ist der Drucker kurz nicht erreichbar, warten sie und werden gedruckt, sobald er wieder da ist. Die Meldung „Bons gedruckt“ erscheint trotzdem sofort. **Nicht noch einmal auf Drucken tippen**, sonst kommen die Bons doppelt.
+- Bons gehen nie verloren. Ist der Drucker nicht erreichbar, erscheint nach etwa zehn Sekunden die rote Meldung „Druck fehlgeschlagen – Drucker prüfen. Die Bons bleiben in der Warteschlange …“. Die Bons warten dann und werden gedruckt, sobald der Drucker wieder da ist. Der Verkauf ist schon gebucht. **Nicht noch einmal auf Drucken tippen**, sonst kommen die Bons doppelt.
+- „Druck fehlgeschlagen – bitte Drucker prüfen“ ohne den Zusatz Warteschlange heißt: Der Drucker hat mitten im Druck abgebrochen, zum Beispiel weil das Papier leer ist. Diese Bons druckt die Kasse nicht noch einmal. Fehlende Bons geben Sie von Hand aus, ohne erneut zu kassieren.
 - Prüfen: Strom, Papier, Deckel geschlossen, Kabel fest.
 - Netzwerkdrucker: Stimmt die Drucker-IP-Adresse im Verwaltungstool mit dem Selbsttest überein?
 - Kabeldrucker: Stimmt der COM-Port mit dem Geräte-Manager überein?
@@ -740,6 +759,8 @@ Danach zählt die Statistik ab null für die neue Periode. Den abgeschlossenen T
 
 ### 11.2 Fest starten
 
+![Verwaltungstool, Seite Feste: Interner Betrieb mit Knopf „Fest starten …“, darunter alle Feste](../images/bedieneranleitung/windows/05d_verwaltung_feste.png)
+
 1. Im Verwaltungstool die Seite **Feste** öffnen. Oben muss **Interner Betrieb** stehen. Läuft noch ein Fest, beenden Sie es zuerst (Abschnitt 11.3).
 2. **Fest starten …** klicken.
 3. **Festname** eingeben. Er steht auf jedem Bon. Pflichtfeld.
@@ -749,6 +770,8 @@ Danach zählt die Statistik ab null für die neue Periode. Den abgeschlossenen T
    - **Ohne Vorlage — Warengruppen unten wählen**: nur die Kategorien, die Sie darunter ankreuzen.
    - **Aus Vorlagen-Datei …**: eine Festvorlage (Abschnitt 11.5). Danach ankreuzen, was übernommen wird: Artikel & Warengruppen, Bon-Layout, Drucker-Einstellungen, Fußzeile & Kassierer-Text.
 6. Unter **Warengruppen in diesem Fest** die Auswahl prüfen. Angekreuzt sind die Kategorien der gewählten Quelle. Eine zusätzlich angekreuzte Kategorie kommt mit allen ihren Artikeln. Einzelne Artikel blenden Sie später in der Artikelverwaltung ein und aus (Abschnitt 5.6).
+![Dialog „Fest starten“ mit Festname, Pfand pro Chip, Datum, Artikel & Warengruppen und Bestände zurücksetzen](../images/bedieneranleitung/windows/05e_verwaltung_fest_starten.png)
+
 7. **Bestände zurücksetzen** nur einschalten, wenn alle Artikel des Festes ohne Bestandszählung (unbegrenzt) starten sollen. Sonst zählt der Bestand weiter, denn er gehört dem Artikel.
 8. **Fest starten** klicken. Das Verwaltungstool legt vorher automatisch eine Sicherung an.
 9. Wurden Bon-Layout, Drucker oder Texte aus einer Vorlage übernommen, fragt das Tool, ob der Dienst jetzt neu starten soll. Erst danach gelten diese Einstellungen. Die Kassen sind dabei einige Sekunden nicht verbunden.
@@ -773,7 +796,7 @@ Die Kasse läuft danach im internen Betrieb. Das beendete Fest steht unten in de
 
 ### 11.5 Festvorlagen
 
-Eine Festvorlage ist eine Datei mit allem, was ein Fest vorbereitet: die eingeschalteten Kategorien, Artikel mit Preisen, Optionen und Farben, Pfand, Bon-Layout, Drucker-Einstellungen und Bon-Texte. Guthaben, Chips, Buchungen, Benutzer und Lizenzen sind nie enthalten.
+Eine Festvorlage ist eine Datei mit allem, was ein Fest vorbereitet: die eingeschalteten Kategorien mit ihren Farben, Artikel mit Preisen, Optionen und Farben, Pfand, Bon-Layout, Drucker-Einstellungen und Bon-Texte. Guthaben, Chips, Buchungen, Benutzer und Lizenzen sind nie enthalten.
 
 1. Im Verwaltungstool auf der Seite **Feste** beim gewünschten Fest **Als Festvorlage speichern** klicken.
 2. Speicherort wählen. Die Datei heißt `Festvorlage_` plus Festname, mit der Endung `.json`.
@@ -783,6 +806,10 @@ Verwenden können Sie die Vorlage beim nächsten Fest (Abschnitt 11.2, **Aus Vor
 ### 11.6 Datensicherung
 
 Auf der Seite **Daten** im Verwaltungstool sichern Sie die ganze Datenbank: alle Feste, Artikel, Benutzer, Buchungen und das Guthaben aller Chips.
+
+![Verwaltungstool, Seite Datensicherung mit den Knöpfen „Jetzt sichern“ und „Sicherung importieren“ und der Liste der Sicherungen](../images/bedieneranleitung/windows/07c_verwaltung_daten.png)
+
+Jede Zeile der Liste zeigt, wann und warum gesichert wurde (zum Beispiel „Automatisch beim Start“ oder „Vor einem Festwechsel“), welche Feste enthalten sind und wie viele Kunden-Chips und Buchungen. Rechts stehen **Herunterladen** (Sicherung als Datei speichern, zum Beispiel auf einen USB-Stick) und **Wiederherstellen**.
 
 - **Jetzt sichern** legt sofort eine Sicherung an, auf Wunsch mit Bezeichnung. Das geht auch im laufenden Betrieb.
 - **Wiederherstellen** bei einer Sicherung in der Liste setzt die Datenbank auf diesen Stand zurück. Zur Bestätigung tippen Sie ein Wort ein. Der Dienst wird dafür kurz angehalten.
@@ -819,9 +846,21 @@ Die Kundenanzeige zeigt dem Gast auf einem zweiten Bildschirm, was im Warenkorb 
 2. Unter **Standsauswahl** erscheinen alle Kassen, an denen gerade jemand angemeldet ist, mit dem Namen des Kontos. Die richtige Kasse antippen.
 3. Ab jetzt zeigt der Bildschirm live den Warenkorb dieser Kasse mit **Gesamt**, **Aktuelles Guthaben** und **Nach Buchung**.
 
+Gut bewährt hat sich ein altes Smartphone, das mit einer Halterung am Kassen-Tablet hängt und zum Gast zeigt.
+
+Solange nichts im Warenkorb liegt, zeigt die Anzeige eine kleine Animation und **Chip auf Lesegerät legen**, damit der Gast nicht auf ein Zeichen wartet. Liegen schon Artikel im Warenkorb, aber noch kein Chip oder Armband auf dem Lesegerät, steht der Hinweis unten am Bildschirm. Nach jeder erfolgreichen Buchung erscheint für einige Sekunden ein grüner Haken mit **Buchung bestätigt** und darunter groß das **Restguthaben** (bei einer Auszahlung **Auszahlung bestätigt** mit dem ausgezahlten Betrag). Wird schon der nächste Chip aufgelegt, verschwindet die Bestätigung sofort.
+
+**Touch-Sperre:** Die Anzeige einer Kasse reagiert nicht auf Berührungen, damit Gäste nichts verstellen. Zum Entsperren die obere rechte Ecke fünf Sekunden lang gedrückt halten. Oben erscheint ein orangefarbener Balken „Touch frei“. Mit **Kasse wechseln** kommen Sie zurück zur Standsauswahl. Nach 30 Sekunden oder mit einem Tipp auf den Balken ist die Anzeige wieder gesperrt.
+
+Soll das Gerät die Anzeige dauerhaft zeigen und Gäste es nicht verlassen können, richten Sie es als Kiosk-Gerät ein, zum Beispiel mit einer Geräteverwaltung (MDM). Das beschreibt das Handbuch für Systemadministratoren, Abschnitt 13.
+
 ![Kundenanzeige, Standsauswahl mit einer aktiven Kasse](../images/bedieneranleitung/app/tablet/29_kundenanzeige_auswahl.png)
 
+![Kundenanzeige wartet: „Chip auf Lesegerät legen“ mit Animation](../images/bedieneranleitung/app/tablet/30a_kundenanzeige_warten.png)
+
 ![Kundenanzeige einer Kasse mit Gesamt, aktuellem Guthaben und Guthaben nach der Buchung](../images/bedieneranleitung/app/tablet/30_kundenanzeige.png)
+
+![Kundenanzeige nach der Buchung: grüner Haken, „Buchung bestätigt“ und Restguthaben](../images/bedieneranleitung/app/tablet/30c_kundenanzeige_bestaetigt.png)
 
 ### 12.4 Kiosk für Gäste
 
@@ -864,7 +903,7 @@ Abmelden: Oben links fünfmal schnell hintereinander auf das Laden-Symbol neben 
 | Das Symbol oben rechts zeigt keine Verbindung zum Server | Ist das Gerät im WLAN der Kasse? Stimmt die Server-URL samt `:8000`? Im Verwaltungstool prüfen, ob der Dienst läuft, sonst **Starten**. |
 | Mit `nfc-kasse.lan` klappt die Anmeldung nicht | Auf der Anmeldeseite `http://192.168.1.2:8000` wählen. Den Router prüft das Handbuch für Systemadministratoren. |
 | Der Dienst startet nicht, das Dashboard steht auf „Gestoppt“ | Im Verwaltungstool die Seite **Lizenzen** prüfen: Steht bei der Hauptlizenz nicht **Gültig**, startet der Dienst nicht (Abschnitt 3.5). |
-| Nach dem Speichern im Verwaltungstool steht der Dienst auf „Gestoppt“ | Den zuletzt geänderten Wert prüfen, oft ein Komma statt Punkt im Chip-Pfand. Korrigieren und **Speichern & Dienst neu starten**. |
+| Nach dem Speichern im Verwaltungstool steht der Dienst auf „Gestoppt“ | Den zuletzt geänderten Wert prüfen und korrigieren, dann **Speichern & Dienst neu starten**. Hilft das nicht, die Protokolle (Dashboard → **Protokolle öffnen**) an kontakt@nfc-kasse.de schicken. |
 | Eine Änderung im Verwaltungstool wirkt nicht | **Speichern & Dienst neu starten** benutzen, beim Bon-Layout danach **Neu starten**. |
 | „Nach Geräten suchen“ findet den Leser nicht | Leser eingeschaltet und geladen? Bluetooth am Gerät an? Im Browser: Chrome oder Edge, Adresse als vertrauenswürdig eingetragen (Abschnitt 7.3)? |
 | Leser zeigt „Verbunden“, aber nichts passiert | Leser aus- und wieder einschalten, die App verbindet sich von selbst neu. Im Browser kann es bis zu 90 Sekunden dauern. |
@@ -877,7 +916,7 @@ Abmelden: Oben links fünfmal schnell hintereinander auf das Laden-Symbol neben 
 | „Berechtigung 'Aufladen' erforderlich“ oder „Berechtigung 'Auszahlen' erforderlich“ | Dem Konto unter **Benutzer** die globale Berechtigung **Aufladen** bzw. **Auszahlen** geben (Abschnitt 6.2). |
 | Eine Buchung wird abgelehnt: „Das Fest wurde gerade gewechselt“ oder „Ein Artikel ist in diesem Fest nicht mehr aktiv“ | Die Kasse lädt das Fest neu. Die Buchung wiederholen. Fehlt der Artikel danach, ist er im Fest ausgeblendet (Abschnitt 5.6). |
 | Alle Kassen sind abgemeldet, das Passwort passt nicht mehr | Im Verwaltungstool wurde der Veranstalter gewechselt (Abschnitt 3.6). Mit einem Konto des Veranstalters in Betrieb anmelden. |
-| Bons werden nicht gedruckt | Abschnitt 8.7. |
+| „Druck fehlgeschlagen“ oder es kommt kein Bon | Abschnitt 8.7. |
 | Alle Geräte wurden abgemeldet | Einfach neu anmelden. Passiert, wenn die Einstellungsdatei des Servers neu angelegt wurde. |
 
 Detaillierte Fehlersuche steht im Handbuch für Systemadministratoren, Abschnitt 12. Kommen Sie nicht weiter, schreiben Sie an **kontakt@nfc-kasse.de** und hängen Sie die Protokolle aus `C:\ProgramData\NFC-Kasse\logs\` an (Verwaltungstool → Dashboard → **Protokolle öffnen**).

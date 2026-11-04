@@ -1,14 +1,14 @@
 # NFC-Kasse – Zusatzfunktionen Pager und Leaderboard
 
-18. Oktober 2026 · Kim Schehl
+4. November 2026 · Kim Schehl
 
 ## 1. Freischalten
 
-Pager und Leaderboard sind kostenpflichtige Zusatzfunktionen. Jede braucht einen eigenen Lizenzschlüssel, der nur für genau eine Installation gilt. Eine Funktion ist erst aktiv, wenn in `config.env` der Schalter auf `true` steht **und** ein gültiger Schlüssel eingetragen ist.
+Pager und Leaderboard sind kostenpflichtige Zusatzfunktionen. Jede braucht einen eigenen Lizenzschlüssel, der nur für genau eine Installation gilt. Eine Funktion ist erst aktiv, wenn auf der Seite **Lizenzen** im Verwaltungstool der Schalter **aktiviert** an ist **und** ein gültiger Schlüssel eingetragen ist.
 
-1. **Installations-ID heraussuchen.** Öffnen Sie die NFC-Kasse Verwaltung, Seite **Lizenzen**. Neben **Installations-ID** kopiert das Symbol die ID in die Zwischenablage. Alternativ steht sie in `C:\ProgramData\NFC-Kasse\config.env` in der Zeile `INSTALLATION_ID=…`.
+1. **Installations-ID heraussuchen.** Öffnen Sie die NFC-Kasse Verwaltung, Seite **Lizenzen**. Neben **Installations-ID** kopiert das Symbol die ID in die Zwischenablage. Dieselbe ID steht auch auf der Seite **Info** und in `C:\ProgramData\NFC-Kasse\config.env` in der Zeile `INSTALLATION_ID=…`.
 
-   ![Verwaltungstool, Seite Info mit Installations-ID und Kopier-Symbol](../images/bedieneranleitung/windows/07b_verwaltung_info.png)
+   ![Verwaltungstool, Seite Lizenzen mit Installations-ID und Kopier-Symbol, darunter die Felder für Hauptlizenz, Pager und Leaderboard](../images/bedieneranleitung/windows/06d_verwaltung_lizenzen.png)
 
 2. **Lizenz anfordern.** Die Installations-ID mit der gewünschten Funktion an kontakt@nfc-kasse.de schicken, notfalls an info@nfc-kasse.de. Sie bekommen eine Zeile wie `PAGER_LICENSE_KEY=eyJ2Ij…` zurück.
 3. **Eintragen.** In der Verwaltung auf der Seite **Lizenzen** den Schlüssel bei **Pager** bzw. **Leaderboard** einfügen und dort den Schalter **aktiviert** einschalten. Unter dem Feld steht sofort, ob der Schlüssel gültig ist. Von Hand in `config.env`:
@@ -20,10 +20,8 @@ LEADERBOARD=true
 LEADERBOARD_LICENSE_KEY=<Schlüssel>
 ```
 
-![Verwaltungstool, Seite Konfiguration: Schalter und Lizenzschlüssel-Felder für Leaderboard und Pager](../images/bedieneranleitung/windows/06b_verwaltung_konfiguration_lizenzen_web_drucker.png)
-
 4. **Neu starten.** **Speichern & Dienst neu starten** klicken.
-5. **Prüfen.** Alle Kassen einmal ab- und wieder anmelden. Mit Pager erscheint links auf der Kasse die Spalte **Pager**. Mit Leaderboard zeigt `http://nfc-kasse.lan:8000/leaderboard` die Bestenliste.
+5. **Prüfen.** Alle Kassen einmal ab- und wieder anmelden. Am Handy erscheint statt der Spalte ein Pager-Symbol oben in der Kopfzeile (Abschnitt 3). Mit Pager erscheint links auf der Kasse die Spalte **Pager**. Mit Leaderboard zeigt `http://nfc-kasse.lan:8000/leaderboard` die Bestenliste.
 
 Bleibt die Funktion aus, passt der Schlüssel nicht zur Installations-ID oder wurde unvollständig kopiert. Das Protokoll unter `C:\ProgramData\NFC-Kasse\logs\` enthält dann die Meldung „no valid …\_LICENSE\_KEY — feature stays disabled“. Achtung: Wird `config.env` gelöscht und neu erzeugt, entsteht eine neue Installations-ID und alle Lizenzen werden ungültig.
 
@@ -49,11 +47,15 @@ Gut zu wissen:
 
 ## 3. Pager im Betrieb
 
-Ist die Pager-Funktion aktiv, zeigt die Kasse auf Tablet und PC links neben den Artikeln die Spalte **Pager**. Dort stehen die offenen Bestellungen, die Sie selbst gebucht haben, jeweils mit Artikel und Pager-Nummer. Die Breite der Spalte lässt sich am Griff ‖ rechts davon verschieben.
+Ist die Pager-Funktion aktiv, zeigt die Kasse auf Tablet und PC links neben den Artikeln die Spalte **Pager**. Dort stehen die offenen Bestellungen, die Sie selbst gebucht haben, jeweils mit Pager-Nummer und den bestellten Artikeln. Jeder Artikel steht in einer eigenen Zeile, zum Beispiel „2× Currywurst“ und darunter „Pommes“. Ein langer Name bricht um, nach drei Zeilen wird er mit „…“ abgekürzt.
+
+Die Breite der Spalte lässt sich am Griff ‖ rechts davon verschieben. Bei schmaler Spalte steht „Pager 7“ mit dem Knopf **Fertig** oben und die Artikel in voller Breite darunter. Ziehen Sie die Spalte breiter, stehen Artikel, Pager-Nummer und **Fertig** nebeneinander in drei Spalten.
 
 Die Spalte erscheint nur, wenn die gewählte Kategorie mindestens einen Artikel mit **Pager erforderlich** hat. Bei Kategorien ohne solche Artikel, etwa Getränken, bleibt der Platz für die Artikel frei. Ihre offenen Pager gehen dabei nicht verloren, sie stehen wieder in der Liste, sobald Sie zurück in eine Kategorie mit Pager-Artikeln wechseln.
 
 Mit dem Knopf oben rechts in der Spalte klappen Sie die Liste zu einem schmalen Streifen ein. Der Streifen zeigt die Zahl Ihrer offenen Pager, ein Tipp darauf klappt die Liste wieder auf. Wer die Liste an einem Gerät gar nicht braucht, schaltet sie unter **Einstellungen → Design → Pager → Pagerliste anzeigen** aus. Beides gilt nur für dieses Gerät.
+
+Am Handy ist für die Spalte kein Platz. Dort steht stattdessen oben in der Kopfzeile neben **HILFE** ein Pager-Symbol mit der Zahl Ihrer offenen Pager. Ein Tipp darauf öffnet die Pagerliste von unten. Sie lässt sich nach oben größer ziehen und mit einem Wisch nach unten wieder schließen. Für das Symbol gelten dieselben Regeln wie für die Spalte: Es erscheint nur bei Kategorien mit Pager-Artikeln und nur, wenn die Pagerliste in den Einstellungen eingeschaltet ist.
 
 ![Kasse mit Pagerliste links: zwei offene Bestellungen mit den Pagern 7 und 12](../images/bedieneranleitung/zusatz/pager/01_kasse_mit_pagerliste.png)
 
@@ -86,7 +88,6 @@ Das doppelte Tippen verhindert, dass ein Eintrag aus Versehen verschwindet. Tipp
 
 - Jeder sieht nur die eigenen Pager. Arbeiten zwei Personen an einer Theke mit getrennten Konten, hat jede ihre eigene Liste. Teilen Sie sich eine Liste, melden Sie sich mit demselben Konto an.
 - Die Liste aktualisiert sich alle 10 Sekunden von selbst, nach einer eigenen Buchung sofort.
-- Am Handy gibt es keine Pagerliste, nur das Fenster zum Zuweisen. Für Theken mit Pagern nehmen Sie ein Tablet.
 - Auszahlungen fragen nie nach einem Pager.
 - Eine Stornierung entfernt den Pager nicht aus der Liste. Melden Sie ihn danach mit **Fertig** ab.
 - **Fest beenden** im Verwaltungstool schließt alle offenen Pager (Bedieneranleitung, Abschnitt 11.3).

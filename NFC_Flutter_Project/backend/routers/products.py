@@ -79,7 +79,7 @@ def _product_or_404(db, tenant_id: int, product_id: int):
 
 def _category_response(row, access: dict, active_in_event: bool) -> CategoryWithPermissionsResponse:
     return CategoryWithPermissionsResponse(
-        id=row["id"], name=row["name"], sort_order=row["sort_order"],
+        id=row["id"], name=row["name"], sort_order=row["sort_order"], color=row["color"],
         active_in_event=active_in_event, **access,
     )
 
@@ -159,7 +159,7 @@ def list_categories(
 
         rows = db.execute(
             f"""
-            SELECT c.id, c.name, c.sort_order, {catalog.CATEGORY_IN_EVENT_SQL} AS in_event
+            SELECT c.id, c.name, c.sort_order, c.color, {catalog.CATEGORY_IN_EVENT_SQL} AS in_event
             FROM category c
             WHERE c.tenant_id=? AND c.deleted=0
             ORDER BY c.sort_order, c.id
@@ -194,8 +194,8 @@ def create_category(
     event_id = ctx["event"]["id"]
     with get_db() as db:
         cursor = db.execute(
-            "INSERT INTO category (tenant_id, name, sort_order) VALUES (?, ?, ?)",
-            (tenant_id, body.name, body.sort_order),
+            "INSERT INTO category (tenant_id, name, sort_order, color) VALUES (?, ?, ?, ?)",
+            (tenant_id, body.name, body.sort_order, body.color),
         )
         new_id = cursor.lastrowid
         catalog.set_category_in_event(db, event_id, new_id, True)
@@ -229,10 +229,11 @@ def update_category(
 
         new_name = body.name if body.name is not None else row["name"]
         new_sort = body.sort_order if body.sort_order is not None else row["sort_order"]
+        new_color = body.color if "color" in body.model_fields_set else row["color"]
 
         db.execute(
-            "UPDATE category SET name=?, sort_order=? WHERE id=?",
-            (new_name, new_sort, category_id),
+            "UPDATE category SET name=?, sort_order=?, color=? WHERE id=?",
+            (new_name, new_sort, new_color, category_id),
         )
         row = catalog.tenant_category(db, tenant_id, category_id)
         in_event = catalog.category_in_event(db, event_id, category_id)
@@ -432,7 +433,7 @@ def list_admin_products(
         if is_manager or manageable_ids:
             id_filter = "" if is_manager else f"AND c.id IN ({','.join('?' * len(manageable_ids))})"
             cat_rows = db.execute(
-                f"""SELECT c.id, c.name, c.sort_order, {catalog.CATEGORY_IN_EVENT_SQL} AS in_event
+                f"""SELECT c.id, c.name, c.sort_order, c.color, {catalog.CATEGORY_IN_EVENT_SQL} AS in_event
                     FROM category c
                     WHERE c.tenant_id=? AND c.deleted=0 {id_filter}
                     ORDER BY c.sort_order, c.id""",
@@ -458,7 +459,7 @@ def list_admin_products(
             ).fetchall()
 
             categories.append(AdminCategoryResponse(
-                id=cat["id"], name=cat["name"], sort_order=cat["sort_order"],
+                id=cat["id"], name=cat["name"], sort_order=cat["sort_order"], color=cat["color"],
                 can_create_article=bool(access.get("can_create_article", False)),
                 can_edit_article=bool(access.get("can_edit_article", False)),
                 can_deactivate_article=bool(access.get("can_deactivate_article", False)),

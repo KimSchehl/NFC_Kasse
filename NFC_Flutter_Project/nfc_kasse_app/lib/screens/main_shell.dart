@@ -5,6 +5,7 @@ import '../providers/providers.dart';
 import '../widgets/app_sidebar.dart';
 import '../widgets/dialogs/update_dialog.dart';
 import '../widgets/help_button.dart';
+import '../widgets/pager_list_panel.dart';
 import 'account_screen.dart';
 import 'article_admin_screen.dart';
 import 'log_viewer_screen.dart';
@@ -74,6 +75,14 @@ class _MainShellState extends ConsumerState<MainShell> {
 
     final sidebarCollapsed = ref.watch(sidebarCollapsedProvider);
 
+    // The pager list only has its own column on the wide POS layout
+    // (pos_screen.dart, ≥ 700 px of content); below that it is reached via
+    // this AppBar button, which hides itself when there is no list to show.
+    List<Widget> pagerAction(double contentWidth) =>
+        currentScreen == AppScreen.pos && contentWidth < 700
+            ? const [PagerHeaderButton()]
+            : const [];
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final isWide = constraints.maxWidth >= 600;
@@ -87,31 +96,34 @@ class _MainShellState extends ConsumerState<MainShell> {
                   const VerticalDivider(width: 1),
                 ],
                 Expanded(
-                  child: Scaffold(
-                    appBar: AppBar(
-                      title: Text(screenTitle),
-                      centerTitle: false,
-                      automaticallyImplyLeading: false,
-                      leading: sidebarCollapsed
-                          ? IconButton(
-                              icon: const Icon(Icons.menu),
-                              tooltip: 'Seitenleiste einblenden',
-                              onPressed: () => setSidebarCollapsed(ref, false),
-                            )
-                          : null,
-                      actions: [
-                        const HelpButton(),
-                        _BleReaderIndicator(),
-                        const SizedBox(width: 8),
-                        _ConnectionIndicator(),
-                        const SizedBox(width: 8),
-                      ],
-                    ),
-                    body: Stack(
-                      children: [
-                        body,
-                        const HelpResponderOverlay(),
-                      ],
+                  child: LayoutBuilder(
+                    builder: (context, content) => Scaffold(
+                      appBar: AppBar(
+                        title: Text(screenTitle),
+                        centerTitle: false,
+                        automaticallyImplyLeading: false,
+                        leading: sidebarCollapsed
+                            ? IconButton(
+                                icon: const Icon(Icons.menu),
+                                tooltip: 'Seitenleiste einblenden',
+                                onPressed: () => setSidebarCollapsed(ref, false),
+                              )
+                            : null,
+                        actions: [
+                          ...pagerAction(content.maxWidth),
+                          const HelpButton(),
+                          _BleReaderIndicator(),
+                          const SizedBox(width: 8),
+                          _ConnectionIndicator(),
+                          const SizedBox(width: 8),
+                        ],
+                      ),
+                      body: Stack(
+                        children: [
+                          body,
+                          const HelpResponderOverlay(),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -124,6 +136,7 @@ class _MainShellState extends ConsumerState<MainShell> {
               title: Text(screenTitle),
               centerTitle: false,
               actions: [
+                ...pagerAction(constraints.maxWidth),
                 const HelpButton(),
                 _BleReaderIndicator(),
                 const SizedBox(width: 8),

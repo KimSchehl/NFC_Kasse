@@ -36,7 +36,7 @@ async def main():
         await step("02",s02)
         async def s03():
             await pg.wait_for_timeout(1000); await a.tap("Bier 0,5 l",role="button"); await pg.wait_for_timeout(600); await a.tap("Radler 0,5 l",role="button"); await pg.wait_for_timeout(600); await a.tap("Cola 0,3 l",role="button")
-            await scan("04A1B2C3"); await a.shot("03_warenkorb_mit_chip")
+            await scan("04D4E5F6"); await a.shot("03_warenkorb_mit_chip")
             await a.tap("Leeren",role="button")
         await step("03",s03)
         async def s04():
@@ -80,7 +80,6 @@ async def main():
             await a.tap("Transaktionen"); await a.shot("18_statistik_transaktionen",wait=1500)
             await a.tap("Chips"); await a.shot("19_statistik_chips",wait=1500)
             await a.tap("Tagesabschluss",role="button"); await a.shot("20_tagesabschluss_dialog"); await a.tap("Abbrechen")
-            await a.tap("Neues Event",role="button"); await a.shot("21_neues_event_dialog"); await a.tap("Abbrechen")
         await step("17",s17)
         async def s22():
             await nav("Einstellungen"); await a.shot("22_einstellungen_ueber")

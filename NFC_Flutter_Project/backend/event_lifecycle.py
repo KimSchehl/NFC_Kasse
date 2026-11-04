@@ -240,10 +240,15 @@ def _activate_from_preset(db, tenant_id: int, preset: EventPreset, target_event_
             "SELECT id FROM category WHERE tenant_id=? AND name=? AND deleted=0 ORDER BY id LIMIT 1",
             (tenant_id, cat.name),
         ).fetchone()
-        category_id = row["id"] if row else db.execute(
-            "INSERT INTO category (tenant_id, name, sort_order) VALUES (?, ?, ?)",
-            (tenant_id, cat.name, cat.sort_order),
-        ).lastrowid
+        if row:
+            category_id = row["id"]
+            # Only fills a missing colour, never overwrites the tenant's own.
+            db.execute("UPDATE category SET color=? WHERE id=? AND color IS NULL", (cat.color, category_id))
+        else:
+            category_id = db.execute(
+                "INSERT INTO category (tenant_id, name, sort_order, color) VALUES (?, ?, ?, ?)",
+                (tenant_id, cat.name, cat.sort_order, cat.color),
+            ).lastrowid
         db.execute(
             "INSERT OR IGNORE INTO event_category (event_id, category_id) VALUES (?, ?)",
             (target_event_id, category_id),
@@ -421,7 +426,7 @@ def build_preset(db, *, tenant_id: int, event_id: int, data_dir: Path) -> EventP
     event = _event(db, tenant_id, event_id)
     categories = db.execute(
         f"""
-        SELECT c.id, c.name, c.sort_order FROM category c
+        SELECT c.id, c.name, c.sort_order, c.color FROM category c
         WHERE c.tenant_id = ? AND c.deleted = 0 AND {catalog.CATEGORY_IN_EVENT_SQL}
         ORDER BY c.sort_order, c.id
         """,
@@ -474,7 +479,7 @@ def build_preset(db, *, tenant_id: int, event_id: int, data_dir: Path) -> EventP
         source_event_name=event["name"],
         chip_deposit=event["chip_deposit"],
         categories=[
-            EventPresetCategory(ref=category_ref[c["id"]], name=c["name"], sort_order=c["sort_order"])
+            EventPresetCategory(ref=category_ref[c["id"]], name=c["name"], sort_order=c["sort_order"], color=c["color"])
             for c in categories
         ],
         products=preset_products,

@@ -33,4 +33,4 @@ class App:
         await s.type_into("Benutzername",user); await s.type_into("Passwort",pw)
         await s.tap("Anmelden",role="button"); await s.pg.wait_for_timeout(3000); await s.sem()
 async def browser(p):
-    return await p.chromium.launch(executable_path="/opt/pw-browsers/chromium-1194/chrome-linux/chrome",args=["--host-resolver-rules=MAP nfc-kasse.lan 127.0.0.1"])
+    return await p.chromium.launch(executable_path="/opt/pw-browsers/chromium",args=["--host-resolver-rules=MAP nfc-kasse.lan 127.0.0.1"])

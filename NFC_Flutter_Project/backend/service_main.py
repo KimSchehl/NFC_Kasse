@@ -186,7 +186,12 @@ def main() -> None:
     # independent print queue and duplicate every receipt.
     zc = _advertise(port)
     try:
-        uvicorn.run(app, host=host, port=port, reload=False)
+        # timeout_graceful_shutdown: without it uvicorn waits on shutdown until
+        # every SSE stream (customer display, leaderboard) is closed by its
+        # client -- the connected display phone never does, so a service stop
+        # hung until WinSW killed the process and an update install found
+        # NfcKasseBackend.exe still locked.
+        uvicorn.run(app, host=host, port=port, reload=False, timeout_graceful_shutdown=5)
     finally:
         if zc is not None:
             zc.close()  # sends the mDNS goodbye so apps drop the entry

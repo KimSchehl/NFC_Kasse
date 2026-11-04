@@ -1,6 +1,6 @@
 # Anleitungen zur NFC-Kasse
 
-Stand der Markdown-Dateien: 18. Oktober 2026
+Stand: 4. November 2026 (Markdown, PDF und Word)
 
 | Anleitung | Für wen | Dateien |
 | --- | --- | --- |
@@ -21,8 +21,9 @@ Jedes Thema steht in genau einer Anleitung, die anderen verweisen darauf. Die Be
 
 ## Noch offen
 
-- **PDF und Word sind noch vom 4. Oktober.** Die Markdown-Dateien wurden am 18. Oktober an den Code angepasst (Rechte, Feste im Verwaltungstool, Datensicherung). PDF und Word müssen aus den Markdown-Dateien neu erzeugt werden.
-- Einige Screenshots zeigen noch den alten Stand, siehe die README im Bilderordner.
+- Die Screenshots der Kassen-App, der Kundenanzeige, von Pager und Leaderboard sind vom 4. November 2026, die des Verwaltungstools (Ordner `windows/`) und die Fotos vom NFC-Leser (Ordner `hardware/`) ebenfalls.
+- Es fehlen noch: Fotos von Bondrucker, gedrucktem Bon und Aufbau sowie Screenshots der Router-Oberfläche (LuCI).
 
-- Bedieneranleitung, Abschnitt 8.1: das zweite getestete Druckermodell fehlt noch.
-- Fotos vom NFC-Leser und Screenshots der Router-Oberfläche (LuCI) fehlen noch.
+## PDF und Word neu erzeugen
+
+PDF und Word entstehen mit pandoc aus den Markdown-Dateien (Skript `_export/build.py`, braucht pandoc, Python 3 mit Playwright und Chromium; Aufruf `python _export/build.py`).

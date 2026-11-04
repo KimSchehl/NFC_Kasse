@@ -85,6 +85,7 @@ class CategoryWithPermissionsResponse(BaseModel):
     id: int
     name: str
     sort_order: int
+    color: str | None = None  # default colour '#RRGGBB'; None = theme default
     can_book: bool
     can_storno_5min: bool
     can_storno_unlimited: bool
@@ -104,11 +105,23 @@ class CategoryResponse(BaseModel):
 class CategoryCreate(BaseModel):
     name: str
     sort_order: int = 0
+    color: str | None = None
+
+    @field_validator("color")
+    @classmethod
+    def color_format(cls, v: str | None) -> str | None:
+        return _normalize_color(v)
 
 
 class CategoryUpdate(BaseModel):
     name: str | None = None
     sort_order: int | None = None
+    color: str | None = None  # tri-state like ProductUpdate.color: explicit null clears it
+
+    @field_validator("color")
+    @classmethod
+    def color_format(cls, v: str | None) -> str | None:
+        return _normalize_color(v)
 
 
 # ---------------------------------------------------------------------------
@@ -218,6 +231,7 @@ class AdminCategoryResponse(BaseModel):
     id: int
     name: str
     sort_order: int
+    color: str | None = None
     can_create_article: bool
     can_edit_article: bool
     can_deactivate_article: bool
@@ -414,6 +428,7 @@ class EventPresetCategory(BaseModel):
     ref: int  # index into the preset's own category list — never a real DB id
     name: str
     sort_order: int = 0
+    color: str | None = None  # missing in presets exported before category colours existed
 
 
 class EventPresetProduct(BaseModel):

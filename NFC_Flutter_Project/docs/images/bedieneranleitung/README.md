@@ -14,10 +14,10 @@ bedieneranleitung/
 │   ├── pager/           Pager-Spalte, Pager zuweisen, Fertig melden
 │   └── leaderboard/     Kiosk-Teilnahme, Bestenliste auf dem Fernseher
 ├── browser/             Browser-Einstellungen (Flags, Richtlinien, Bluetooth-Dialog)
-├── windows/             Verwaltungstool (von Kim), Setup und Dienste (noch zu liefern)
+├── windows/             Verwaltungstool (von Kim); Setup und Dienste noch zu liefern
 ├── luci/                Router-Oberfläche LuCI (GL.iNet), noch zu liefern
 ├── android/             Android-Systemdialoge (von Kim zu liefern)
-├── hardware/            Fotos von Leser, Chips, Drucker, Aufbau (von Kim zu liefern)
+├── hardware/            Fotos vom Leser (von Kim); Drucker, Bon, Aufbau noch zu liefern
 └── _werkzeuge/          Skripte, mit denen die App-Screenshots erzeugt wurden
 ```
 
@@ -88,26 +88,42 @@ Testdaten mit Pager- und Leaderboard-Lizenz.
 | `zusatz/leaderboard/02_bestenliste_tv.png` | Bestenliste `/leaderboard` | Zusatzanleitung: Leaderboard |
 | `zusatz/netzwerk_uebersicht.png` (+ `.svg`) | Netzwerkplan: Router, Server-Laptop, Kassen, Drucker, Leser | Admin-Handbuch: Überblick |
 
-## Verwaltungstool (von Kim geliefert, 2026-10-04)
+## Verwaltungstool (von Kim geliefert, 2026-11-04)
+
+Lizenzschlüssel und Installations-ID sind in den Bildern unkenntlich gemacht.
 
 | Datei | Zeigt |
 | --- | --- |
-| `windows/05_verwaltung_dashboard.png` | Dashboard, Dienst „Läuft“ |
-| `windows/06_verwaltung_konfiguration.png` | Konfiguration oben: Netzwerk, Veranstaltung, Zusatz-Features |
-| `windows/06b_verwaltung_konfiguration_lizenzen_web_drucker.png` | Konfiguration Mitte: Lizenzschlüssel, Web-Zugriff, Bondrucker |
+| `windows/05_verwaltung_dashboard.png` | Dashboard, Dienst „Läuft“, Server-Adresse, Schnellzugriff |
+| `windows/05b_verwaltung_veranstalter.png` | Seite Veranstalter mit „Lokal · in Betrieb“ |
+| `windows/05c_verwaltung_veranstalter_neu.png` | Dialog „Neuer Veranstalter“ |
+| `windows/05d_verwaltung_feste.png` | Seite Feste: Interner Betrieb, Knopf „Fest starten …“, alle Feste |
+| `windows/05e_verwaltung_fest_starten.png` | Dialog „Fest starten“ |
+| `windows/06_verwaltung_konfiguration.png` | Konfiguration oben: Netzwerk, Veranstaltung, Web-Zugriff |
+| `windows/06b_verwaltung_konfiguration_web_drucker.png` | Konfiguration Mitte: Web-Zugriff, Protokoll-Level, Bondrucker |
 | `windows/06c_verwaltung_konfiguration_bondrucker_inhalt.png` | Konfiguration unten: Bondrucker, Bon-Inhalt |
+| `windows/06d_verwaltung_lizenzen.png` | Seite Lizenzen |
 | `windows/07_verwaltung_bon_layout.png` | Seite Bon-Layout |
-| `windows/07b_verwaltung_info.png` | Seite Info mit Installations-ID |
+| `windows/07b_verwaltung_info.png` | Seite Info |
+| `windows/07c_verwaltung_daten.png` | Seite Datensicherung |
+
+## Fotos NFC-Leser (von Kim geliefert, 2026-11-04)
+
+Schriftzug und Logo sind nachträglich schwarz eingefärbt, passgenau aus der Gehäuse-Datei `nfc-ble-reader_case/V2/NFC-Case-Lid.stl`.
+
+| Datei | Zeigt |
+| --- | --- |
+| `hardware/01_nfc_leser.jpg` | Leser von oben |
+| `hardware/01b_nfc_leser_schalter_usbc.jpg` | Seite mit Schiebeschalter (OFF/ON beschriftet) und USB-C-Buchse |
+| `hardware/01c_nfc_leser_seite.jpg` | Leser schräg von oben mit Schalter und Buchse |
+| `hardware/01d_nfc_leser_unterseite.jpg` | Unterseite mit Schrauben |
+| `hardware/02_chip_an_leser.jpg` | Chip liegt auf dem Leser |
 
 `browser/chrome_flags_unsichere_herkunft_EN.png` zeigt die Chrome-Einstellung
 „Insecure origins treated as secure“, ausgefüllt und aktiviert. Sie stammt aus einem
 englischen Chromium und ist ein Platzhalter, bis ein deutscher Screenshot vorliegt.
 
 ## Noch zu liefern (nur am echten Gerät möglich)
-
-Die Statistik-Bilder `17` bis `19` zeigen noch den alten Knopf „Neues Event“ und sollten neu erzeugt werden.
-Die Artikelverwaltung (`13_artikelverwaltung`) hat jetzt die Schalter „Im Fest“, der Kategorie-Dialog den Schalter „In diesem Fest anzeigen“: beide Bilder neu erzeugen. Die Rechtevergabe (`16b`) zeigt jetzt alle Kategorien, auch ausgeblendete mit dem Zusatz „nicht in diesem Fest“.
-Das Verwaltungstool hat jetzt sechs Seiten; die Bilder `05` bis `07b` stammen vom 4. Oktober und zeigen vermutlich noch die alte Seitenleiste mit vier Seiten.
 
 Bitte unter genau diesen Namen ablegen, dann passen die Verweise in der Anleitung.
 
@@ -120,11 +136,6 @@ Bitte unter genau diesen Namen ablegen, dann passen die Verweise in der Anleitun
 | `windows/08_datenordner.png` | Explorer in `C:\ProgramData\NFC-Kasse\` |
 | `windows/09_dienste.png` | `services.msc` mit Dienst „NFC-Kasse Backend“ (optional) |
 | `windows/10_bluetooth_einstellungen.png` | Windows-Einstellungen → Bluetooth und Geräte |
-| `windows/11_verwaltung_feste.png` | Verwaltungstool, Seite Feste: laufendes Fest, Knöpfe „Fest starten …“ / „Fest beenden …“, Liste der beendeten Feste |
-| `windows/12_verwaltung_fest_starten.png` | Dialog „Fest starten“ mit Festname, Pfand, Artikel-Quelle und Übernahme-Häkchen |
-| `windows/13_verwaltung_daten.png` | Verwaltungstool, Seite Daten mit Sicherungen |
-| `windows/14_verwaltung_veranstalter.png` | Verwaltungstool, Seite Veranstalter mit zwei Veranstaltern, einer „in Betrieb“ |
-| `windows/15_verwaltung_konfiguration_fest.png` | Konfiguration, Bereich Veranstaltung: Name und Pfand des laufenden Festes mit „Für alle übernehmen“ |
 | `browser/01_chrome_flags_de.png` | Wie der englische Platzhalter, aus deutschem Chrome |
 | `browser/02_edge_flags.png` | Dasselbe in Edge (`edge://flags`) |
 | `browser/03_edge_policy.png` | `edge://policy` mit „OverrideSecurityRestrictionsOnInsecureOrigin“ |
@@ -137,9 +148,6 @@ Bitte unter genau diesen Namen ablegen, dann passen die Verweise in der Anleitun
 | `luci/01_interfaces_lan.png` | LuCI, Network → Interfaces → lan → Edit, Reiter General Settings mit 192.168.1.1 |
 | `luci/02_static_leases.png` | LuCI, Network → DHCP and DNS → Static Leases mit dem Eintrag nfc-kasse / 192.168.1.2 |
 | `luci/03_hostnames.png` | LuCI, Network → DHCP and DNS → Hostnames mit nfc-kasse.lan / 192.168.1.2 |
-| `hardware/01_nfc_leser.jpg` | Foto des Bluetooth-NFC-Lesers |
-| `hardware/01b_nfc_leser_schalter_usbc.jpg` | Foto: Schiebeschalter und USB-C-Buchse des Lesers, Name auf der Rückseite |
-| `hardware/02_chip_an_leser.jpg` | Foto: Armband wird an den Leser gehalten |
 | `hardware/03_bondrucker.jpg` | Foto des Bondruckers |
 | `hardware/04_bon_beispiel.jpg` | Foto eines gedruckten Bons |
 | `hardware/05_aufbau.jpg` | Foto des Aufbaus: Server-PC, Access Point, Tablets |

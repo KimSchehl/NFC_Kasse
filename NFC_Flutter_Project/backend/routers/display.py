@@ -3,6 +3,8 @@ Customer-facing display — shows the current cart state for each cashier statio
 
 Architecture:
   POST /api/display/update          — cashier app pushes cart state (requires auth)
+  notify_booked()                   — sales.py reports a finished booking/payout,
+                                      the page then shows the confirmation screen
   GET  /api/display/stations        — list of active stations (no auth, browser polling)
   GET  /api/display/stream/{user}   — SSE stream per station (no auth, browser)
   GET  /display                     — station selection page (HTML)
@@ -31,8 +33,15 @@ from schemas import DisplayUpdateRequest
 
 # username (lowercase) → {seq, username, label, items, chip_uid,
 #                          current_balance, balance_after, updated_at}
+#                          current_balance, balance_after, confirmation,
+#                          updated_at}
 _states: dict[str, dict] = {}
 _seq: int = 0
+
+# How long a booking confirmation survives the app's own follow-up pushes
+# (it clears chip and cart right after the booking). The page itself shows it
+# for CONFIRM_SHOW_MS (see _STATION_HTML) or until the next chip is scanned.
+CONFIRM_HOLD_SECONDS = 8
 
 
 def _push(username: str, label: str, payload: dict) -> None:
@@ -45,6 +54,35 @@ def _push(username: str, label: str, payload: dict) -> None:
         **payload,
         "updated_at": time.time(),
     }
+
+
+def _recent_confirmation(username: str) -> dict | None:
+    prev = _states.get(username.lower())
+    conf = prev.get("confirmation") if prev else None
+    if conf and time.time() - conf["at"] < CONFIRM_HOLD_SECONDS:
+        return conf
+    return None
+
+
+def notify_booked(user: dict, new_balance: float, payout_amount: float | None = None) -> None:
+    """Called by sales.py after a committed booking: the station's display shows
+    "Buchung bestätigt" with the remaining balance (or "Auszahlung bestätigt"
+    with the paid-out amount). Only the server knows the booking really went
+    through and the exact new balance, so this does not come from the app."""
+    label = user.get("display_name") or user["username"]
+    _push(user["username"], label, {
+        "items": [],
+        "chip_uid": None,
+        "current_balance": None,
+        "balance_after": None,
+        "confirmation": {
+            "id": _seq + 1,  # = the seq of this very push
+            "kind": "payout" if payout_amount is not None else "booking",
+            "balance": new_balance,
+            "amount": payout_amount,
+            "at": time.time(),
+        },
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +113,7 @@ def update_display(
         "chip_uid": body.chip_uid,
         "current_balance": body.current_balance,
         "balance_after": body.balance_after,
+        "confirmation": _recent_confirmation(user["username"]),
     })
     return {"ok": True}
 
@@ -185,7 +224,7 @@ _STATION_HTML = """\
 <html lang="de">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>Kundenterminal</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -197,12 +236,39 @@ header{background:#161616;padding:10px 20px;display:flex;justify-content:space-b
   align-items:center;border-bottom:1px solid #232323;flex-shrink:0}
 .station{font-size:1rem;font-weight:600;color:#888}
 .brand{font-size:.85rem;color:#3a3a3a}
-#main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+#main{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative}
 
-/* Waiting state */
-#waiting{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px}
-.w-icon{font-size:3rem;opacity:.15}
-.w-text{font-size:1.8rem;font-weight:300;color:#444;letter-spacing:.02em}
+/* Waiting state: chip being placed on the reader */
+#waiting{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:18px;padding:20px;text-align:center}
+.tap{width:min(52vmin,300px);height:auto;overflow:visible}
+.w-text{font-size:clamp(1.8rem,5.5vmin,3rem);font-weight:600;color:#f0f0f0;letter-spacing:.01em}
+.w-sub{font-size:clamp(1rem,2.8vmin,1.4rem);color:#777}
+
+.chip,.chip-shadow{transform-box:fill-box;transform-origin:center}
+.chip{animation:chip-move 3.2s cubic-bezier(.3,.7,.3,1) infinite}
+.chip-shadow{animation:chip-shadow 3.2s cubic-bezier(.3,.7,.3,1) infinite}
+.wave{fill:none;stroke:#4caf50;stroke-width:3;opacity:0;
+  transform-box:fill-box;transform-origin:center;animation:wave 3.2s ease-out infinite}
+.wave.w2{animation-delay:.25s}
+.led{animation:led 3.2s linear infinite}
+@keyframes chip-move{
+  0%  {transform:translate(70px,-90px) scale(1.45);opacity:0}
+  12% {opacity:1}
+  42% {transform:translate(0,0) scale(1);opacity:1}
+  80% {transform:translate(0,0) scale(1);opacity:1}
+  100%{transform:translate(0,0) scale(1);opacity:0}}
+@keyframes chip-shadow{
+  0%  {transform:translate(40px,-30px) scale(1.5);opacity:0}
+  42% {transform:translate(0,0) scale(1);opacity:.55}
+  80% {opacity:.55}
+  100%{opacity:0}}
+@keyframes wave{
+  0%,42%{transform:scale(1);opacity:0}
+  46%   {opacity:.9}
+  75%   {transform:scale(1.9);opacity:0}
+  100%  {opacity:0}}
+@keyframes led{0%,42%{fill:#3a3f46}44%,80%{fill:#4caf50}84%,100%{fill:#3a3f46}}
 
 /* Cart state */
 #cart{flex:1;display:none;flex-direction:column;overflow:hidden}
@@ -226,6 +292,55 @@ header{background:#161616;padding:10px 20px;display:flex;justify-content:space-b
 .pos{color:#4caf50}
 .neg{color:#f44336}
 
+/* Cart without chip yet: prompt at the bottom */
+#tap-hint{flex-shrink:0;display:none;align-items:center;justify-content:center;gap:12px;
+  background:#12261a;border-top:1px solid #1f4d2c;color:#c8f0d2;font-size:1.4rem;font-weight:600;
+  padding:16px 20px calc(16px + env(safe-area-inset-bottom,0px))}
+.hint-dot{width:12px;height:12px;border-radius:50%;background:#4caf50;animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:1;transform:scale(1.15)}}
+
+/* Booking confirmed */
+#confirm{position:absolute;inset:0;background:#0d0d0d;display:none;flex-direction:column;
+  align-items:center;justify-content:center;gap:10px;padding:20px;text-align:center}
+#confirm.show{display:flex}
+.check{width:min(38vmin,220px);height:auto;margin-bottom:14px}
+.check circle{fill:#2e9d4f;transform-box:fill-box;transform-origin:center}
+.check path{fill:none;stroke:#fff;stroke-width:9;stroke-linecap:round;stroke-linejoin:round;
+  stroke-dasharray:80;stroke-dashoffset:80}
+#confirm.show .check circle{animation:pop .45s cubic-bezier(.2,1.6,.4,1) both}
+#confirm.show .check path{animation:draw .35s ease-out .3s forwards}
+.c-title{font-size:clamp(1.8rem,6vmin,3.2rem);font-weight:700;color:#fff;
+  opacity:0}
+.c-label{font-size:clamp(1.6rem,5.5vmin,2.8rem);font-weight:600;color:#bbb;margin-top:26px;opacity:0}
+.c-amount{font-size:clamp(3.5rem,15vmin,8rem);font-weight:800;line-height:1.05;
+  font-variant-numeric:tabular-nums;opacity:0}
+#confirm.show .c-title{animation:rise .35s ease-out .25s forwards}
+#confirm.show .c-label{animation:rise .35s ease-out .4s forwards}
+#confirm.show .c-amount{animation:rise .35s ease-out .45s forwards}
+@keyframes pop{0%{transform:scale(0)}100%{transform:scale(1)}}
+@keyframes draw{to{stroke-dashoffset:0}}
+@keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+
+@media (prefers-reduced-motion:reduce){
+  .chip,.chip-shadow,.wave,.led,.hint-dot{animation:none}
+  .wave{opacity:0}
+  #confirm.show .check circle,#confirm.show .c-title,#confirm.show .c-label,#confirm.show .c-amount{animation:none;opacity:1}
+  #confirm.show .check path{animation:none;stroke-dashoffset:0}
+}
+
+/* Touch lock: the display hangs in front of guests, so a transparent layer
+   swallows every touch. Holding the top-right corner (top-left is Headwind
+   MDM's kiosk exit) for UNLOCK_HOLD_MS frees
+   touch for UNLOCK_MS; tapping the banner locks again at once. */
+body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+#lock{position:fixed;inset:0;z-index:50;touch-action:none}
+#lock.off{display:none}
+#unlocked{display:none;position:fixed;top:0;left:0;right:0;z-index:60;background:#e65100;
+  color:#fff;padding:10px 12px;font-size:1rem;font-weight:600;align-items:center;gap:12px}
+#unlocked.show{display:flex}
+#unlocked .msg{flex:1}
+#unlocked a{color:#e65100;background:#fff;border-radius:8px;padding:8px 14px;text-decoration:none;white-space:nowrap}
+
 /* Reconnect banner */
 #offline{display:none;position:fixed;bottom:0;left:0;right:0;background:#b71c1c;
   color:#fff;text-align:center;padding:8px;font-size:.9rem}
@@ -238,8 +353,39 @@ header{background:#161616;padding:10px 20px;display:flex;justify-content:space-b
 </header>
 <div id="main">
   <div id="waiting">
-    <div class="w-icon">🛒</div>
-    <div class="w-text">Bitte warten …</div>
+    <svg class="tap" viewBox="0 0 240 240" aria-hidden="true">
+      <defs>
+        <linearGradient id="chipg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#4a92ff"/>
+          <stop offset="1" stop-color="#1f5fc4"/>
+        </linearGradient>
+      </defs>
+      <!-- reader, seen from above -->
+      <rect x="30" y="30" width="180" height="180" rx="34" fill="#1b1e23" stroke="#2c3138" stroke-width="2"/>
+      <rect x="44" y="44" width="152" height="152" rx="24" fill="#16191d"/>
+      <circle class="led" cx="186" cy="54" r="5" fill="#3a3f46"/>
+      <g fill="none" stroke="#3a414b" stroke-width="6" stroke-linecap="round">
+        <path d="M108 100 a28 28 0 0 1 0 40"/>
+        <path d="M122 88 a46 46 0 0 1 0 64"/>
+        <path d="M136 76 a64 64 0 0 1 0 88"/>
+      </g>
+      <circle class="wave" cx="120" cy="120" r="46"/>
+      <circle class="wave w2" cx="120" cy="120" r="46"/>
+      <!-- chip (key fob) -->
+      <ellipse class="chip-shadow" cx="124" cy="128" rx="44" ry="44" fill="#000" fill-opacity=".6"/>
+      <g class="chip">
+        <circle cx="120" cy="120" r="44" fill="url(#chipg)"/>
+        <circle cx="120" cy="120" r="34" fill="none" stroke="#ffffff" stroke-opacity=".25" stroke-width="2"/>
+        <circle cx="120" cy="86" r="5" fill="#16191d"/>
+        <g fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round">
+          <path d="M112 110 a14 14 0 0 1 0 20"/>
+          <path d="M120 103 a24 24 0 0 1 0 34"/>
+          <path d="M128 96 a34 34 0 0 1 0 48"/>
+        </g>
+      </g>
+    </svg>
+    <div class="w-text">Chip auf Lesegerät legen</div>
+    <div class="w-sub">oder das Armband an das Lesegerät halten</div>
   </div>
   <div id="cart">
     <div id="items"></div>
@@ -259,19 +405,70 @@ header{background:#161616;padding:10px 20px;display:flex;justify-content:space-b
         <span class="val" id="bal-after"></span>
       </div>
     </div>
+    <div id="tap-hint"><span class="hint-dot"></span>Chip auf Lesegerät legen</div>
+  </div>
+  <div id="confirm" role="status" aria-live="polite">
+    <svg class="check" viewBox="0 0 100 100" aria-hidden="true">
+      <circle cx="50" cy="50" r="48"/>
+      <path d="M28 52 L44 67 L73 36"/>
+    </svg>
+    <div class="c-title" id="c-title">Buchung bestätigt</div>
+    <div class="c-label" id="c-label">Restguthaben</div>
+    <div class="c-amount" id="c-amount"></div>
   </div>
 </div>
 <div id="offline">Verbindung unterbrochen – Wiederverbindung …</div>
+<div id="lock"></div>
+<div id="unlocked"><span class="msg">Touch frei – sperrt in <span id="unlock-left"></span> s · Tippen sperrt sofort</span><a href="/display">Kasse wechseln</a></div>
 <script>
 const USERNAME='__USERNAME__';
+// How long "Buchung bestätigt" stays up, unless the next chip is scanned first.
+const CONFIRM_SHOW_MS=6000;
 
 function fmt(v){
-  return (Math.round(v*100)/100).toFixed(2).replace('.',',')+' €';
+  return (Math.round(v*100)/100).toFixed(2).replace('.',',')+' €';
+}
+
+let seenConfirm=null;   // id of the last confirmation already handled
+let confirmTimer=null;
+let firstMessage=true;
+
+function hideConfirm(){
+  clearTimeout(confirmTimer);
+  document.getElementById('confirm').classList.remove('show');
+}
+
+function showConfirm(c){
+  const payout=c.kind==='payout';
+  document.getElementById('c-title').textContent=payout?'Auszahlung bestätigt':'Buchung bestätigt';
+  document.getElementById('c-label').textContent=payout?'Ausgezahlt':'Restguthaben';
+  const v=payout?c.amount:c.balance;
+  const el=document.getElementById('c-amount');
+  el.textContent=fmt(v??0);
+  el.className='c-amount '+(!payout&&v<0?'neg':'');
+  const box=document.getElementById('confirm');
+  box.classList.remove('show');
+  void box.offsetWidth;  // restart the pop-in animation
+  box.classList.add('show');
+  clearTimeout(confirmTimer);
+  confirmTimer=setTimeout(hideConfirm,CONFIRM_SHOW_MS);
 }
 
 function render(data){
   const hasItems=data.items&&data.items.length>0;
   const hasChip=data.chip_uid!=null;
+
+  // A confirmation already on the server when the page opens is old news.
+  const c=data.confirmation;
+  if(c&&c.id!==seenConfirm){
+    seenConfirm=c.id;
+    if(!firstMessage) showConfirm(c);
+  }
+  firstMessage=false;
+  // Next guest's chip scanned: get out of the way at once.
+  if(hasChip) hideConfirm();
+
+  if(data.label) document.getElementById('station-label').textContent=data.label;
 
   if(data.empty||(!hasItems&&!hasChip)){
     document.getElementById('waiting').style.display='flex';
@@ -281,27 +478,26 @@ function render(data){
   document.getElementById('waiting').style.display='none';
   document.getElementById('cart').style.display='flex';
 
-  // Update station label from server data
-  if(data.label) document.getElementById('station-label').textContent=data.label;
-
   // Items
   const itemsEl=document.getElementById('items');
   let total=0;
   itemsEl.innerHTML=(data.items||[]).map(i=>{
     const sub=i.price*i.quantity;
     total+=sub;
-    const qty=i.quantity>1?`${i.quantity}× `:'';
+    const qty=i.quantity>1?`${i.quantity}× `:'';
     const cls=i.price<0?'item-price refund':'item-price';
     return `<div class="item"><span class="item-name">${qty}${i.name}</span>`+
            `<span class="${cls}">${fmt(sub)}</span></div>`;
   }).join('');
   document.getElementById('total').textContent=fmt(total);
 
-  // Balance
+  // Balance, or the prompt to put the chip on the reader
   const balEl=document.getElementById('balance');
   const totalsEl=document.getElementById('totals');
+  const hintEl=document.getElementById('tap-hint');
   if(hasChip&&data.current_balance!=null){
     balEl.style.display='block';
+    hintEl.style.display='none';
     totalsEl.classList.remove('no-balance');
     document.getElementById('bal-cur').textContent=fmt(data.current_balance);
     const after=data.balance_after??0;
@@ -310,7 +506,8 @@ function render(data){
     el.className='val '+(after>=0?'pos':'neg');
   } else {
     balEl.style.display='none';
-    totalsEl.classList.add('no-balance');
+    hintEl.style.display=hasChip?'none':'flex';
+    totalsEl.classList.toggle('no-balance',hasChip);
   }
 }
 
@@ -326,6 +523,62 @@ function connect(){
   };
 }
 connect();
+
+// --- Touch lock -----------------------------------------------------------
+const UNLOCK_HOLD_MS=5000;   // hold the corner this long to unlock
+const UNLOCK_CORNER_PX=90;   // size of the secret top-right corner
+const UNLOCK_MS=30000;       // touch stays free this long
+
+const lockEl=document.getElementById('lock');
+const unlockedEl=document.getElementById('unlocked');
+let holdTimer=null, relockTimer=null, tickTimer=null;
+
+function goFullscreen(){
+  const d=document.documentElement;
+  if(document.fullscreenElement||!d.requestFullscreen) return;
+  d.requestFullscreen({navigationUI:'hide'}).catch(()=>{});
+}
+
+function lockTouch(){
+  clearTimeout(relockTimer);
+  clearInterval(tickTimer);
+  unlockedEl.classList.remove('show');
+  lockEl.classList.remove('off');
+}
+
+function unlockTouch(){
+  lockEl.classList.add('off');
+  unlockedEl.classList.add('show');
+  const until=Date.now()+UNLOCK_MS;
+  const tick=()=>{
+    document.getElementById('unlock-left').textContent=Math.max(0,Math.ceil((until-Date.now())/1000));
+  };
+  tick();
+  tickTimer=setInterval(tick,1000);
+  relockTimer=setTimeout(lockTouch,UNLOCK_MS);
+}
+
+function cancelHold(){ clearTimeout(holdTimer); holdTimer=null; }
+
+lockEl.addEventListener('pointerdown',e=>{
+  e.preventDefault();
+  if(e.clientX>innerWidth-UNLOCK_CORNER_PX&&e.clientY<UNLOCK_CORNER_PX){
+    cancelHold();
+    holdTimer=setTimeout(()=>{holdTimer=null;unlockTouch();},UNLOCK_HOLD_MS);
+  }
+});
+// Any touch is a user gesture: use it to (re-)enter fullscreen. For touch,
+// browsers grant that on pointerup, not pointerdown.
+lockEl.addEventListener('pointerup',()=>{cancelHold();goFullscreen();});
+lockEl.addEventListener('pointercancel',cancelHold);
+lockEl.addEventListener('pointermove',e=>{
+  if(holdTimer&&(e.clientX<=innerWidth-UNLOCK_CORNER_PX||e.clientY>=UNLOCK_CORNER_PX)) cancelHold();
+});
+for(const t of ['touchstart','touchmove','touchend']){
+  lockEl.addEventListener(t,e=>e.preventDefault(),{passive:false});
+}
+document.addEventListener('contextmenu',e=>{if(!lockEl.classList.contains('off')) e.preventDefault();});
+unlockedEl.addEventListener('click',e=>{if(!e.target.closest('a')) lockTouch();});
 </script>
 </body>
 </html>

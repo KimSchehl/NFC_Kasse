@@ -7,3 +7,5 @@ NFC_Flutter_Project/backend/logs/*
 .history/
 # graphify knowledge graph (regenerate with: graphify update .)
 graphify-out/
+
+_claude_export/

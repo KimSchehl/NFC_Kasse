@@ -57,15 +57,9 @@ class _WidePosLayout extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Shown only with the add-on, the Settings switch on, and a category that
-    // has a pager article (options inherit the flag from their base, which is
-    // in the same list). Collapsed, it shrinks to [PagerListStrip].
-    final categoryHasPager = category != null &&
-        (ref.watch(productsProvider(category!.id)).valueOrNull?.any((p) => p.requiresPager) ??
-            false);
-    final showPager = (ref.watch(authProvider).valueOrNull?.pagerEnabled ?? false) &&
-        ref.watch(pagerListEnabledProvider) &&
-        categoryHasPager;
+    // Visibility rule shared with the phone's [PagerHeaderButton]. Collapsed,
+    // the list shrinks to [PagerListStrip].
+    final showPager = watchShowPagerList(ref);
     final pagerCollapsed = showPager && ref.watch(pagerListCollapsedProvider);
     final pagerOpen = showPager && !pagerCollapsed;
 

@@ -364,3 +364,32 @@ def test_csv_export_single_period_limits_bookings_but_not_chip_state(
     assert "Pfand-Artikel (Saldo)" not in summary
     # Live chip state is independent of the selected range.
     assert summary["Restguthaben auf Chips (Stand jetzt)"] == "4,50"
+
+
+def test_preset_carries_category_color(db, tmp_path, capsys):
+    with database.get_db() as conn:
+        source_event = _active_id(conn)
+        cat_id = add_category(conn, "Essen")
+        conn.execute("UPDATE category SET color = '#FFCC80' WHERE id = ?", (cat_id,))
+        add_product(conn, cat_id, "Pizza", 6.0)
+        _switch_to_intern(conn)
+
+    file = tmp_path / "vorlage.json"
+    assert _cli(capsys, tmp_path, "preset-export", str(source_event), str(file))[0] == 0
+    preset = json.loads(file.read_text(encoding="utf-8"))
+    assert preset["categories"][0]["color"] == "#FFCC80"
+
+    # Existing category without colour gets it filled in; one with its own colour keeps it;
+    # a new one is created with the preset's colour; an old preset entry without "color" still imports.
+    preset["categories"] += [{"ref": 1, "name": "Bar", "color": "#80DEEA"}, {"ref": 2, "name": "Alt"}]
+    file.write_text(json.dumps(preset), encoding="utf-8")
+    with database.get_db() as conn:
+        conn.execute("UPDATE category SET color = NULL WHERE id = ?", (cat_id,))
+        bar = add_category(conn, "Bar", event_id=_intern_id(conn))
+        conn.execute("UPDATE category SET color = '#EF9A9A' WHERE id = ?", (bar,))
+
+    code, out = _cli(capsys, tmp_path, "event-start", "--deposit", "0", "--name", "Farbig", "--preset", str(file))
+    assert code == 0, out
+    with database.get_db() as conn:
+        colors = dict(conn.execute("SELECT name, color FROM category").fetchall())
+    assert colors == {"Essen": "#FFCC80", "Bar": "#EF9A9A", "Alt": None}

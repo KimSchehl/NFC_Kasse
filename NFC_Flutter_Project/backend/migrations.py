@@ -65,6 +65,7 @@ def run_migrations(
     _add_column(db, "customer", "deposit_paid", "REAL NOT NULL DEFAULT 0")
     _add_column(db, "sale", "points", "INTEGER NOT NULL DEFAULT 0")
     _add_column(db, "tenant", "catalog_rev", "INTEGER NOT NULL DEFAULT 0")
+    _add_column(db, "category", "color", "TEXT")
 
     db.execute("""
         CREATE TABLE IF NOT EXISTS leaderboard_entry (
@@ -315,6 +316,7 @@ def _upgrade_to_v3(db: sqlite3.Connection) -> None:
             tenant_id   INTEGER NOT NULL REFERENCES tenant(id),
             name        TEXT    NOT NULL,
             sort_order  INTEGER NOT NULL DEFAULT 0,
+            color       TEXT,
             deleted     INTEGER NOT NULL DEFAULT 0
         )
     """)

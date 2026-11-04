@@ -11,11 +11,21 @@ import '../product_tile.dart';
 /// directly bookable once it has options (e.g. "Steak" is always sold
 /// "mit Brötchen" or "mit Pommes", never on its own), so it isn't a tile
 /// here.
+///
+/// [colorOf] gives each option's tile color (the cashier's own override,
+/// else the option's default color); null means theme default — options do
+/// not inherit the base article's color.
 class VariantPickerDialog extends StatelessWidget {
   final ProductModel base;
   final List<ProductModel> options;
+  final Color? Function(ProductModel option)? colorOf;
 
-  const VariantPickerDialog({super.key, required this.base, required this.options});
+  const VariantPickerDialog({
+    super.key,
+    required this.base,
+    required this.options,
+    this.colorOf,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -72,7 +82,7 @@ class VariantPickerDialog extends StatelessWidget {
   Widget _tile(BuildContext context, ProductModel p) => ProductTile(
         product: p,
         maxLines: 4,
-        color: null,
+        color: colorOf?.call(p),
         fitContent: true,
         onTap: () {
           if (!p.active || p.isOutOfStock) return;

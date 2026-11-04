@@ -137,3 +137,21 @@ def test_print_job_status_reports_done_and_error(client, auth_headers, db):
 def test_print_job_status_rejects_bad_ids(client, auth_headers, db):
     resp = client.get("/api/print/jobs", params={"ids": "abc"}, headers=auth_headers)
     assert resp.status_code == 400
+
+
+def test_category_color_is_normalized_tristate_and_listed(client, auth_headers):
+    resp = client.post("/api/products/categories", json={"name": "Farbig", "color": "#ff8800"}, headers=auth_headers)
+    assert resp.status_code == 201, resp.text
+    cat = resp.json()
+    assert cat["color"] == "#FF8800"
+
+    # Omitted color keeps it, explicit null clears it.
+    assert client.put(f"/api/products/categories/{cat['id']}", json={"name": "Bunt"}, headers=auth_headers).json()["color"] == "#FF8800"
+    listed = {c["id"]: c for c in client.get("/api/products/categories", headers=auth_headers).json()}
+    assert listed[cat["id"]]["color"] == "#FF8800"
+    admin = {c["id"]: c for c in client.get("/api/products/admin", headers=auth_headers).json()["categories"]}
+    assert admin[cat["id"]]["color"] == "#FF8800"
+
+    assert client.put(f"/api/products/categories/{cat['id']}", json={"color": None}, headers=auth_headers).json()["color"] is None
+    assert client.put(f"/api/products/categories/{cat['id']}", json={"color": "blau"}, headers=auth_headers).status_code == 422
+    assert client.post("/api/products/categories", json={"name": "X", "color": "#12345"}, headers=auth_headers).status_code == 422

@@ -144,6 +144,7 @@ def init_db():
         tenant_id   INTEGER NOT NULL REFERENCES tenant(id),
         name        TEXT    NOT NULL,
         sort_order  INTEGER NOT NULL DEFAULT 0,
+        color       TEXT,  -- default colour '#RRGGBB'; NULL = theme default. Per-user overrides live in user_setting
         deleted     INTEGER NOT NULL DEFAULT 0
     )""")
 

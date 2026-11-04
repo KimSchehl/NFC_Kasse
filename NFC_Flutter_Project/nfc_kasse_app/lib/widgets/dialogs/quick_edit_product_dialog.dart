@@ -14,13 +14,19 @@ import '../product_color_picker.dart';
 /// pager, category/options, delete) lives on the article admin screen via
 /// the full `EditProductDialog` — floor staff who can't touch prices
 /// shouldn't be creating or reconfiguring articles here either.
+///
+/// [options] are the article's options (if any); each gets its own color
+/// override too, since options only show up in the POS option picker and
+/// have no tile of their own to tap here.
 class QuickEditProductDialog extends ConsumerStatefulWidget {
   final ProductModel product;
+  final List<ProductModel> options;
   final bool canEditStock;
 
   const QuickEditProductDialog({
     super.key,
     required this.product,
+    this.options = const [],
     required this.canEditStock,
   });
 
@@ -31,13 +37,18 @@ class QuickEditProductDialog extends ConsumerStatefulWidget {
 class _QuickEditProductDialogState extends ConsumerState<QuickEditProductDialog> {
   late final TextEditingController _stock;
   Color? _color;
+  final Map<int, Color?> _optionColors = {};
   bool _loading = false;
   String? _error;
 
   @override
   void initState() {
     super.initState();
-    _color = ref.read(userPrefsProvider).getProductColor(widget.product.id);
+    final prefs = ref.read(userPrefsProvider);
+    _color = prefs.getProductColor(widget.product.id);
+    for (final o in widget.options) {
+      _optionColors[o.id] = prefs.getProductColor(o.id);
+    }
     _stock = TextEditingController(text: widget.product.stock?.toString() ?? '');
   }
 
@@ -71,7 +82,14 @@ class _QuickEditProductDialogState extends ConsumerState<QuickEditProductDialog>
       if (widget.canEditStock) {
         await ref.read(productServiceProvider).updateProduct(widget.product.id, stock: stockVal);
       }
-      ref.read(userPrefsProvider.notifier).setProductColor(widget.product.id, _color);
+      final prefsNotifier = ref.read(userPrefsProvider.notifier);
+      prefsNotifier.setProductColor(widget.product.id, _color);
+      for (final o in widget.options) {
+        // Only write what changed — each call is its own server round trip.
+        if (_optionColors[o.id] != ref.read(userPrefsProvider).getProductColor(o.id)) {
+          prefsNotifier.setProductColor(o.id, _optionColors[o.id]);
+        }
+      }
       if (!mounted) return;
       ref.read(productsRefreshProvider.notifier).state++;
       Navigator.of(context).pop(true);
@@ -81,6 +99,13 @@ class _QuickEditProductDialogState extends ConsumerState<QuickEditProductDialog>
         _error = formatApiError(e);
       });
     }
+  }
+
+  /// Options store their full composed name ("Currywurst mit Pommes") —
+  /// show just the suffix under the base article's title.
+  String _optionLabel(ProductModel o) {
+    final prefix = '${widget.product.name} ';
+    return o.name.startsWith(prefix) ? o.name.substring(prefix.length) : o.name;
   }
 
   @override
@@ -101,6 +126,24 @@ class _QuickEditProductDialogState extends ConsumerState<QuickEditProductDialog>
                 selected: _color,
                 onChanged: (c) => setState(() => _color = c),
               ),
+              if (widget.options.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Text('Farben der Optionen', style: theme.textTheme.labelMedium),
+                const SizedBox(height: 4),
+                Text(
+                  'Ohne Auswahl gilt die Standard-Farbe der Option.',
+                  style: theme.textTheme.bodySmall,
+                ),
+                for (final o in widget.options) ...[
+                  const SizedBox(height: 12),
+                  Text(_optionLabel(o), style: theme.textTheme.bodyMedium),
+                  const SizedBox(height: 6),
+                  ProductColorPicker(
+                    selected: _optionColors[o.id],
+                    onChanged: (c) => setState(() => _optionColors[o.id] = c),
+                  ),
+                ],
+              ],
               if (widget.canEditStock) ...[
                 const SizedBox(height: 16),
                 TextField(

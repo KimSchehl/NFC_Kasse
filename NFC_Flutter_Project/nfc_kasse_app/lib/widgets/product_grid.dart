@@ -176,6 +176,7 @@ class _GridState extends ConsumerState<_Grid> {
       context: context,
       builder: (_) => QuickEditProductDialog(
         product: dialogProduct,
+        options: (fresh ?? widget.products).where((p) => p.groupId == product.id).toList(),
         canEditStock: widget.category.canEditArticle,
       ),
     );
@@ -199,7 +200,11 @@ class _GridState extends ConsumerState<_Grid> {
     AppLogger.trace('Options-Popup geöffnet: ${product.name}', logger: 'ui.pos');
     final chosen = await showDialog<ProductModel>(
       context: context,
-      builder: (_) => VariantPickerDialog(base: product, options: options),
+      builder: (_) => VariantPickerDialog(
+        base: product,
+        options: options,
+        colorOf: _tileColor,
+      ),
     );
     if (chosen == null) return;
     AppLogger.trace('Artikel zu Warenkorb: ${chosen.name}', logger: 'ui.pos');

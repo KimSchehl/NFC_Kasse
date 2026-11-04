@@ -163,6 +163,9 @@ final connectionStatusProvider = StreamProvider<bool>((ref) {
         // Fire-and-forget: piggybacks the product-catalog change check on
         // the same 10s cadence without blocking this stream on its result.
         unawaited(ref.read(productSyncProvider.notifier).checkForChanges());
+        // Same piggyback for this account's own layout/order/colour prefs,
+        // so a change made on another device shows up here within ~10 s.
+        unawaited(ref.read(userPrefsProvider.notifier).refresh());
         // Same piggyback for the pager add-on's own small list — gated so a
         // deployment with the feature off never calls the (unregistered,
         // 404ing) route.
@@ -261,6 +264,14 @@ final authProvider = AsyncNotifierProvider<AuthNotifier, UserModel?>(
 // ---------------------------------------------------------------------------
 
 class UserPrefsNotifier extends Notifier<UserPreferences> {
+  /// Bumped on every local change; a [refresh] whose fetch overlapped one is
+  /// discarded so it can't roll back an edit made a moment ago.
+  int _localEdits = 0;
+
+  /// Saves still on their way to the server — while any is pending the
+  /// server copy is older than [state], so [refresh] skips.
+  int _pendingWrites = 0;
+
   @override
   UserPreferences build() => UserPreferences.empty;
 
@@ -272,26 +283,65 @@ class UserPrefsNotifier extends Notifier<UserPreferences> {
     }
   }
 
-  void reset() => state = UserPreferences.empty;
+  /// Background re-fetch from the 10 s /health poll: picks up article
+  /// layouts, category order and colours this account changed on another
+  /// device. Skipped while logged out, in edit mode (the user is arranging
+  /// right now) or while an own save is still pending.
+  Future<void> refresh() async {
+    if (ref.read(authProvider).valueOrNull == null) return;
+    if (ref.read(editModeProvider) || _pendingWrites > 0) return;
+    final edits = _localEdits;
+    try {
+      final fresh = await ref.read(preferencesServiceProvider).fetchAll();
+      if (edits != _localEdits || _pendingWrites > 0) return;
+      if (ref.read(authProvider).valueOrNull == null) return;
+      if (fresh.signature != state.signature) {
+        AppLogger.info('Einstellungen von anderem Gerät übernommen', logger: 'events');
+        state = fresh;
+      }
+    } catch (_) {
+      // Ignored — the next poll retries.
+    }
+  }
+
+  void reset() {
+    _localEdits++;
+    state = UserPreferences.empty;
+  }
+
+  void _save(Future<void> write) {
+    _localEdits++;
+    _pendingWrites++;
+    unawaited(write.whenComplete(() => _pendingWrites--).catchError((_) {}));
+  }
 
   Future<void> setLayout(int categoryId, String profile, List<int?> layout) async {
     state = state.withLayout(categoryId, profile, layout);
-    unawaited(ref
+    _save(ref
         .read(preferencesServiceProvider)
         .upsert('layout.cat_$categoryId', profile, layout));
   }
 
   Future<void> setProductColor(int productId, Color? color) async {
     state = state.withProductColor(productId, color);
-    if (color == null) {
-      unawaited(ref
-          .read(preferencesServiceProvider)
-          .delete('product.color.$productId', profile: '*'));
-    } else {
-      unawaited(ref
-          .read(preferencesServiceProvider)
-          .upsert('product.color.$productId', '*', colorToHex(color)));
-    }
+    _saveColor('product.color.$productId', color);
+  }
+
+  Future<void> setCategoryColor(int categoryId, Color? color) async {
+    state = state.withCategoryColor(categoryId, color);
+    _saveColor('category.color.$categoryId', color);
+  }
+
+  Future<void> setCategoryOrder(List<int> order) async {
+    state = state.withCategoryOrder(order);
+    _save(ref.read(preferencesServiceProvider).upsert('category.order', '*', order));
+  }
+
+  void _saveColor(String key, Color? color) {
+    final svc = ref.read(preferencesServiceProvider);
+    _save(color == null
+        ? svc.delete(key, profile: '*')
+        : svc.upsert(key, '*', colorToHex(color)));
   }
 }
 

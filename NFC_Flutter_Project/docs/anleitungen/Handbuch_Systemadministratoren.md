@@ -1,6 +1,6 @@
 # NFC-Kasse – Handbuch für Systemadministratoren
 
-18. Oktober 2026 · Kim Schehl
+4. November 2026 · Kim Schehl
 
 ## 1. Überblick
 
@@ -22,6 +22,10 @@ Der Bondrucker hängt entweder per Kabel am Server-Laptop (seriell) oder als eig
 | Tablets, Handys, Anzeigen | automatisch ab 192.168.1.100 | DHCP des Routers |
 
 Der Name **nfc-kasse.lan** zeigt auf 192.168.1.2. Er wird im Router eingetragen (Abschnitt 2). Ohne diesen Eintrag funktioniert alles auch mit der IP-Adresse. Dann steht überall 192.168.1.2 statt nfc-kasse.lan.
+
+### Server automatisch finden
+
+Der Kassendienst meldet sich im Netz selbst an (mDNS/DNS-SD, Dienst `_nfc-kasse._tcp`, UDP-Port 5353). Die Android-App sucht beim Öffnen der Anmeldeseite danach und setzt die gefundene Adresse, zum Beispiel `http://192.168.1.2:8000`, ganz oben in die Auswahl. Ein Gerät, das sich zum ersten Mal anmeldet, bekommt sie automatisch eingetragen. Das funktioniert auch in fremden Netzen mit anderen Adressen, solange die Geräte sich gegenseitig sehen. In einem Gäste-WLAN mit abgeschirmten Geräten oder wenn der Router Multicast sperrt, findet die App den Server nicht. Dann die Adresse von Hand eintragen. Die Weboberfläche braucht die Suche nicht, sie nutzt immer die Adresse der Seite.
 
 ### Adressen im Browser
 
@@ -127,7 +131,7 @@ Hat das fremde Netz andere Adressen, zum Beispiel 192.168.178.x bei einer FRITZ!
 
 Ohne DNS-Eintrag kennt niemand den Namen nfc-kasse.lan. Das ist kein Problem:
 
-- In der App auf dem Anmeldebildschirm bei **Server** die Adresse `http://192.168.1.2:8000` wählen. Die App bietet sie schon in der Liste an.
+- In der App auf dem Anmeldebildschirm bei **Server-URL** die Adresse `http://192.168.1.2:8000` wählen. Die App bietet sie schon in der Liste an. Hat der Server eine andere Adresse, findet die Android-App ihn meist selbst (Abschnitt 1, Server automatisch finden).
 - Im Browser überall `http://192.168.1.2:8000/…` statt `http://nfc-kasse.lan:8000/…` verwenden.
 - Am Server-Laptop selbst geht immer `http://localhost:8000/webapp`.
 - Für Bluetooth im Browser auf weiteren Windows-PCs muss die IP-Adresse in die Browser-Richtlinie (Abschnitt 8).
@@ -374,7 +378,7 @@ Der COM-Port darf nicht von einem anderen Programm belegt sein, etwa einem Termi
 
 ### 9.3 Druckwarteschlange
 
-Die Kasse legt jeden Bon in eine Warteschlange und druckt der Reihe nach. Ist der Drucker aus oder hat kein Papier, warten die Bons und kommen von selbst, sobald der Drucker wieder bereit ist. Die Buchung ist trotzdem gespeichert. Kommt ein Bon nicht, also nicht noch einmal buchen, sondern den Drucker prüfen.
+Die Kasse legt jeden Bon in eine Warteschlange und druckt der Reihe nach. Ist der Drucker nicht erreichbar (aus, Kabel ab, falsche Adresse), warten die Bons und kommen von selbst, sobald der Drucker wieder bereit ist. Die App meldet nach etwa zehn Sekunden „Druck fehlgeschlagen … Die Bons bleiben in der Warteschlange“. Bricht der Drucker dagegen mitten im Druck ab, wird dieser eine Bon als Fehler markiert und nicht wiederholt, die App meldet „Druck fehlgeschlagen – bitte Drucker prüfen“. In beiden Fällen ist die Buchung gespeichert. Also nicht noch einmal buchen, sondern den Drucker prüfen und fehlende Bons von Hand ausgeben.
 
 ### 9.4 Bon gestalten
 
@@ -447,9 +451,8 @@ Ziehen Sie `config.env` mit um, dann bleibt die Installations-ID gleich und alle
 1. Machen Sie eine eigene Sicherung (Abschnitt 10.2).
 2. Laden Sie die neueste **NFC-Kasse-Setup.exe** von **nfc-kasse.de/download**.
 3. Starten Sie sie. Auf der Seite **Installationsmodus** ist **Aktualisieren** schon gewählt. Weiter bis **Installieren**.
-4. Das Setup stoppt den Dienst, ersetzt die Programmdateien und startet den Dienst neu. `config.env`, `bon.yaml` und die Daten bleiben erhalten. Bringt das Update einen neuen Aufbau der Datenbank mit, baut der Dienst sie beim ersten Start um und legt vorher die Sicherung `vor-update_…` an (Abschnitt 10.1).
-
-Beim Update auf die Version mit Veranstaltern werden gleichnamige Kategorien und Artikel aus den bisherigen Festen zu jeweils einer zusammengeführt. Jedes alte Fest zeigt weiter genau das, was es vorher hatte. Statistik und Abrechnung alter Feste bleiben unverändert. Als Rechte jedes Kontos gelten die aus dem gerade laufenden Betrieb.
+4. Ist das Verwaltungstool offen, bietet das Setup an, es zu schließen, und öffnet es nach dem Update wieder.
+5. Das Setup stoppt den Dienst und wartet, bis er wirklich beendet ist (bis zu etwa 25 Sekunden, notfalls beendet es ihn hart, die Datenbank nimmt dabei keinen Schaden). Dann ersetzt es die Programmdateien und startet den Dienst neu. Lässt sich der Dienst gar nicht beenden, bricht das Setup vor dem Kopieren mit der Meldung „Der NFC-Kasse-Dienst konnte nicht beendet werden“ ab. Dann den Laptop neu starten und das Setup erneut ausführen. `config.env`, `bon.yaml` und die Daten bleiben erhalten. Bringt das Update einen neuen Aufbau der Datenbank mit, baut der Dienst sie beim ersten Start um und legt vorher die Sicherung `vor-update_…` an (Abschnitt 10.1).
 
 Updaten Sie nie während einer Veranstaltung.
 
@@ -478,12 +481,36 @@ Der schnellste Test ist immer **http://nfc-kasse.lan:8000/health** im Browser de
 | App zeigt „Keine Verbindung zum Server“ | Gerät im falschen WLAN, Laptop schläft, Dienst gestoppt | WLAN prüfen (kein Gäste-WLAN), Laptop wecken (Abschnitt 4.1), Dienst im Verwaltungstool starten |
 | Mit IP geht es, mit nfc-kasse.lan nicht | DNS-Eintrag fehlt oder Gerät fragt einen fremden DNS-Server | Abschnitt 2.4 prüfen. Android: **Einstellungen → Netzwerk → Privates DNS** auf **Aus**. Chrome: **Einstellungen → Datenschutz → Sicherheit → Sicheres DNS** ausschalten. Notfalls IP nehmen (Abschnitt 3.2). |
 | Laptop bekommt nicht 192.168.1.2 | Reservierung hängt an einer anderen MAC-Adresse (Kabel statt WLAN, zufällige MAC) | Abschnitt 2.3 |
-| Dashboard zeigt „Gestoppt“, Starten hilft nicht | Port 8000 belegt oder `config.env` fehlerhaft | Eingabeaufforderung: `netstat -ano \| findstr :8000` zeigt, wer den Port belegt. In `logs\winsw\` den Fehler lesen. Häufig: ein Tippfehler, z. B. Buchstaben in `PORT` oder `PRINTER_BAUDRATE`. |
+| Dashboard zeigt „Gestoppt“, Starten hilft nicht | Hauptlizenz fehlt oder ist ungültig, Port 8000 belegt oder `config.env` fehlerhaft | Eingabeaufforderung: `netstat -ano \| findstr :8000` zeigt, wer den Port belegt. In `logs\winsw\` den Fehler lesen. Zuerst die Seite **Lizenzen** prüfen (Abschnitt 11.4). Wurde `config.env` von Hand bearbeitet: Tippfehler, z. B. Buchstaben in `PORT` oder `PRINTER_BAUDRATE`. Das Verwaltungstool selbst speichert solche Werte nicht. |
 | Im Browser lässt sich der Bluetooth-Leser nicht wählen | Adresse nicht als sicher eingetragen, Firefox, Bluetooth aus | Abschnitt 8. Chrome oder Edge nehmen, Bluetooth in Windows einschalten. |
 | Anmeldung im Browser schlägt fehl, die App geht | Seite unter anderer Adresse geöffnet als der eingestellte Server | `ALLOWED_ORIGINS` ergänzen (Abschnitt 7) oder Seite unter derselben Adresse öffnen |
-| Bons kommen nicht | Drucker aus, kein Papier, Deckel offen, falsche Adresse oder COM-Port | Drucker prüfen. Im Protokoll steht dann `Print worker: could not open printer`. Die Bons warten und kommen nach (Abschnitt 9.3). |
+| Bons kommen nicht, die App meldet „Druck fehlgeschlagen“ | Drucker aus, kein Papier, Deckel offen, falsche Adresse oder COM-Port | Drucker prüfen. Im Protokoll steht dann `Print worker: could not open printer`. Ist der Drucker nicht erreichbar, warten die Bons und kommen nach (Abschnitt 9.3). |
+| Update bricht ab: „Der NFC-Kasse-Dienst konnte nicht beendet werden“ | Dienst hängt | Laptop neu starten, Setup erneut ausführen (Abschnitt 11.1) |
+| Die App findet den Server auf der Anmeldeseite nicht von selbst | Gäste-WLAN, Router sperrt Multicast, Firewall-Regel fehlt | Adresse von Hand eintragen. Für die automatische Suche: Kassen-WLAN ohne Geräte-Abschirmung (Abschnitt 2.6) |
 | Pager-Spalte oder Bestenliste fehlt | Lizenz fehlt oder ist ungültig | Abschnitt 11.4 |
 | Alle Geräte sind plötzlich abgemeldet | `SECRET_KEY` geändert oder `config.env` neu erzeugt | Neu anmelden. Bei neuer `config.env`: Lizenzen prüfen. |
 | Falsche Uhrzeit auf Bons und in der Statistik | Uhr des Laptops falsch | Uhrzeit und Zeitzone am Laptop stellen, Dienst neu starten |
 
 Kommen Sie nicht weiter, schicken Sie die Protokolldatei der betreffenden Stunde aus `C:\ProgramData\NFC-Kasse\logs\` an **kontakt@nfc-kasse.de**.
+
+## 13. Geräte als Kiosk sperren
+
+Bei Veranstaltungen sollen Gäste und Personal die Kasse nicht verlassen oder andere Apps öffnen. Android bietet dafür zwei Wege.
+
+### 13.1 Bildschirm anheften (ohne Zusatzsoftware)
+
+1. Android-**Einstellungen → Sicherheit** (je nach Gerät **Sicherheit & Datenschutz → Weitere Sicherheitseinstellungen**) → **App anheften** einschalten, dazu **Vor dem Loslösen nach PIN fragen**.
+2. Die NFC-Kasse öffnen, die Übersicht der offenen Apps aufrufen, auf das Symbol der NFC-Kasse tippen und **Anheften** wählen.
+3. Lösen geht nur mit der Geste aus Zurück und Übersicht und der Geräte-PIN.
+
+Das reicht für einzelne Geräte. Nach einem Neustart muss die App neu angeheftet werden.
+
+### 13.2 Geräteverwaltung (MDM)
+
+Für viele Geräte lohnt sich eine Geräteverwaltung (Mobile Device Management), zum Beispiel das quelloffene **Headwind MDM**, das sich auf einem eigenen Server betreiben lässt. Damit läuft das Tablet dauerhaft als Ein-App-Kiosk mit der NFC-Kasse, startet nach einem Neustart direkt in die Kasse und lässt keine anderen Apps zu. Die App-Datei (APK) für die Verteilung über das MDM bekommen Sie unter **http://nfc-kasse.lan:8000/download**.
+
+### 13.3 Kundenanzeige auf einem eigenen Gerät
+
+Ein altes Smartphone in einer Halterung am Kassen-Tablet eignet sich gut als Kundenanzeige (Bedieneranleitung, Abschnitt 12.3). Im Kiosk-Browser des MDM oder im angehefteten Browser die Seite **http://nfc-kasse.lan:8000/display** öffnen und die Kasse wählen. Die Seite selbst sperrt Berührungen. Zum Entsperren die obere rechte Ecke fünf Sekunden gedrückt halten, dann ist Touch 30 Sekunden frei, zum Beispiel für **Kasse wechseln**. Die obere linke Ecke bleibt frei für den Ausstieg aus dem Kiosk-Modus des MDM.
+
+Stellen Sie am Anzeige-Gerät die Bildschirmabschaltung auf **Nie** oder lassen Sie es am Ladekabel mit der Entwickleroption **Aktiv lassen** laufen, sonst geht die Anzeige nach kurzer Zeit aus.

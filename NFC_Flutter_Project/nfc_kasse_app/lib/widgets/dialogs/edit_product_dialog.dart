@@ -23,8 +23,9 @@ import '../product_color_picker.dart';
 /// (including inactive ones and existing options) — used to seed the
 /// options sub-editor with [product]'s current options, if any.
 ///
-/// The default button color is set here (needs [canEditDetails]). A cashier's
-/// own override is set separately, by long-pressing a tile on the POS screen.
+/// The default button color is set here (needs [canEditDetails]), for the
+/// article and for each of its options. A cashier's own override is set
+/// separately, via the POS screen's Bearbeitungsmodus.
 class EditProductDialog extends ConsumerStatefulWidget {
   final ProductModel? product;
   final int categoryId;
@@ -50,13 +51,16 @@ class EditProductDialog extends ConsumerStatefulWidget {
 }
 
 /// One row in the options sub-editor. `id == null` means it isn't saved
-/// yet — created on next save rather than updated.
+/// yet — created on next save rather than updated. [color] is the option's
+/// own default button color; null = theme default (it does not inherit the
+/// base article's color).
 class _OptionDraft {
   final int? id;
   final TextEditingController suffixCtrl;
   final TextEditingController priceCtrl;
+  Color? color;
 
-  _OptionDraft({this.id, String suffix = '', String price = ''})
+  _OptionDraft({this.id, String suffix = '', String price = '', this.color})
       : suffixCtrl = TextEditingController(text: suffix),
         priceCtrl = TextEditingController(text: price);
 
@@ -115,6 +119,7 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
                 id: o.id,
                 suffix: o.name.startsWith(prefix) ? o.name.substring(prefix.length) : o.name,
                 price: o.price.toStringAsFixed(2),
+                color: o.defaultColor,
               ))
           .toList();
     }
@@ -203,7 +208,7 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
     // Options are hidden in the UI (and thus never touched by the user) for
     // payout articles — see build() — so skip validating/syncing them here
     // too rather than silently dropping or reinterpreting stale draft rows.
-    final parsedOptions = <({int? id, String suffix, double price})>[];
+    final parsedOptions = <({int? id, String suffix, double price, String? color})>[];
     if (!savedIsPayout) {
       for (final o in _options) {
         final suffix = o.suffixCtrl.text.trim();
@@ -216,7 +221,12 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
           setState(() => _error = 'Ungültiger Options-Preis bei "$suffix"');
           return;
         }
-        parsedOptions.add((id: o.id, suffix: suffix, price: optPrice));
+        parsedOptions.add((
+          id: o.id,
+          suffix: suffix,
+          price: optPrice,
+          color: o.color == null ? null : colorToHex(o.color!),
+        ));
       }
     }
 
@@ -275,9 +285,16 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
               price: opt.price,
               categoryId: widget.categoryId,
               groupId: baseId,
+              color: opt.color,
             );
           } else {
-            await svc.updateProduct(opt.id!, name: optionName, price: opt.price);
+            await svc.updateProduct(
+              opt.id!,
+              name: optionName,
+              price: opt.price,
+              color: opt.color,
+              updateColor: true,
+            );
           }
         }
         for (final deletedId in _deletedOptionIds) {
@@ -329,6 +346,32 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
         _error = formatApiError(e);
       });
     }
+  }
+
+  /// Small color picker popup for one option row's default color.
+  Future<void> _pickOptionColor(_OptionDraft o) async {
+    final suffix = o.suffixCtrl.text.trim();
+    Color? picked = o.color;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text(suffix.isEmpty ? 'Farbe der Option' : 'Farbe: $suffix'),
+          content: SizedBox(
+            width: 300,
+            child: ProductColorPicker(
+              selected: picked,
+              onChanged: (c) => setDialogState(() => picked = c),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Abbrechen')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Übernehmen')),
+          ],
+        ),
+      ),
+    );
+    if (ok == true && mounted) setState(() => o.color = picked);
   }
 
   @override
@@ -487,7 +530,8 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
                 Text('Optionen', style: Theme.of(context).textTheme.labelMedium),
                 const SizedBox(height: 4),
                 Text(
-                  'Varianten wie "mit Pommes" — teilen sich Bestand, Punkte und Pager mit diesem Artikel',
+                  'Varianten wie "mit Pommes" — teilen sich Bestand, Punkte und Pager mit diesem Artikel. '
+                  'Über den Farbkreis bekommt jede Option ihre eigene Farbe.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 8),
@@ -514,6 +558,10 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
                             decoration: const InputDecoration(labelText: 'Preis (€)', isDense: true),
                             keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
                           ),
+                        ),
+                        _OptionColorButton(
+                          color: o.color,
+                          onTap: () => _pickOptionColor(o),
                         ),
                         if (widget.canDelete)
                           IconButton(
@@ -582,6 +630,36 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
           ],
         ),
       ],
+    );
+  }
+}
+
+/// Round swatch in an option row showing the option's default color (the
+/// "no color" icon when unset); tapping opens the color picker.
+class _OptionColorButton extends StatelessWidget {
+  final Color? color;
+  final VoidCallback onTap;
+
+  const _OptionColorButton({required this.color, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return IconButton(
+      tooltip: 'Farbe der Option',
+      onPressed: onTap,
+      icon: Container(
+        width: 26,
+        height: 26,
+        decoration: BoxDecoration(
+          color: color ?? theme.colorScheme.surfaceContainerHigh,
+          shape: BoxShape.circle,
+          border: Border.all(color: theme.colorScheme.outlineVariant),
+        ),
+        child: color == null
+            ? Icon(Icons.palette_outlined, size: 16, color: theme.colorScheme.onSurfaceVariant)
+            : null,
+      ),
     );
   }
 }

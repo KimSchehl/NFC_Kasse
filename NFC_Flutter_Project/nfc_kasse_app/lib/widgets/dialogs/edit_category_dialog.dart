@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/category_model.dart';
 import '../../providers/providers.dart';
 import '../../services/app_logger.dart';
+import '../../utils/color_hex.dart';
 import '../../utils/formatters.dart';
+import '../product_color_picker.dart';
 
 /// Dialog for renaming a category, switching it off for the running fest
 /// (when [canDeactivate] is true) or (when [canDelete] is true) deleting it.
@@ -34,6 +36,7 @@ class EditCategoryDialog extends ConsumerStatefulWidget {
 class _EditCategoryDialogState extends ConsumerState<EditCategoryDialog> {
   late final TextEditingController _name;
   late bool _activeInEvent = widget.category.activeInEvent;
+  late Color? _color = widget.category.color;
   bool _loading = false;
   String? _error;
 
@@ -56,8 +59,9 @@ class _EditCategoryDialogState extends ConsumerState<EditCategoryDialog> {
       return;
     }
     final renamed = name != widget.category.name;
+    final recolored = _color != widget.category.color;
     final toggled = _activeInEvent != widget.category.activeInEvent;
-    if (!renamed && !toggled) {
+    if (!renamed && !recolored && !toggled) {
       Navigator.of(context).pop();
       return;
     }
@@ -69,9 +73,10 @@ class _EditCategoryDialogState extends ConsumerState<EditCategoryDialog> {
 
     try {
       final service = ref.read(productServiceProvider);
-      if (renamed) {
-        AppLogger.trace('Kategorie umbenannt: ${widget.category.name} -> $name', logger: 'ui.sidebar');
-        await service.updateCategory(widget.category.id, name);
+      if (renamed || recolored) {
+        AppLogger.trace('Kategorie geändert: ${widget.category.name} -> $name', logger: 'ui.sidebar');
+        await service.updateCategory(widget.category.id, name,
+            setColor: recolored, color: _color == null ? null : colorToHex(_color!));
       }
       if (toggled) {
         AppLogger.trace('Kategorie ${_activeInEvent ? 'eingeschaltet' : 'ausgeschaltet'}: $name',
@@ -152,6 +157,13 @@ class _EditCategoryDialogState extends ConsumerState<EditCategoryDialog> {
                 decoration: const InputDecoration(labelText: 'Name'),
                 autofocus: true,
                 textCapitalization: TextCapitalization.sentences,
+              ),
+              const SizedBox(height: 16),
+              Text('Standard-Farbe (für alle)', style: Theme.of(context).textTheme.labelMedium),
+              const SizedBox(height: 8),
+              ProductColorPicker(
+                selected: _color,
+                onChanged: _loading ? (_) {} : (c) => setState(() => _color = c),
               ),
               if (widget.canDeactivate) ...[
                 const SizedBox(height: 8),

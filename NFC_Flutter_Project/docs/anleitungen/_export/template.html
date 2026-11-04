@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>$title$</title>
+$for(css)$<link rel="stylesheet" href="$css$">$endfor$
+</head>
+<body>
+<h1 class="doc-title">$title$</h1>
+<p class="doc-date">$date$</p>
+$if(toc)$<nav id="TOC"><h2>Inhalt</h2>$toc$</nav>$endif$
+$body$
+</body>
+</html>

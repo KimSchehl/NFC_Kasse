@@ -47,6 +47,11 @@ SetupLogging=yes
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+; Restart Manager: asks to close the admin tool (Verwaltung\NfcKasseAdmin.exe)
+; if it is open during an update -- its files are locked otherwise. Setup
+; restarts it afterwards. The backend service is handled in PrepareToInstall.
+CloseApplications=yes
+RestartApplications=yes
 
 [Languages]
 Name: "german"; MessagesFile: "compiler:Languages\German.isl"
@@ -122,7 +127,7 @@ Filename: "http://localhost:8000/webapp"; Flags: postinstall shellexec skipifsil
 ; Inno Setup guarantees these run BEFORE [Files]-installed files are
 ; deleted -- required ordering, since a service can't be cleanly unregistered
 ; once the exe backing it no longer exists.
-Filename: "{app}\NfcKasseService.exe"; Parameters: "stop"; Flags: runhidden waituntilterminated; RunOnceId: "StopService"
+Filename: "{app}\NfcKasseService.exe"; Parameters: "stopwait"; Flags: runhidden waituntilterminated; RunOnceId: "StopService"
 Filename: "{app}\NfcKasseService.exe"; Parameters: "uninstall"; Flags: runhidden waituntilterminated; RunOnceId: "UninstallService"
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""NFC-Kasse Backend"""; Flags: runhidden waituntilterminated; RunOnceId: "RemoveFirewallRule"
 
@@ -210,21 +215,74 @@ begin
   Abort;
 end;
 
-procedure CurStepChanged(CurStep: TSetupStep);
+// True while a process with this image name is still alive. tasklist's
+// output goes through cmd into a temp file because Exec can't capture
+// stdout; the filter makes it print the image name only on a match.
+function ProcessRunning(const ExeName: String): Boolean;
 var
+  TmpFile: String;
+  Output: AnsiString;
   ResultCode: Integer;
 begin
-  if CurStep = ssInstall then
+  Result := False;
+  TmpFile := ExpandConstant('{tmp}\tasklist.txt');
+  if Exec(ExpandConstant('{cmd}'), '/C tasklist /NH /FI "IMAGENAME eq ' + ExeName +
+      '" > "' + TmpFile + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and
+     LoadStringFromFile(TmpFile, Output) then
+    Result := Pos(Lowercase(ExeName), Lowercase(String(Output))) > 0;
+end;
+
+// Waits up to TimeoutSec for every process of ExeName to exit, then kills
+// the rest. Returns False only if one survives even taskkill.
+function WaitForExit(const ExeName: String; TimeoutSec: Integer): Boolean;
+var
+  i, ResultCode: Integer;
+begin
+  for i := 1 to TimeoutSec * 2 do
   begin
-    // Upgrade-in-place safety: a matching AppId does NOT automatically stop
-    // a running service before [Files] overwrites it. Without this, an
-    // update over a live install fails outright with a file-in-use error
-    // the moment [Files] tries to replace NfcKasseBackend.exe while the
-    // service still holds it open. Both calls are unconditional and
-    // harmless on a fresh install, where the service isn't registered yet
-    // (non-zero exit, ignored).
-    Exec(ExpandConstant('{app}\NfcKasseService.exe'), 'stop', '',
-      SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    if not ProcessRunning(ExeName) then
+    begin
+      Result := True;
+      exit;
+    end;
+    Sleep(500);
+  end;
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM ' + ExeName, '',
+    SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  for i := 1 to 10 do
+  begin
+    if not ProcessRunning(ExeName) then
+    begin
+      Result := True;
+      exit;
+    end;
+    Sleep(500);
+  end;
+  Result := not ProcessRunning(ExeName);
+end;
+
+// Upgrade-in-place safety: everything that holds files in {app} open must be
+// gone before [Files] runs, or replacing NfcKasseBackend.exe fails with
+// "DeleteFile ... Code 5, Access denied". Runs on the "Vorbereitung" page,
+// before Inno's own Restart-Manager check (CloseApplications), and can still
+// abort cleanly with a message instead of failing halfway through [Files].
+//
+// WinSW 2.x 'stop' only SENDS the stop request and returns at once; the
+// backend then needs a few seconds to shut down (open SSE streams of the
+// customer display / leaderboard, mDNS goodbye), so 'stopwait' is used and
+// the process is additionally waited for -- and killed as a last resort,
+// which is safe: SQLite commits are atomic, the service is stopped anyway.
+// All calls are harmless on a fresh install (non-zero exit, ignored).
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ResultCode: Integer;
+  ServiceExe: String;
+begin
+  Result := '';
+  ServiceExe := ExpandConstant('{app}\NfcKasseService.exe');
+  if FileExists(ServiceExe) then
+  begin
+    Exec(ServiceExe, 'stopwait', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     // Also uninstall the old registration, not just stop it -- otherwise
     // [Run]'s later 'install' step fails with "service already exists"
     // every single upgrade (harmless -- the following 'start' step still
@@ -234,9 +292,15 @@ begin
     // settings in a future release) actually takes effect on upgrade,
     // rather than the SCM keeping stale settings from the previous
     // version's registration.
-    Exec(ExpandConstant('{app}\NfcKasseService.exe'), 'uninstall', '',
-      SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Exec(ServiceExe, 'uninstall', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   end;
+
+  // The service process itself, plus any admin_cli run the admin tool
+  // started (backup, Fest start, licence check), which use the same exe.
+  if not WaitForExit('NfcKasseBackend.exe', 20) or
+     not WaitForExit('NfcKasseService.exe', 5) then
+    Result := 'Der NFC-Kasse-Dienst konnte nicht beendet werden. ' +
+      'Bitte den Computer neu starten und das Setup erneut ausführen.';
 end;
 
 // ---------------------------------------------------------------------------

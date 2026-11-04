@@ -184,3 +184,31 @@ def _category_of(client, auth_headers, product_id):
     admin = client.get("/api/products/admin", headers=auth_headers).json()
     row = next(p for cat in admin["categories"] for p in cat["products"] if p["id"] == product_id)
     return row["category_id"]
+
+
+def test_option_has_own_color(client, auth_headers, option_product_ids):
+    """Options carry their own default color, independent of the base article."""
+    cat_id, base_id, option_id = option_product_ids
+
+    resp = client.put(f"/api/products/{option_id}", json={"color": "#A5D6A7"}, headers=auth_headers)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["color"] == "#A5D6A7"
+
+    created = client.post(
+        "/api/products/",
+        json={"name": "Currywurst mit Brötchen", "price": 5.5, "category_id": cat_id,
+              "group_id": base_id, "color": "#EF9A9A"},
+        headers=auth_headers,
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["color"] == "#EF9A9A"
+
+    colors = {p["id"]: p["color"] for p in client.get(
+        f"/api/products/?category_id={cat_id}", headers=auth_headers).json()}
+    assert colors[option_id] == "#A5D6A7"
+    assert colors[created.json()["id"]] == "#EF9A9A"
+    assert colors[base_id] is None
+
+    # Explicit null clears it again.
+    resp = client.put(f"/api/products/{option_id}", json={"color": None}, headers=auth_headers)
+    assert resp.json()["color"] is None

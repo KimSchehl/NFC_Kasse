@@ -8,6 +8,7 @@ import '../providers/providers.dart';
 import '../services/app_logger.dart';
 import '../utils/formatters.dart';
 import 'dialogs/edit_category_dialog.dart';
+import 'product_color_picker.dart';
 
 /// Navigation sidebar shown on the left of the screen (tablet) or inside a
 /// Drawer (phone).
@@ -38,8 +39,57 @@ class AppSidebar extends ConsumerWidget {
     final categoriesAsync = ref.watch(categoriesProvider);
     final theme = Theme.of(context);
 
-    final categories = categoriesAsync.valueOrNull ?? [];
+    final prefs = ref.watch(userPrefsProvider);
+    final categories = prefs.applyCategoryOrder(categoriesAsync.valueOrNull ?? []);
     final canCreateCategory = user?.hasPermission('categories.create') ?? false;
+
+    final showList = categories.isNotEmpty || canCreateCategory;
+    final header = !showList
+        ? null
+        : Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: Text(
+              'KATEGORIEN',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                letterSpacing: 1,
+              ),
+            ),
+          );
+    final newCategoryTile = !(showList && canCreateCategory)
+        ? null
+        : ListTile(
+            dense: true,
+            leading: Icon(Icons.add_circle_outline,
+                size: 18, color: theme.colorScheme.primary),
+            title: Text(
+              'Neue Kategorie',
+              style: TextStyle(color: theme.colorScheme.primary),
+            ),
+            onTap: () => _createCategory(context, ref),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+          );
+    Widget tileFor(int index, CategoryModel cat) => _CategoryTile(
+          key: ValueKey(cat.id),
+          index: index,
+          category: cat,
+          color: prefs.getCategoryColor(cat.id) ?? cat.color,
+          selected: selectedCat?.id == cat.id && currentScreen == AppScreen.pos,
+          editMode: editMode,
+          onTap: () {
+            AppLogger.trace('Kategorie angeklickt: ${cat.name}', logger: 'ui.sidebar');
+            ref.read(selectedCategoryProvider.notifier).state = cat;
+            ref.read(currentScreenProvider.notifier).state = AppScreen.pos;
+            _closeDrawer(context);
+          },
+          onEdit: () => _editCategory(
+            context,
+            cat,
+            canDelete: user?.hasPermission('categories.delete') ?? false,
+            canDeactivate: user?.hasPermission('categories.deactivate') ?? false,
+          ),
+          onPickColor: () => _pickCategoryColor(context, ref, cat),
+        );
 
     return Container(
       width: 220,
@@ -81,56 +131,33 @@ class AppSidebar extends ConsumerWidget {
               ),
             ),
 
-            // Categories list
+            // Categories list — reorderable (per account) only in edit mode,
+            // so a normal tap on the till never starts a drag.
             Expanded(
-              child: ListView(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                children: [
-                  if (categories.isNotEmpty || canCreateCategory) ...[
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                      child: Text(
-                        'KATEGORIEN',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                          letterSpacing: 1,
-                        ),
-                      ),
+              child: editMode
+                  ? ReorderableListView(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      buildDefaultDragHandles: false,
+                      header: header,
+                      footer: newCategoryTile,
+                      onReorderItem: (oldIndex, newIndex) {
+                        final ids = categories.map((c) => c.id).toList();
+                        ids.insert(newIndex, ids.removeAt(oldIndex));
+                        AppLogger.trace('Kategorien umsortiert', logger: 'ui.sidebar');
+                        ref.read(userPrefsProvider.notifier).setCategoryOrder(ids);
+                      },
+                      children: [
+                        for (final (i, cat) in categories.indexed) tileFor(i, cat),
+                      ],
+                    )
+                  : ListView(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      children: [
+                        ?header,
+                        for (final (i, cat) in categories.indexed) tileFor(i, cat),
+                        ?newCategoryTile,
+                      ],
                     ),
-                    ...categories.map((cat) => _CategoryTile(
-                          category: cat,
-                          selected: selectedCat?.id == cat.id &&
-                              currentScreen == AppScreen.pos,
-                          editMode: editMode,
-                          onTap: () {
-                            AppLogger.trace('Kategorie angeklickt: ${cat.name}', logger: 'ui.sidebar');
-                            ref.read(selectedCategoryProvider.notifier).state = cat;
-                            ref.read(currentScreenProvider.notifier).state = AppScreen.pos;
-                            _closeDrawer(context);
-                          },
-                          onEdit: () => _editCategory(
-                            context,
-                            cat,
-                            canDelete: user?.hasPermission('categories.delete') ?? false,
-                            canDeactivate: user?.hasPermission('categories.deactivate') ?? false,
-                          ),
-                        )),
-                    // "New category" button
-                    if (canCreateCategory)
-                      ListTile(
-                        dense: true,
-                        leading: Icon(Icons.add_circle_outline,
-                            size: 18, color: theme.colorScheme.primary),
-                        title: Text(
-                          'Neue Kategorie',
-                          style: TextStyle(color: theme.colorScheme.primary),
-                        ),
-                        onTap: () => _createCategory(context, ref),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                      ),
-                  ],
-                ],
-              ),
             ),
 
             // Bottom nav items
@@ -216,6 +243,44 @@ class AppSidebar extends ConsumerWidget {
         category: category,
         canDelete: canDelete,
         canDeactivate: canDeactivate,
+      ),
+    );
+  }
+
+  /// Per-account colour (like the article colours in the Bearbeitungsmodus);
+  /// the "none" swatch falls back to the category's default colour.
+  void _pickCategoryColor(BuildContext context, WidgetRef ref, CategoryModel category) {
+    final notifier = ref.read(userPrefsProvider.notifier);
+    final current = ref.read(userPrefsProvider).getCategoryColor(category.id);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(category.name),
+        content: SizedBox(
+          width: 320,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Farbe (nur für dein Konto)', style: Theme.of(ctx).textTheme.labelMedium),
+              const SizedBox(height: 4),
+              Text('Ohne Auswahl gilt die Standard-Farbe der Kategorie.',
+                  style: Theme.of(ctx).textTheme.bodySmall),
+              const SizedBox(height: 8),
+              ProductColorPicker(
+                selected: current,
+                onChanged: (c) {
+                  AppLogger.trace('Kategorie-Farbe gesetzt: ${category.name}', logger: 'ui.sidebar');
+                  notifier.setCategoryColor(category.id, c);
+                  Navigator.pop(ctx);
+                },
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Schließen')),
+        ],
       ),
     );
   }
@@ -339,33 +404,50 @@ class AppSidebar extends ConsumerWidget {
 }
 
 class _CategoryTile extends StatelessWidget {
+  final int index;
   final CategoryModel category;
+  final Color? color; // effective colour (account override ?? default), null = theme
   final bool selected;
   final bool editMode;
   final VoidCallback onTap;
   final VoidCallback? onEdit;
+  final VoidCallback? onPickColor;
 
   const _CategoryTile({
+    super.key,
+    required this.index,
     required this.category,
     required this.selected,
     required this.onTap,
+    this.color,
     this.editMode = false,
     this.onEdit,
+    this.onPickColor,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final showEdit = editMode && (category.canEditArticle || category.canDeleteArticle);
+    final iconColor = color ??
+        (selected ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant);
+    final icon = Icon(color != null ? Icons.label : Icons.label_outline, size: 18, color: iconColor);
     return ListTile(
       dense: true,
       selected: selected,
-      selectedTileColor: theme.colorScheme.primaryContainer.withValues(alpha: 0.5),
-      leading: Icon(
-        Icons.label_outline,
-        size: 18,
-        color: selected ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant,
-      ),
+      selectedTileColor: (color ?? theme.colorScheme.primaryContainer).withValues(alpha: 0.5),
+      leading: editMode
+          ? ReorderableDragStartListener(
+              index: index,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.drag_indicator, size: 18, color: theme.colorScheme.onSurfaceVariant),
+                  icon,
+                ],
+              ),
+            )
+          : icon,
       title: Text(
         category.name,
         style: TextStyle(
@@ -373,14 +455,28 @@ class _CategoryTile extends StatelessWidget {
           color: selected ? theme.colorScheme.primary : null,
         ),
       ),
-      trailing: showEdit
-          ? IconButton(
-              icon: Icon(Icons.edit_outlined,
-                  size: 16, color: theme.colorScheme.onSurfaceVariant),
-              onPressed: onEdit,
-              padding: EdgeInsets.zero,
-              visualDensity: VisualDensity.compact,
-              tooltip: 'Kategorie bearbeiten',
+      trailing: editMode
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: Icon(Icons.palette_outlined,
+                      size: 16, color: theme.colorScheme.onSurfaceVariant),
+                  onPressed: onPickColor,
+                  padding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                  tooltip: 'Farbe (nur für dein Konto)',
+                ),
+                if (showEdit)
+                  IconButton(
+                    icon: Icon(Icons.edit_outlined,
+                        size: 16, color: theme.colorScheme.onSurfaceVariant),
+                    onPressed: onEdit,
+                    padding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                    tooltip: 'Kategorie bearbeiten',
+                  ),
+              ],
             )
           : null,
       onTap: onTap,

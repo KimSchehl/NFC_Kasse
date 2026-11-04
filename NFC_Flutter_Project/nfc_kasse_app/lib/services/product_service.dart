@@ -149,8 +149,10 @@ class ProductService {
     return CategoryModel.fromJson(resp.data as Map<String, dynamic>);
   }
 
-  Future<CategoryModel> updateCategory(int id, String name) async {
-    final resp = await _client.dio.put('/api/products/categories/$id', data: {'name': name});
+  /// [color] is '#RRGGBB' or null (= theme default); omit [setColor] to keep it.
+  Future<CategoryModel> updateCategory(int id, String name, {bool setColor = false, String? color}) async {
+    final resp = await _client.dio.put('/api/products/categories/$id',
+        data: {'name': name, if (setColor) 'color': color});
     return CategoryModel.fromJson(resp.data as Map<String, dynamic>);
   }
 

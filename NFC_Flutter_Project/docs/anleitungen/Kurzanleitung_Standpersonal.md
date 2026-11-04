@@ -1,11 +1,11 @@
 # NFC-Kasse – Kurzanleitung Standpersonal
 
-4. Oktober 2026 · Kim Schehl
+4. November 2026 · Kim Schehl
 
 ## Vor Schichtbeginn
 
 1. Tablet oder Handy einschalten und prüfen, dass es im Kassen-WLAN ist.
-2. NFC-Kasse öffnen. Steht dort die Anmeldeseite: Benutzername und Passwort eingeben, die du von der Leitung bekommen hast, und **Anmelden** tippen. Die Server-URL nicht ändern.
+2. NFC-Kasse öffnen. Steht dort die Anmeldeseite: Benutzername und Passwort eingeben, die du von der Leitung bekommen hast, und **Anmelden** tippen. Die Server-URL ist schon eingetragen, nicht ändern.
 3. Oben rechts prüfen: Das WLAN-Symbol zeigt die Verbindung zum Server, daneben steht das Symbol des NFC-Lesers. Beide müssen aktiv sein.
 4. Bluetooth-Leser einschalten und einmal mit einem Chip testen.
 
@@ -16,6 +16,8 @@
 1. **Artikel antippen.** Links die Kategorie wählen (Handy: Menü ☰ oben links), dann die Artikel-Kacheln antippen. Jedes Antippen legt ein Stück mehr in den Warenkorb. Falsch getippt? Mit **×** neben dem Artikel entfernen.
 2. **Chip scannen.** Den Chip des Gastes an den Leser halten. Über dem Warenkorb erscheint das Guthaben, unten **Rest Guthaben** nach dem Kauf. Die Reihenfolge ist egal: Erst scannen, dann Artikel tippen geht genauso.
 3. **Buchen tippen.** Die grüne Meldung **Buchung bestätigt** erscheint. Fertig, der nächste Gast kann kommen.
+
+Hängt an deiner Kasse eine Kundenanzeige, sieht der Gast dort live seinen Warenkorb und nach dem Buchen sein Restguthaben. Du musst dafür nichts tun.
 
 ![Warenkorb mit gescanntem Chip auf dem Tablet](../images/bedieneranleitung/app/tablet/03_warenkorb_mit_chip.png)
 
@@ -43,11 +45,19 @@ Steht über dem Guthaben **Neuer Kunde** und 0,00 €, wurde der Chip noch nie a
 
 Manche Kacheln zeigen keinen Preis. Beim Antippen öffnet sich eine Auswahl, z. B. „mit Pommes“. Die passende Variante antippen.
 
+### Ausverkauft oder grau
+
+Eine Kachel mit rot-weißem Rand und dem Wort **Ausverkauft** ist leer, eine graue mit **Inaktiv** ist gerade gesperrt. Beide lassen sich nicht buchen. Meldet die Kasse nach dem Buchen „nur noch 5 übrig“, der Leitung Bescheid sagen, damit nachgefüllt wird.
+
+### Pager
+
+Bekommt der Gast für ein Gericht einen Pager, fragt die Kasse beim Buchen nach der Pager-Nummer. Das steht in der Anleitung Zusatzfunktionen.
+
 ![Auswahl einer Option](../images/bedieneranleitung/app/tablet/08_optionen_auswahl.png)
 
 ### Fehlbuchung stornieren
 
-Direkt nach einer Buchung erscheint unten **Letzte Buchung stornieren**. Antippen, Artikel prüfen, **Buchung stornieren** bestätigen. Das Geld geht zurück auf den Chip. Das geht nur in den ersten 5 Minuten. Danach die Standleitung holen.
+Direkt nach einer Buchung erscheint unten **Letzte Buchung stornieren**. Antippen, Artikel prüfen, **Buchung stornieren** bestätigen. Das Geld geht zurück auf den Chip. Stornieren geht nur für die letzte Buchung deines Geräts und meist nur in den ersten 5 Minuten. Danach die Standleitung holen.
 
 ![Dialog zum Stornieren](../images/bedieneranleitung/app/tablet/06_storno_dialog.png)
 

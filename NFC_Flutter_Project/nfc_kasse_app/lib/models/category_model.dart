@@ -1,3 +1,7 @@
+import 'package:flutter/material.dart';
+
+import '../utils/color_hex.dart';
+
 /// A product category as seen by the current user.
 ///
 /// The permission flags come from `user_category_access` on the server and
@@ -7,6 +11,10 @@ class CategoryModel {
   final int id;
   final String name;
   final int sortOrder;
+
+  /// Default colour for everyone (set in the category dialog); null = theme
+  /// default. Per-user overrides: [UserPreferences.getCategoryColor].
+  final Color? color;
 
   // Booking permissions (per-category, checked server-side on booking/cancel)
   final bool canBook;
@@ -27,6 +35,7 @@ class CategoryModel {
     required this.id,
     required this.name,
     required this.sortOrder,
+    this.color,
     this.canBook = false,
     this.canStorno5min = false,
     this.canStornoUnlimited = false,
@@ -41,6 +50,7 @@ class CategoryModel {
         id: j['id'] as int,
         name: j['name'] as String,
         sortOrder: j['sort_order'] as int? ?? 0,
+        color: hexToColor(j['color'] as String?),
         canBook: j['can_book'] as bool? ?? false,
         canStorno5min: j['can_storno_5min'] as bool? ?? false,
         canStornoUnlimited: j['can_storno_unlimited'] as bool? ?? false,

@@ -18,6 +18,7 @@ from dependencies import (
     get_current_user,
     raise_if_missing_permission,
 )
+from routers import display
 from schemas import BalanceResponse, BookingRequest, BookingResponse, CancelResponse
 
 if LEADERBOARD_ENABLED:
@@ -383,6 +384,14 @@ def create_booking(
             "Booking created: customer_id=%s sale_ids=%s new_balance=%.2f by=%s",
             customer_id, _resp.sale_ids, _resp.new_balance, current_user["username"],
         )
+
+    # After the commit, so the customer display never confirms a booking that
+    # was rolled back.
+    display.notify_booked(
+        current_user,
+        _resp.new_balance,
+        payout_amount if is_payout_booking else None,
+    )
 
     if LEADERBOARD_ENABLED:
         leaderboard.check_and_notify()
