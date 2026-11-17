@@ -112,6 +112,8 @@ Name: "{commondesktop}\NFC-Kasse Verwaltung"; Filename: "{app}\Verwaltung\NfcKas
 
 [Run]
 Filename: "{app}\NfcKasseService.exe"; Parameters: "install"; Flags: runhidden waituntilterminated; StatusMsg: "Windows-Dienst wird registriert..."
+; Delete first: every (re)install used to add another identical rule.
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""NFC-Kasse Backend"""; Flags: runhidden waituntilterminated
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""NFC-Kasse Backend"" dir=in action=allow program=""{app}\NfcKasseBackend.exe"" enable=yes profile=any"; Flags: runhidden waituntilterminated; StatusMsg: "Firewall-Regel wird eingerichtet..."
 ; Scoped by program path, not localport -- PORT is user-editable in
 ; config.env after install, so a port-scoped rule would go stale the moment

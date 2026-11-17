@@ -39,9 +39,15 @@ class NetworkInfo {
     final result = <ServerAddress>[];
     for (final iface in interfaces) {
       final nameLower = iface.name.toLowerCase();
-      if (_skipKeywords.any(nameLower.contains)) continue;
+      final skip = _skipKeywords.any(nameLower.contains);
       for (final address in iface.addresses) {
-        result.add(ServerAddress(iface.name, address.address));
+        // Windows "Mobiler Hotspot" always hands out 192.168.137.0/24 and runs
+        // on a "Virtual Adapter" -- that one is exactly what the tablets need.
+        if (address.address.startsWith('192.168.137.')) {
+          result.add(ServerAddress('Mobiler Hotspot', address.address));
+        } else if (!skip) {
+          result.add(ServerAddress(iface.name, address.address));
+        }
       }
     }
     return result;

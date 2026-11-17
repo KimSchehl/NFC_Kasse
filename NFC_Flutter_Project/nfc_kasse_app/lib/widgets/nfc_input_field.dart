@@ -63,6 +63,13 @@ class _NfcInputFieldState extends ConsumerState<NfcInputField> {
   void _onTap() {
     if (_nfcAvailable && !_manualEntryRequested) {
       setState(() => _manualEntryRequested = true);
+      // The field was not focusable a moment ago (see build), so the tap
+      // itself could not focus it — do it once the rebuild made it focusable.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !ref.read(bleReaderProvider).isConnected) {
+          _focusNode.requestFocus();
+        }
+      });
     }
   }
 
@@ -139,9 +146,18 @@ class _NfcInputFieldState extends ConsumerState<NfcInputField> {
     // way to feed it.
     final readOnlyNow = bleConnected || (_nfcAvailable && !_manualEntryRequested);
 
+    // readOnly alone is not enough: when a dialog (e.g. the options popup)
+    // closes, Flutter hands focus back to this field, and in the web build
+    // (Chrome on the tablet) a focused field still gets a browser input
+    // element, which pops the on-screen keyboard. So while a hands-free scan
+    // path is active the field must not take focus at all — scans don't need
+    // it (TextField's canRequestFocus below; switching it off also drops a
+    // focus the field still holds).
+
     return TextField(
       controller: _controller,
       focusNode: _focusNode,
+      canRequestFocus: !readOnlyNow,
       autofocus: true,
       readOnly: readOnlyNow,
       showCursor: !readOnlyNow,

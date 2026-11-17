@@ -19,6 +19,7 @@ import os
 import secrets
 import shutil
 import sys
+import threading
 import uuid
 from pathlib import Path
 
@@ -74,36 +75,64 @@ def _rotate_backup() -> None:
     db_backup.prune(BACKUPS_DIR, prefix="kasse", keep=5)
 
 
-def _advertise(port: int):
+def _ipv4_addresses() -> list[str]:
+    import ifaddr  # zeroconf's own dependency
+
+    return sorted(
+        ip.ip
+        for adapter in ifaddr.get_adapters()
+        for ip in adapter.ips
+        if ip.is_IPv4 and not ip.ip.startswith(("127.", "169.254."))
+    )
+
+
+def _advertise(port: int, stop: threading.Event) -> None:
     """Announces the backend as `_nfc-kasse._tcp` via mDNS/DNS-SD so the
     Android app's login screen finds it without typing an address
-    (nfc_kasse_app/lib/services/server_discovery_service.dart). Best-effort:
-    on failure the service still runs, only auto-discovery is missing.
-    Returns the Zeroconf instance to close on shutdown, or None."""
+    (nfc_kasse_app/lib/services/server_discovery_service.dart). Runs in its
+    own thread until [stop] is set and re-announces whenever this PC's IPv4
+    addresses change: the service starts at boot, but the Wi-Fi or a Windows
+    mobile hotspot (192.168.137.1) usually only comes up later, and Zeroconf
+    only listens on the interfaces that existed when it was created.
+    Best-effort: on failure the service still runs, only auto-discovery is
+    missing (the app also probes its own subnet)."""
     import logging
     import socket
 
-    try:
-        from zeroconf import IPVersion, ServiceInfo, Zeroconf
+    log = logging.getLogger(__name__)
+    zc = None
+    announced = None
+    while True:
+        try:
+            # shortcut: announces every IPv4 of this PC (VPN/second NIC included),
+            # the app lists them all; pin one via config.env if that confuses users.
+            addresses = _ipv4_addresses()
+            if addresses != announced:
+                announced = addresses
+                if zc is not None:
+                    zc.close()
+                    zc = None
+                if addresses:
+                    from zeroconf import IPVersion, ServiceInfo, Zeroconf
 
-        host = socket.gethostname()
-        # shortcut: announces every IPv4 of this PC (VPN/second NIC included),
-        # the app lists them all; pin one via config.env if that confuses users.
-        addresses = [ip for ip in socket.gethostbyname_ex(host)[2] if not ip.startswith("127.")]
-        info = ServiceInfo(
-            "_nfc-kasse._tcp.local.",
-            f"NFC-Kasse {host}._nfc-kasse._tcp.local.",
-            port=port,
-            parsed_addresses=addresses,
-            server=f"{host}.local.",
-        )
-        zc = Zeroconf(ip_version=IPVersion.V4Only)
-        zc.register_service(info, allow_name_change=True)
-        logging.getLogger(__name__).info("mDNS-Ankündigung aktiv: %s:%s", addresses, port)
-        return zc
-    except Exception:
-        logging.getLogger(__name__).warning("mDNS-Ankündigung fehlgeschlagen", exc_info=True)
-        return None
+                    host = socket.gethostname()
+                    info = ServiceInfo(
+                        "_nfc-kasse._tcp.local.",
+                        f"NFC-Kasse {host}._nfc-kasse._tcp.local.",
+                        port=port,
+                        parsed_addresses=addresses,
+                        server=f"{host}.local.",
+                    )
+                    zc = Zeroconf(ip_version=IPVersion.V4Only)
+                    zc.register_service(info, allow_name_change=True)
+                    log.info("mDNS-Ankündigung aktiv: %s:%s", addresses, port)
+        except Exception:
+            # Logged once per address set; retried on the next change.
+            log.warning("mDNS-Ankündigung fehlgeschlagen", exc_info=True)
+        if stop.wait(10):
+            break
+    if zc is not None:
+        zc.close()  # sends the mDNS goodbye so apps drop the entry
 
 
 def _require_main_license() -> None:
@@ -184,7 +213,9 @@ def main() -> None:
     # guard, device_registry's in-memory dict, and help.py's _HelpManager are
     # all per-process singletons. Multiple uvicorn workers would each run an
     # independent print queue and duplicate every receipt.
-    zc = _advertise(port)
+    stop_advertising = threading.Event()
+    advertiser = threading.Thread(target=_advertise, args=(port, stop_advertising), daemon=True)
+    advertiser.start()
     try:
         # timeout_graceful_shutdown: without it uvicorn waits on shutdown until
         # every SSE stream (customer display, leaderboard) is closed by its
@@ -193,8 +224,8 @@ def main() -> None:
         # NfcKasseBackend.exe still locked.
         uvicorn.run(app, host=host, port=port, reload=False, timeout_graceful_shutdown=5)
     finally:
-        if zc is not None:
-            zc.close()  # sends the mDNS goodbye so apps drop the entry
+        stop_advertising.set()
+        advertiser.join(timeout=5)
 
 
 if __name__ == "__main__":
