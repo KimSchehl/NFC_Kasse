@@ -1,28 +1,34 @@
 """
-Sicherung und Wiederherstellung der Datenbank.
+Sicherung und Wiederherstellung der Datenbank (PostgreSQL, pg_dump/pg_restore).
 
-create_backup() läuft auch während der Dienst läuft: Die SQLite-Backup-API
-nimmt die WAL-Datei mit, ein Datei-Kopieren würde Buchungen übersehen.
-restore() ersetzt kasse.db und braucht deshalb einen gestoppten Dienst.
+Eine Sicherung ist eine pg_dump-Datei (*.dump, Custom-Format) plus eine
+gleichnamige *.json mit Zählern für die Anzeige im Admin-Tool.
+create_backup() läuft auch während der Dienst läuft (pg_dump liest einen
+konsistenten Stand). restore() ersetzt den kompletten Inhalt und braucht
+deshalb einen gestoppten Dienst; danach wird das Schema auf den neuesten
+Stand gebracht, ältere Sicherungen lassen sich also einspielen.
 
 main() ist der Befehlszeilen-Einstieg von NfcKasseBackend.exe, den das
 Admin-Tool aufruft. Ausgabe ist immer eine einzige JSON-Zeile.
 """
 
 import argparse
+import glob
 import json
 import os
 import re
 import shutil
-import sqlite3
 import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-SCHEMA_VERSION = 3
+import database
+import schema
+
 SERVICE_NAME = "NfcKasseBackend"
+SUFFIX = ".dump"
 REQUIRED_TABLES = ("event", "customer", "sale")
 EXIT_OK = 0
 EXIT_ERROR = 1
@@ -39,74 +45,71 @@ def _safe_label(label: str) -> str:
     return re.sub(r"[^A-Za-z0-9-]+", "-", label).strip("-")[:40] or "label"
 
 
-def _readonly(path: Path) -> sqlite3.Connection:
-    return sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
+def _pg_tool(name: str) -> str:
+    """pg_dump/pg_restore: PG_BIN (set by the installer), PATH, or a standard install."""
+    exe = name + (".exe" if os.name == "nt" else "")
+    candidates = []
+    if os.environ.get("PG_BIN"):
+        candidates.append(Path(os.environ["PG_BIN"]) / exe)
+    found = shutil.which(name)
+    if found:
+        candidates.append(Path(found))
+    candidates += [Path(p) for p in sorted(glob.glob(rf"C:\Program Files\PostgreSQL\*\bin\{exe}"), reverse=True)]
+    for c in candidates:
+        if c.exists():
+            return str(c)
+    raise BackupError(f"{name} nicht gefunden (PostgreSQL-Programme fehlen, PG_BIN prüfen).")
 
 
-def _describe(path: Path, kind: str, label: str | None) -> dict:
-    conn = _readonly(path)
-    try:
-        def count(table: str):
-            try:
-                return conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-            except sqlite3.OperationalError:
-                return None
+def _run(args: list[str]) -> str:
+    result = subprocess.run(args, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise BackupError(result.stderr.strip() or f"{Path(args[0]).name} fehlgeschlagen")
+    return result.stdout
 
-        try:
-            events = [
-                {"name": name, "active": bool(active)}
-                for name, active in conn.execute("SELECT name, active FROM event ORDER BY id")
-            ]
-        except sqlite3.OperationalError:
-            events = []
 
+def _describe(kind: str, label: str | None, path: Path) -> dict:
+    with database.get_db() as db:
+        def count(table: str) -> int:
+            return db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+
+        events = [
+            {"name": r["name"], "active": bool(r["active"])}
+            for r in db.execute("SELECT name, active FROM event ORDER BY id")
+        ]
         return {
             "kind": kind,
             "label": label,
             "created_at": datetime.now().isoformat(timespec="seconds"),
             "file": path.name,
             "size_bytes": path.stat().st_size,
-            "schema_version": conn.execute("PRAGMA user_version").fetchone()[0],
+            "schema_version": schema.current(db),
             "customers": count("customer"),
             "sales": count("sale"),
             "events": events,
         }
-    finally:
-        conn.close()
 
 
-def create_backup(src_db: Path, dest_dir: Path, prefix: str, label: str | None = None) -> Path:
-    if not src_db.exists():
-        raise BackupError(f"Datenbank nicht gefunden: {src_db}")
+def create_backup(dest_dir: Path, prefix: str, label: str | None = None) -> Path:
     dest_dir.mkdir(parents=True, exist_ok=True)
-
     name = f"{prefix}_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     if label:
         name += "_" + _safe_label(label)
-    final = dest_dir / f"{name}.db"
-    tmp = dest_dir / f"{name}.db.tmp"
-
-    src = sqlite3.connect(src_db)
-    dst = sqlite3.connect(tmp)
+    final = dest_dir / f"{name}{SUFFIX}"
+    tmp = dest_dir / f"{name}{SUFFIX}.tmp"
     try:
-        src.backup(dst)
-        dst.execute("PRAGMA journal_mode=DELETE")
+        _run([_pg_tool("pg_dump"), "--format=custom", "--no-owner", f"--file={tmp}", f"--dbname={database.DATABASE_URL}"])
+        os.replace(tmp, final)
     finally:
-        dst.close()
-        src.close()
-    os.replace(tmp, final)
+        tmp.unlink(missing_ok=True)
 
-    manifest = _describe(final, kind=prefix, label=label)
-    final.with_suffix(".json").write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    manifest = _describe(prefix, label, final)
+    final.with_suffix(".json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     return final
 
 
 def prune(backups_dir: Path, prefix: str, keep: int) -> None:
-    files = sorted(
-        backups_dir.glob(f"{prefix}_*.db"), key=lambda p: p.stat().st_mtime, reverse=True
-    )
+    files = sorted(backups_dir.glob(f"{prefix}_*{SUFFIX}"), key=lambda p: p.stat().st_mtime, reverse=True)
     for stale in files[keep:]:
         stale.unlink(missing_ok=True)
         stale.with_suffix(".json").unlink(missing_ok=True)
@@ -116,74 +119,55 @@ def verify_backup(path: Path) -> dict:
     if not path.exists():
         raise BackupError(f"Datei nicht gefunden: {path}")
     try:
-        conn = _readonly(path)
-        try:
-            integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
-            if integrity != "ok":
-                raise BackupError(f"Die Datei ist beschädigt: {integrity}")
-            tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-            missing = [t for t in REQUIRED_TABLES if t not in tables]
-            if missing:
-                raise BackupError(
-                    "Keine NFC-Kasse-Datenbank, fehlende Tabellen: " + ", ".join(missing)
-                )
-            version = conn.execute("PRAGMA user_version").fetchone()[0]
-        finally:
-            conn.close()
-    except sqlite3.DatabaseError as exc:
+        listing = _run([_pg_tool("pg_restore"), "--list", str(path)])
+    except BackupError as exc:
         raise BackupError(f"Keine gültige NFC-Kasse-Sicherung: {exc}") from exc
+    missing = [t for t in REQUIRED_TABLES if not re.search(rf"TABLE public {t} ", listing)]
+    if missing:
+        raise BackupError("Keine NFC-Kasse-Datenbank, fehlende Tabellen: " + ", ".join(missing))
 
-    if version > SCHEMA_VERSION:
+    sidecar = path.with_suffix(".json")
+    info = json.loads(sidecar.read_text(encoding="utf-8")) if sidecar.exists() else {}
+    revision = info.get("schema_version")
+    if revision and not schema.known(revision):
         raise BackupError(
-            f"Diese Sicherung stammt von einer neueren Programmversion "
-            f"(Schema {version}, unterstützt bis {SCHEMA_VERSION})."
+            f"Diese Sicherung stammt von einer neueren Programmversion (Schema {revision})."
         )
-    return _describe(path, kind="pruefung", label=None)
+    info.update(kind="pruefung", file=path.name, size_bytes=path.stat().st_size)
+    return info
 
 
-def _put(src: Path, db: Path) -> None:
-    tmp = db.with_name(db.name + ".restore")
-    shutil.copyfile(src, tmp)
-    for suffix in ("-wal", "-shm"):
-        db.with_name(db.name + suffix).unlink(missing_ok=True)
-    os.replace(tmp, db)
+def _put(backup: Path) -> None:
+    """Replaces the whole database content with the backup."""
+    with database.get_db() as db:
+        db.execute("DROP SCHEMA public CASCADE")
+        db.execute("CREATE SCHEMA public")
+    _run([_pg_tool("pg_restore"), "--no-owner", "--single-transaction", f"--dbname={database.DATABASE_URL}", str(backup)])
 
 
-def restore(
-    backup: Path,
-    db: Path,
-    backups_dir: Path,
-    service_running: Callable[[], bool],
-) -> dict:
+def restore(backup: Path, backups_dir: Path, service_running: Callable[[], bool]) -> dict:
     if service_running():
-        raise BackupError(
-            "Der Dienst läuft noch. Bitte zuerst stoppen.", exit_code=EXIT_SERVICE_RUNNING
-        )
+        raise BackupError("Der Dienst läuft noch. Bitte zuerst stoppen.", exit_code=EXIT_SERVICE_RUNNING)
     info = verify_backup(backup)
 
-    safety = create_backup(db, backups_dir, prefix="vor-wiederherstellung") if db.exists() else None
+    safety = create_backup(backups_dir, prefix="vor-wiederherstellung")
     try:
-        _put(backup, db)
-        verify_backup(db)
+        _put(backup)
+        schema.upgrade()
     except Exception as exc:
-        if safety is not None:
-            _put(safety, db)
+        _put(safety)
         raise BackupError(
             f"Wiederherstellung fehlgeschlagen, der vorherige Stand wurde zurückgespielt: {exc}"
         ) from exc
+    finally:
+        database.close_pool()
 
-    return {
-        "restored_from": backup.name,
-        "safety_backup": safety.name if safety else None,
-        "backup": info,
-    }
+    return {"restored_from": backup.name, "safety_backup": safety.name, "backup": info}
 
 
 def _service_running() -> bool:
     try:
-        out = subprocess.run(
-            ["sc", "query", SERVICE_NAME], capture_output=True, text=True
-        ).stdout
+        out = subprocess.run(["sc", "query", SERVICE_NAME], capture_output=True, text=True).stdout
     except OSError:
         return False
     return "RUNNING" in out
@@ -198,7 +182,7 @@ def _list(backups_dir: Path) -> list[dict]:
     if not backups_dir.exists():
         return []
     entries = []
-    for f in sorted(backups_dir.glob("*.db"), key=lambda p: p.stat().st_mtime, reverse=True):
+    for f in sorted(backups_dir.glob(f"*{SUFFIX}"), key=lambda p: p.stat().st_mtime, reverse=True):
         sidecar = f.with_suffix(".json")
         manifest = json.loads(sidecar.read_text(encoding="utf-8")) if sidecar.exists() else {}
         manifest["file"] = f.name
@@ -222,20 +206,23 @@ def main(
     sub.add_parser("list")
     args = parser.parse_args(argv)
 
-    db = data_dir / "kasse.db"
+    database.use_config(data_dir)
     backups_dir = data_dir / "backups"
     try:
         if args.command == "backup":
-            path = create_backup(db, backups_dir, prefix="manuell", label=args.label)
+            path = create_backup(backups_dir, prefix="manuell", label=args.label)
             _emit({"ok": True, "file": path.name})
         elif args.command == "verify":
             _emit({"ok": True, "backup": verify_backup(Path(args.file))})
         elif args.command == "restore":
-            result = restore(Path(args.file), db, backups_dir, service_running)
+            result = restore(Path(args.file), backups_dir, service_running)
             _emit({"ok": True, **result})
         else:
             _emit({"ok": True, "backups": _list(backups_dir)})
     except BackupError as exc:
         _emit({"ok": False, "error": str(exc)})
         return exc.exit_code
+    except database.Error as exc:
+        _emit({"ok": False, "error": f"Datenbankfehler: {exc}"})
+        return EXIT_ERROR
     return EXIT_OK

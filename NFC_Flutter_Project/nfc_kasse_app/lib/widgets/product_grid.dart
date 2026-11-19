@@ -100,13 +100,13 @@ class _GridState extends ConsumerState<_Grid> {
   /// An article that became an option since the layout was last saved is
   /// filtered out here the same way a deleted one would be — no separate
   /// migration needed.
-  List<int?> _buildSlots() {
+  List<String?> _buildSlots() {
     final topLevel = _topLevelProducts;
     final saved = widget.prefs.getLayout(widget.category.id, widget.profile);
     final existing = topLevel.map((p) => p.id).toSet();
 
     if (saved == null) {
-      return topLevel.map((p) => p.id as int?).toList();
+      return topLevel.map((p) => p.id as String?).toList();
     }
 
     // Remove IDs of products that were deleted (or became options) since layout was saved.
@@ -116,7 +116,7 @@ class _GridState extends ConsumerState<_Grid> {
     final inLayout = valid.whereType<int>().toSet();
     final appended = topLevel
         .where((p) => !inLayout.contains(p.id))
-        .map((p) => p.id as int?);
+        .map((p) => p.id as String?);
 
     return [...valid, ...appended];
   }

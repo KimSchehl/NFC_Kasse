@@ -3,7 +3,7 @@ import 'backend_cli.dart';
 /// Ein Veranstalter: eine komplett eigene Kasse mit eigenen Benutzern,
 /// Rechten, Warengruppen, Artikeln, Chips und Festen.
 class TenantInfo {
-  final int id;
+  final String id;
   final String name;
   final bool active;
   final int users;
@@ -24,7 +24,7 @@ class TenantInfo {
   });
 
   factory TenantInfo.fromJson(Map<String, dynamic> j) => TenantInfo(
-        id: j['id'] as int,
+        id: j['id'] as String,
         name: j['name'] as String,
         active: j['active'] as bool,
         users: j['users'] as int? ?? 0,
@@ -57,7 +57,7 @@ class TenantsService {
     return TenantInfo.fromJson(json['tenant'] as Map<String, dynamic>);
   }
 
-  static Future<void> activate(int id) => BackendCli.run(['tenant-activate', '$id']);
+  static Future<void> activate(String id) => BackendCli.run(['tenant-activate', '$id']);
 
-  static Future<void> rename(int id, String name) => BackendCli.run(['tenant-rename', '$id', '--name', name]);
+  static Future<void> rename(String id, String name) => BackendCli.run(['tenant-rename', '$id', '--name', name]);
 }

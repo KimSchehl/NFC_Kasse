@@ -6,7 +6,7 @@ import '../providers/providers.dart';
 import '../services/backup_service.dart';
 
 const _confirmWord = 'WIEDERHERSTELLEN';
-const _sqliteType = XTypeGroup(label: 'NFC-Kasse Sicherung', extensions: ['db']);
+const _backupType = XTypeGroup(label: 'NFC-Kasse Sicherung', extensions: ['dump']);
 
 String _two(int n) => n.toString().padLeft(2, '0');
 
@@ -146,10 +146,10 @@ class _DataScreenState extends ConsumerState<DataScreen> {
   Future<void> _export(BackupEntry entry) async {
     final location = await getSaveLocation(
       suggestedName: entry.fileName,
-      acceptedTypeGroups: const [_sqliteType],
+      acceptedTypeGroups: const [_backupType],
     );
     if (location == null) return;
-    final path = location.path.toLowerCase().endsWith('.db') ? location.path : '${location.path}.db';
+    final path = location.path.toLowerCase().endsWith('.dump') ? location.path : '${location.path}.dump';
     await _guard(
       'Export läuft …',
       () => BackupService.export(entry, path),
@@ -158,7 +158,7 @@ class _DataScreenState extends ConsumerState<DataScreen> {
   }
 
   Future<void> _import() async {
-    final file = await openFile(acceptedTypeGroups: const [_sqliteType]);
+    final file = await openFile(acceptedTypeGroups: const [_backupType]);
     if (file == null) return;
     final confirmed = await _confirmTyped(
       title: 'Sicherung importieren?',

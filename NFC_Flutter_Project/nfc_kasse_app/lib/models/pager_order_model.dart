@@ -7,7 +7,7 @@
 /// (the list is already sorted server-side), so parsing would just add an
 /// unused timezone question (SQLite's `datetime('now')` has no offset).
 class PagerOrderModel {
-  final int id;
+  final String id;
   final String itemSummary;
   final int pagerNumber;
   final String status;
@@ -24,7 +24,7 @@ class PagerOrderModel {
   });
 
   factory PagerOrderModel.fromJson(Map<String, dynamic> j) => PagerOrderModel(
-        id: j['id'] as int,
+        id: j['id'] as String,
         itemSummary: j['item_summary'] as String,
         pagerNumber: j['pager_number'] as int,
         status: j['status'] as String,

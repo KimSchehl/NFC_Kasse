@@ -156,7 +156,7 @@ final connectionStatusProvider = StreamProvider<bool>((ref) {
         // category of the event that just ended.
         unawaited(ref
             .read(activeEventWatcherProvider.notifier)
-            .observe((response.data['active_events'] as List?)?.cast<int>()));
+            .observe((response.data['active_events'] as List?)?.cast<String>()));
         unawaited(ref
             .read(catalogRevisionWatcherProvider.notifier)
             .observe(response.data['catalog_rev'] as int?));
@@ -315,24 +315,24 @@ class UserPrefsNotifier extends Notifier<UserPreferences> {
     unawaited(write.whenComplete(() => _pendingWrites--).catchError((_) {}));
   }
 
-  Future<void> setLayout(int categoryId, String profile, List<int?> layout) async {
+  Future<void> setLayout(String categoryId, String profile, List<String?> layout) async {
     state = state.withLayout(categoryId, profile, layout);
     _save(ref
         .read(preferencesServiceProvider)
         .upsert('layout.cat_$categoryId', profile, layout));
   }
 
-  Future<void> setProductColor(int productId, Color? color) async {
+  Future<void> setProductColor(String productId, Color? color) async {
     state = state.withProductColor(productId, color);
     _saveColor('product.color.$productId', color);
   }
 
-  Future<void> setCategoryColor(int categoryId, Color? color) async {
+  Future<void> setCategoryColor(String categoryId, Color? color) async {
     state = state.withCategoryColor(categoryId, color);
     _saveColor('category.color.$categoryId', color);
   }
 
-  Future<void> setCategoryOrder(List<int> order) async {
+  Future<void> setCategoryOrder(List<String> order) async {
     state = state.withCategoryOrder(order);
     _save(ref.read(preferencesServiceProvider).upsert('category.order', '*', order));
   }
@@ -480,7 +480,7 @@ class HelpNotifier extends Notifier<HelpState> {
           }
 
         case 'new_response':
-          final requestId = msg['request_id'] as int;
+          final requestId = msg['request_id'] as String;
           final resp =
               HelpResponse.fromJson(msg['response'] as Map<String, dynamic>);
           final updated = state.allRequests.map((r) {
@@ -508,7 +508,7 @@ class HelpNotifier extends Notifier<HelpState> {
           state = state.copyWith(allRequests: updated, myRequest: () => mine);
 
         case 'resolved':
-          final requestId = msg['request_id'] as int;
+          final requestId = msg['request_id'] as String;
           final remaining =
               state.allRequests.where((r) => r.id != requestId).toList();
           HelpRequest? mine = state.myRequest;
@@ -548,11 +548,11 @@ class HelpNotifier extends Notifier<HelpState> {
     );
   }
 
-  Future<void> respond(int requestId, String response) async {
+  Future<void> respond(String requestId, String response) async {
     await ref.read(helpServiceProvider).respond(requestId, response);
   }
 
-  Future<void> resolve(int requestId) async {
+  Future<void> resolve(String requestId) async {
     await ref.read(helpServiceProvider).resolve(requestId);
     final remaining =
         state.allRequests.where((r) => r.id != requestId).toList();
@@ -1083,7 +1083,7 @@ class CartNotifier extends Notifier<List<CartItem>> {
     }
   }
 
-  void removeItem(int productId) {
+  void removeItem(String productId) {
     state = state.where((i) => i.product.id != productId).toList();
   }
 
@@ -1100,7 +1100,7 @@ class CartNotifier extends Notifier<List<CartItem>> {
   /// Note: the server de-duplicates IDs only for the product lookup (to avoid
   /// SQL `IN` de-duplication returning fewer rows). The full repeated list is
   /// used for pricing and sale row creation.
-  List<int> get productIds =>
+  List<String> get productIds =>
       state.expand((i) => List.filled(i.quantity, i.product.id)).toList();
 }
 
@@ -1192,9 +1192,9 @@ final currentScreenProvider = StateProvider<AppScreen>((ref) => AppScreen.pos);
 /// `ref.read(productsProvider(id).notifier).state = ...` without a full
 /// refetch, which only a Notifier-backed provider exposes in this Riverpod
 /// version (plain `FutureProvider` has no externally-settable `.notifier.state`).
-class ProductsNotifier extends FamilyAsyncNotifier<List<ProductModel>, int> {
+class ProductsNotifier extends FamilyAsyncNotifier<List<ProductModel>, String> {
   @override
-  Future<List<ProductModel>> build(int categoryId) async {
+  Future<List<ProductModel>> build(String categoryId) async {
     ref.watch(productsRefreshProvider); // invalidate trigger
     return ref.read(productServiceProvider).getProducts(categoryId);
   }
@@ -1203,7 +1203,7 @@ class ProductsNotifier extends FamilyAsyncNotifier<List<ProductModel>, int> {
   /// updates/inserts from [changed], removals by ID in [removedIds] — without
   /// a full refetch. No-op if this category's data isn't loaded yet (e.g. the
   /// initial fetch is still in flight).
-  void applyChanges(List<ProductModel> changed, List<int> removedIds) {
+  void applyChanges(List<ProductModel> changed, List<String> removedIds) {
     final current = state.valueOrNull;
     if (current == null) return;
     final changedById = {for (final p in changed) p.id: p};
@@ -1218,7 +1218,7 @@ class ProductsNotifier extends FamilyAsyncNotifier<List<ProductModel>, int> {
 }
 
 final productsProvider =
-    AsyncNotifierProvider.family<ProductsNotifier, List<ProductModel>, int>(
+    AsyncNotifierProvider.family<ProductsNotifier, List<ProductModel>, String>(
   ProductsNotifier.new,
 );
 
@@ -1267,13 +1267,13 @@ final activeEventRevisionProvider = StateProvider<int>((ref) => 0);
 /// tool, never on a device, so this poll is how a running device finds out:
 /// it then reloads everything scoped to the active event — /me (rights,
 /// category access, event name/Intern flag), categories, articles.
-class ActiveEventWatcher extends Notifier<List<int>?> {
+class ActiveEventWatcher extends Notifier<List<String>?> {
   bool _reloading = false;
 
   @override
-  List<int>? build() => null;
+  List<String>? build() => null;
 
-  Future<void> observe(List<int>? activeEvents) async {
+  Future<void> observe(List<String>? activeEvents) async {
     if (activeEvents == null) return;
     final previous = state;
     state = activeEvents;
@@ -1317,7 +1317,7 @@ class ActiveEventWatcher extends Notifier<List<int>?> {
   }
 }
 
-final activeEventWatcherProvider = NotifierProvider<ActiveEventWatcher, List<int>?>(
+final activeEventWatcherProvider = NotifierProvider<ActiveEventWatcher, List<String>?>(
   ActiveEventWatcher.new,
 );
 
@@ -1363,7 +1363,7 @@ final catalogRevisionWatcherProvider = NotifierProvider<CatalogRevisionWatcher, 
 // Product catalog sync — cross-device price/stock updates
 // ---------------------------------------------------------------------------
 
-typedef ProductSyncState = ({int? categoryId, DateTime? lastSyncedAt});
+typedef ProductSyncState = ({String? categoryId, DateTime? lastSyncedAt});
 
 /// Owns the "did any product in my currently-viewed category change since I
 /// last checked" poll. Deliberately per-product (via `GET

@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 # User CRUD
 # ---------------------------------------------------------------------------
 
-def _blocks_last_manager(db, user_id: int, tenant_id: int) -> bool:
+def _blocks_last_manager(db, user_id: str, tenant_id: str) -> bool:
     """True if deactivating/deleting `user_id` would leave nobody of the
     tenant with users.manage_permissions -- otherwise no one could ever
     fix a permissions mistake again short of direct DB access (same class of
@@ -42,7 +42,7 @@ def _blocks_last_manager(db, user_id: int, tenant_id: int) -> bool:
         """
         SELECT COUNT(*) as cnt
         FROM user_permission up
-        JOIN user u ON u.id = up.user_id
+        JOIN app_user u ON u.id = up.user_id
         WHERE up.permission_id = 'users.manage_permissions' AND u.tenant_id = ?
           AND u.active = 1 AND u.deleted = 0 AND u.id != ?
         """,
@@ -56,7 +56,7 @@ def list_users(ctx: RequestContext = Depends(require_permission("users.view"))):
     tenant_id = ctx["user"]["tenant_id"]
     with get_db() as db:
         rows = db.execute(
-            "SELECT id, username, display_name, active FROM user WHERE tenant_id=? AND deleted=0 ORDER BY username",
+            "SELECT id, username, display_name, active FROM app_user WHERE tenant_id=? AND deleted=0 ORDER BY username",
             (tenant_id,),
         ).fetchall()
     return [UserResponse(**dict(r)) for r in rows]
@@ -70,14 +70,14 @@ def create_user(
     tenant_id = ctx["user"]["tenant_id"]
     with get_db() as db:
         existing = db.execute(
-            "SELECT id FROM user WHERE tenant_id=? AND username=? AND deleted=0",
+            "SELECT id FROM app_user WHERE tenant_id=? AND username=? AND deleted=0",
             (tenant_id, body.username),
         ).fetchone()
         if existing:
             raise HTTPException(status_code=409, detail="Benutzername bereits vergeben")
 
         cursor = db.execute(
-            "INSERT INTO user (tenant_id, username, password_hash, display_name) VALUES (?, ?, ?, ?)",
+            "INSERT INTO app_user (tenant_id, username, password_hash, display_name) VALUES (?, ?, ?, ?) RETURNING id",
             (tenant_id, body.username, hash_password(body.password), body.display_name),
         )
         new_id = cursor.lastrowid
@@ -96,14 +96,14 @@ def create_user(
 
 @router.put("/{user_id}", response_model=UserResponse)
 def update_user(
-    user_id: int,
+    user_id: str,
     body: UserUpdate,
     ctx: RequestContext = Depends(require_permission("users.edit")),
 ):
     tenant_id = ctx["user"]["tenant_id"]
     with get_db() as db:
         row = db.execute(
-            "SELECT * FROM user WHERE id=? AND tenant_id=? AND deleted=0",
+            "SELECT * FROM app_user WHERE id=? AND tenant_id=? AND deleted=0",
             (user_id, tenant_id),
         ).fetchone()
         if not row:
@@ -112,7 +112,7 @@ def update_user(
         # Check for duplicate username if changing it
         if body.username and body.username != row["username"]:
             dup = db.execute(
-                "SELECT id FROM user WHERE tenant_id=? AND username=? AND id!=? AND deleted=0",
+                "SELECT id FROM app_user WHERE tenant_id=? AND username=? AND id!=? AND deleted=0",
                 (tenant_id, body.username, user_id),
             ).fetchone()
             if dup:
@@ -123,7 +123,7 @@ def update_user(
         new_hash = hash_password(body.password) if body.password else row["password_hash"]
 
         db.execute(
-            "UPDATE user SET username=?, password_hash=?, display_name=? WHERE id=?",
+            "UPDATE app_user SET username=?, password_hash=?, display_name=? WHERE id=?",
             (new_username, new_hash, new_display, user_id),
         )
 
@@ -141,7 +141,7 @@ def update_user(
 
 @router.patch("/{user_id}/active", response_model=UserResponse)
 def set_user_active(
-    user_id: int,
+    user_id: str,
     body: UserActiveUpdate,
     ctx: RequestContext = Depends(require_permission("users.deactivate")),
 ):
@@ -155,7 +155,7 @@ def set_user_active(
 
     with get_db() as db:
         row = db.execute(
-            "SELECT id, username, display_name FROM user WHERE id=? AND tenant_id=? AND deleted=0",
+            "SELECT id, username, display_name FROM app_user WHERE id=? AND tenant_id=? AND deleted=0",
             (user_id, tenant_id),
         ).fetchone()
         if not row:
@@ -167,7 +167,7 @@ def set_user_active(
                 detail="Letzter Benutzer mit Benutzerverwaltungs-Rechten kann nicht deaktiviert werden",
             )
 
-        db.execute("UPDATE user SET active=? WHERE id=?", (1 if body.active else 0, user_id))
+        db.execute("UPDATE app_user SET active=? WHERE id=?", (1 if body.active else 0, user_id))
 
     logger.warning(
         "User %s: user_id=%s by=%s",
@@ -181,7 +181,7 @@ def set_user_active(
 
 @router.delete("/{user_id}", status_code=204)
 def delete_user(
-    user_id: int,
+    user_id: str,
     ctx: RequestContext = Depends(require_permission("users.delete")),
 ):
     """Soft-delete, mirroring products.py's delete_product -- the row stays
@@ -198,7 +198,7 @@ def delete_user(
 
     with get_db() as db:
         row = db.execute(
-            "SELECT id, username FROM user WHERE id=? AND tenant_id=? AND deleted=0",
+            "SELECT id, username FROM app_user WHERE id=? AND tenant_id=? AND deleted=0",
             (user_id, tenant_id),
         ).fetchone()
         if not row:
@@ -212,7 +212,7 @@ def delete_user(
 
         renamed = f"{row['username']}__geloescht_{user_id}"
         db.execute(
-            "UPDATE user SET deleted=1, active=0, username=? WHERE id=?",
+            "UPDATE app_user SET deleted=1, active=0, username=? WHERE id=?",
             (renamed, user_id),
         )
 
@@ -227,14 +227,14 @@ def delete_user(
 
 @router.get("/{user_id}/permissions", response_model=UserPermissionsResponse)
 def get_user_permissions(
-    user_id: int,
+    user_id: str,
     ctx: RequestContext = Depends(require_permission("users.manage_permissions")),
 ):
     tenant_id = ctx["user"]["tenant_id"]
 
     with get_db() as db:
         user_row = db.execute(
-            "SELECT id, username, display_name, active FROM user WHERE id=? AND tenant_id=?",
+            "SELECT id, username, display_name, active FROM app_user WHERE id=? AND tenant_id=?",
             (user_id, tenant_id),
         ).fetchone()
         if not user_row:
@@ -280,7 +280,7 @@ def get_user_permissions(
 
 @router.put("/{user_id}/permissions", status_code=204)
 def set_user_permissions(
-    user_id: int,
+    user_id: str,
     body: PermissionsUpdate,
     ctx: RequestContext = Depends(require_permission("users.manage_permissions")),
 ):
@@ -289,7 +289,7 @@ def set_user_permissions(
 
     with get_db() as db:
         user_row = db.execute(
-            "SELECT id FROM user WHERE id=? AND tenant_id=?",
+            "SELECT id FROM app_user WHERE id=? AND tenant_id=?",
             (user_id, tenant_id),
         ).fetchone()
         if not user_row:
@@ -316,7 +316,7 @@ def set_user_permissions(
         db.execute("DELETE FROM user_permission WHERE user_id=?", (user_id,))
         for perm_id in body.permission_ids:
             db.execute(
-                "INSERT OR IGNORE INTO user_permission (user_id, permission_id, granted_by) VALUES (?, ?, ?)",
+                "INSERT INTO user_permission (user_id, permission_id, granted_by) VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
                 (user_id, perm_id, granter_id),
             )
 
@@ -328,7 +328,7 @@ def set_user_permissions(
 
 @router.put("/{user_id}/categories", status_code=204)
 def set_user_category_access(
-    user_id: int,
+    user_id: str,
     body: CategoryAccessUpdate,
     ctx: RequestContext = Depends(require_permission("users.manage_permissions")),
 ):
@@ -337,7 +337,7 @@ def set_user_category_access(
 
     with get_db() as db:
         user_row = db.execute(
-            "SELECT id FROM user WHERE id=? AND tenant_id=?",
+            "SELECT id FROM app_user WHERE id=? AND tenant_id=?",
             (user_id, tenant_id),
         ).fetchone()
         if not user_row:
@@ -357,12 +357,22 @@ def set_user_category_access(
         for item in body.categories:
             db.execute(
                 """
-                INSERT OR REPLACE INTO user_category_access (
+                INSERT INTO user_category_access (
                     user_id, category_id,
                     can_book, can_storno_5min, can_storno_unlimited,
                     can_create_article, can_edit_article, can_deactivate_article, can_delete_article,
                     granted_by
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (user_id, category_id) DO UPDATE SET
+                    can_book = excluded.can_book,
+                    can_storno_5min = excluded.can_storno_5min,
+                    can_storno_unlimited = excluded.can_storno_unlimited,
+                    can_create_article = excluded.can_create_article,
+                    can_edit_article = excluded.can_edit_article,
+                    can_deactivate_article = excluded.can_deactivate_article,
+                    can_delete_article = excluded.can_delete_article,
+                    granted_by = excluded.granted_by,
+                    granted_at = now()
                 """,
                 (
                     user_id, item.category_id,
@@ -442,8 +452,8 @@ def list_role_templates(ctx: RequestContext = Depends(require_permission("users.
 
 @router.post("/{user_id}/apply-template/{template_id}", status_code=204)
 def apply_role_template(
-    user_id: int,
-    template_id: int,
+    user_id: str,
+    template_id: str,
     ctx: RequestContext = Depends(require_permission("users.manage_permissions")),
 ):
     tenant_id = ctx["user"]["tenant_id"]
@@ -451,7 +461,7 @@ def apply_role_template(
 
     with get_db() as db:
         user_row = db.execute(
-            "SELECT id FROM user WHERE id=? AND tenant_id=?",
+            "SELECT id FROM app_user WHERE id=? AND tenant_id=?",
             (user_id, tenant_id),
         ).fetchone()
         if not user_row:
@@ -483,7 +493,7 @@ def apply_role_template(
         db.execute("DELETE FROM user_permission WHERE user_id=?", (user_id,))
         for row in perm_rows:
             db.execute(
-                "INSERT OR IGNORE INTO user_permission (user_id, permission_id, granted_by) VALUES (?, ?, ?)",
+                "INSERT INTO user_permission (user_id, permission_id, granted_by) VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
                 (user_id, row["permission_id"], granter_id),
             )
 

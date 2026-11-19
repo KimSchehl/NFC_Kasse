@@ -29,11 +29,13 @@ kann, steuert ohnehin schon Dienst, config.env und alle Sicherungen.
 
 import argparse
 import sys
-import sqlite3
 from pathlib import Path
+
+from psycopg.errors import InvalidTextRepresentation
 
 import database
 import db_backup
+import schema
 import event_lifecycle
 import tenants
 from event_lifecycle import EventError
@@ -65,7 +67,7 @@ def _parser() -> argparse.ArgumentParser:
     stock_opt.add_argument("--keep-stock", action="store_true")
     start.add_argument("--categories", default=None, help="Kommagetrennte Kategorie-IDs")
     source = start.add_mutually_exclusive_group()
-    source.add_argument("--source-event", type=int, default=None)
+    source.add_argument("--source-event", default=None)
     source.add_argument("--preset", default=None)
     start.add_argument("--no-articles", action="store_true")
     start.add_argument("--bon-layout", action="store_true")
@@ -87,19 +89,19 @@ def _parser() -> argparse.ArgumentParser:
     create.add_argument("--name", required=True)
     create.add_argument("--admin-user", required=True)
     activate = sub.add_parser("tenant-activate")
-    activate.add_argument("tenant_id", type=int)
+    activate.add_argument("tenant_id")
     rename = sub.add_parser("tenant-rename")
-    rename.add_argument("tenant_id", type=int)
+    rename.add_argument("tenant_id")
     rename.add_argument("--name", required=True)
 
     export = sub.add_parser("preset-export")
-    export.add_argument("event_id", type=int)
+    export.add_argument("event_id")
     export.add_argument("file")
 
     csv_cmd = sub.add_parser("csv-export")
-    csv_cmd.add_argument("event_id", type=int)
+    csv_cmd.add_argument("event_id")
     csv_cmd.add_argument("file")
-    csv_cmd.add_argument("--period", type=int, default=None)
+    csv_cmd.add_argument("--period", default=None)
     return parser
 
 
@@ -112,36 +114,32 @@ def _load_preset(path: Path) -> EventPreset:
         raise EventError(f"Die Datei ist keine gültige Festvorlage: {exc}")
 
 
-def _category_ids(value: str | None) -> list[int] | None:
+def _category_ids(value: str | None) -> list[str] | None:
     if value is None:
         return None
     try:
-        return [int(v) for v in value.split(",") if v.strip()]
+        return [v.strip() for v in value.split(",") if v.strip()]
     except ValueError:
         raise EventError(f"Ungültige Kategorie-Liste: {value}")
 
 
-def _check_schema(db_path: Path) -> None:
-    """Der Dienst bringt die Datenbank beim Start auf den aktuellen Stand.
-    Läuft dieser Befehl gegen eine ältere Datenbank (Update installiert,
-    Dienst seitdem nie gestartet), fehlen Spalten — dann lieber abbrechen.
-    Fehlt die Datei ganz, ebenfalls: sqlite3.connect() würde sonst eine
-    leere kasse.db anlegen, und der Dienst hielte die Einrichtung danach
-    für erledigt."""
-    if not db_path.exists():
-        raise EventError(f"Datenbank nicht gefunden: {db_path}. Bitte den Dienst einmal starten.")
+def _check_schema() -> None:
+    """Admin commands only run against a database the service has already
+    set up and migrated — otherwise columns may be missing."""
     with database.get_db() as db:
-        version = db.execute("PRAGMA user_version").fetchone()[0]
-    if version < db_backup.SCHEMA_VERSION:
+        revision = schema.current(db)
+    if revision is None:
+        raise EventError("Datenbank ist noch nicht eingerichtet. Bitte den Dienst einmal starten.")
+    if revision != schema.head():
         raise EventError(
-            "Die Datenbank ist noch nicht auf dem aktuellen Stand. "
+            "Die Datenbank ist nicht auf dem Stand dieser Programmversion. "
             "Bitte den Dienst einmal starten und es dann erneut versuchen."
         )
 
 
-def _safety_backup(data_dir: Path, db_path: Path, action: str, prefix: str = "vor-festwechsel") -> str:
+def _safety_backup(data_dir: Path, action: str, prefix: str = "vor-festwechsel") -> str:
     try:
-        backup = db_backup.create_backup(db_path, data_dir / "backups", prefix=prefix)
+        backup = db_backup.create_backup(data_dir / "backups", prefix=prefix)
     except db_backup.BackupError as exc:
         raise EventError(f"Sicherung fehlgeschlagen, {action} wurde nicht ausgeführt: {exc}")
     return backup.name
@@ -163,10 +161,10 @@ def _license_check(args, data_dir: Path) -> dict:
     return {"installation_id": installation_id, "licenses": licenses}
 
 
-def _run(args, data_dir: Path, db_path: Path) -> dict:
+def _run(args, data_dir: Path) -> dict:
     if args.command == "license-check":
         return _license_check(args, data_dir)
-    _check_schema(db_path)
+    _check_schema()
 
     if args.command == "events":
         with database.get_db() as db:
@@ -177,7 +175,7 @@ def _run(args, data_dir: Path, db_path: Path) -> dict:
         with database.get_db() as db:
             tenant_id = tenants.active_tenant_id(db)
             event_lifecycle.check_can_start(db, tenant_id)
-        backup = _safety_backup(data_dir, db_path, "Festbeginn")
+        backup = _safety_backup(data_dir, "Festbeginn")
         with database.get_db(exclusive=True) as db:
             event = event_lifecycle.start_event(
                 db,
@@ -230,7 +228,7 @@ def _run(args, data_dir: Path, db_path: Path) -> dict:
     if args.command == "tenant-activate":
         with database.get_db() as db:
             tenants.check_can_activate(db, args.tenant_id)
-        backup = _safety_backup(data_dir, db_path, "Veranstalterwechsel", prefix="vor-veranstalterwechsel")
+        backup = _safety_backup(data_dir, "Veranstalterwechsel", prefix="vor-veranstalterwechsel")
         with database.get_db(exclusive=True) as db:
             tenant = tenants.activate_tenant(db, args.tenant_id)
         return {"tenant": tenant, "safety_backup": backup}
@@ -243,7 +241,7 @@ def _run(args, data_dir: Path, db_path: Path) -> dict:
         with database.get_db() as db:
             tenant_id = tenants.active_tenant_id(db)
             event_lifecycle.check_can_end(db, tenant_id)
-        backup = _safety_backup(data_dir, db_path, "Festende")
+        backup = _safety_backup(data_dir, "Festende")
         with database.get_db(exclusive=True) as db:
             event = event_lifecycle.end_event(db, tenant_id=tenant_id)
         return {"event": event, "safety_backup": backup}
@@ -274,16 +272,18 @@ def _run(args, data_dir: Path, db_path: Path) -> dict:
     return {"file": args.file, "rows": rows}
 
 
-def main(argv: list[str], data_dir: Path, db_path: Path | None = None) -> int:
+def main(argv: list[str], data_dir: Path) -> int:
     args = _parser().parse_args(argv)
-    db_path = db_path or data_dir / "kasse.db"
-    database.DB_PATH = str(db_path)
+    database.use_config(data_dir)
     try:
-        result = _run(args, data_dir, db_path)
+        result = _run(args, data_dir)
     except EventError as exc:
         db_backup._emit({"ok": False, "error": str(exc)})
         return db_backup.EXIT_ERROR
-    except sqlite3.Error as exc:
+    except InvalidTextRepresentation:
+        db_backup._emit({"ok": False, "error": "Nicht gefunden: ungültige ID."})
+        return db_backup.EXIT_ERROR
+    except database.Error as exc:
         db_backup._emit({"ok": False, "error": f"Datenbankfehler: {exc}"})
         return db_backup.EXIT_ERROR
     except OSError as exc:

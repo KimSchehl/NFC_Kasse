@@ -12,11 +12,11 @@ import yaml
 
 import admin_cli
 import database
-from tests.conftest import add_category, add_product
+from tests.conftest import TENANT_SQL, add_category, add_product
 
 
 def _cli(capsys, data_dir, *argv):
-    code = admin_cli.main(list(argv), data_dir, db_path=Path(database.DB_PATH))
+    code = admin_cli.main(list(argv), data_dir)
     out = capsys.readouterr().out.strip().splitlines()[-1]
     return code, json.loads(out)
 
@@ -36,7 +36,7 @@ def _switch_to_intern(conn):
 
 
 def test_export_unknown_event_fails(db, tmp_path, capsys):
-    code, out = _cli(capsys, tmp_path, "preset-export", "999999", str(tmp_path / "x.json"))
+    code, out = _cli(capsys, tmp_path, "preset-export", "00000000-0000-0000-0000-000000000000", str(tmp_path / "x.json"))
     assert code == 1
     assert "nicht gefunden" in out["error"]
 
@@ -144,7 +144,6 @@ def test_start_rejects_both_source_event_and_preset(db, tmp_path):
         admin_cli.main(
             ["event-start", "--deposit", "0", "--name", "X", "--source-event", "1", "--preset", "x.json"],
             tmp_path,
-            db_path=Path(database.DB_PATH),
         )
 
 
@@ -254,10 +253,10 @@ def accounting_fest(client, auth_headers, db):
             "auszahlen": product(till, "Auszahlen", 0.0, 3, is_payout=1),
         }
         conn.execute(
-            "INSERT INTO customer (tenant_id, nfc_uid, balance, is_available, deposit_paid) VALUES (1, 'G3', 4.5, 0, 2.0)"
+            f"INSERT INTO customer (tenant_id, nfc_uid, balance, is_available, deposit_paid) VALUES ({TENANT_SQL}, 'G3', 4.5, 0, 2.0)"
         )
         conn.execute(
-            "INSERT INTO customer (tenant_id, nfc_uid, balance, is_available, deposit_paid) VALUES (1, 'G4', -1.5, 0, 0)"
+            f"INSERT INTO customer (tenant_id, nfc_uid, balance, is_available, deposit_paid) VALUES ({TENANT_SQL}, 'G4', -1.5, 0, 0)"
         )
 
     def ok(resp, status=201):
@@ -270,7 +269,7 @@ def accounting_fest(client, auth_headers, db):
     ok(client.post(f"/api/sales/{booking['sale_ids'][1]}/cancel", headers=auth_headers), 200)
     with database.get_db() as conn:
         # Past the 2-second double-booking guard for the payout below.
-        conn.execute("UPDATE sale SET booked_at = datetime(booked_at, '-1 minute')")
+        conn.execute("UPDATE sale SET booked_at = booked_at - interval '1 minute'")
     payout = ok(client.post("/api/sales/", json={"nfc_uid": "G1", "product_ids": [ids["auszahlen"]]}, headers=auth_headers))
     assert payout["chip_deposit_refunded"] == 2.0
 
@@ -341,10 +340,10 @@ def test_csv_export_single_period_limits_bookings_but_not_chip_state(
 ):
     with database.get_db() as conn:
         conn.execute(
-            "UPDATE stats_period SET closed_at = datetime('now', '+1 second') WHERE event_id=?", (accounting_fest,)
+            "UPDATE stats_period SET closed_at = now() + interval '1 second' WHERE event_id=?", (accounting_fest,)
         )
         later = conn.execute(
-            "INSERT INTO stats_period (event_id, label, started_at) VALUES (?, 'Tag 2', datetime('now', '+2 seconds'))",
+            "INSERT INTO stats_period (event_id, label, started_at) VALUES (?, 'Tag 2', now() + interval '2 seconds') RETURNING id",
             (accounting_fest,),
         ).lastrowid
 

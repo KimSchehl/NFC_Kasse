@@ -47,7 +47,7 @@ _PRODUCT_COLUMNS = (
 )
 
 
-def _require_category_flag(db, user_id: int, category_id: int, flag: str):
+def _require_category_flag(db, user_id: str, category_id: str, flag: str):
     """Raises 403 if user lacks the given flag for this category."""
     if catalog.is_manager(db, user_id):
         return  # managers always have full access
@@ -63,14 +63,14 @@ def _require_category_flag(db, user_id: int, category_id: int, flag: str):
         )
 
 
-def _category_or_404(db, tenant_id: int, category_id: int, message: str = "Kategorie nicht gefunden"):
+def _category_or_404(db, tenant_id: str, category_id: str, message: str = "Kategorie nicht gefunden"):
     row = catalog.tenant_category(db, tenant_id, category_id)
     if not row:
         raise HTTPException(status_code=404, detail=message)
     return row
 
 
-def _product_or_404(db, tenant_id: int, product_id: int):
+def _product_or_404(db, tenant_id: str, product_id: str):
     row = catalog.tenant_product(db, tenant_id, product_id)
     if not row:
         raise HTTPException(status_code=404, detail="Artikel nicht gefunden")
@@ -84,7 +84,7 @@ def _category_response(row, access: dict, active_in_event: bool) -> CategoryWith
     )
 
 
-def _validate_group_id(db, group_id: int | None, category_id: int, self_id: int | None = None):
+def _validate_group_id(db, group_id: str | None, category_id: str, self_id: str | None = None):
     """
     Raises if `group_id` isn't a valid base article for a product being
     created/updated in `category_id`. A valid base: exists, not deleted,
@@ -111,7 +111,7 @@ def _validate_group_id(db, group_id: int | None, category_id: int, self_id: int 
         raise HTTPException(status_code=400, detail="Eine Option kann nicht selbst Optionen haben")
 
 
-def _get_article_manageable_category_ids(db, user_id: int) -> list[int] | None:
+def _get_article_manageable_category_ids(db, user_id: str) -> list[str] | None:
     """
     Category IDs where the user holds any of the 4 article-management flags.
     Returns None as a sentinel for "manager — every category" rather than
@@ -194,7 +194,7 @@ def create_category(
     event_id = ctx["event"]["id"]
     with get_db() as db:
         cursor = db.execute(
-            "INSERT INTO category (tenant_id, name, sort_order, color) VALUES (?, ?, ?, ?)",
+            "INSERT INTO category (tenant_id, name, sort_order, color) VALUES (?, ?, ?, ?) RETURNING id",
             (tenant_id, body.name, body.sort_order, body.color),
         )
         new_id = cursor.lastrowid
@@ -202,8 +202,8 @@ def create_category(
         # Grant full access to the creator so the category shows up in their view.
         db.execute(
             f"""
-            INSERT OR IGNORE INTO user_category_access (user_id, category_id, {", ".join(catalog.ACCESS_FLAGS)})
-            VALUES (?, ?, {", ".join("1" for _ in catalog.ACCESS_FLAGS)})
+            INSERT INTO user_category_access (user_id, category_id, {", ".join(catalog.ACCESS_FLAGS)})
+            VALUES (?, ?, {", ".join("1" for _ in catalog.ACCESS_FLAGS)}) ON CONFLICT DO NOTHING
             """,
             (user_id, new_id),
         )
@@ -218,7 +218,7 @@ def create_category(
 
 @router.put("/categories/{category_id}", response_model=CategoryWithPermissionsResponse)
 def update_category(
-    category_id: int,
+    category_id: str,
     body: CategoryUpdate,
     ctx: RequestContext = Depends(require_permission("categories.edit")),
 ):
@@ -247,7 +247,7 @@ def update_category(
 
 @router.patch("/categories/{category_id}/active", response_model=CategoryWithPermissionsResponse)
 def set_category_active_in_event(
-    category_id: int,
+    category_id: str,
     body: EventActiveUpdate,
     ctx: RequestContext = Depends(require_permission("categories.deactivate")),
 ):
@@ -255,7 +255,7 @@ def set_category_active_in_event(
     for the first time there, it brings all its articles along."""
     tenant_id = ctx["user"]["tenant_id"]
     event_id = ctx["event"]["id"]
-    with get_db(exclusive=True) as db:
+    with get_db(exclusive=True, tenant_id=tenant_id) as db:
         row = _category_or_404(db, tenant_id, category_id)
         catalog.set_category_in_event(db, event_id, category_id, body.active)
         catalog.bump_revision(db, tenant_id)
@@ -268,7 +268,7 @@ def set_category_active_in_event(
 
 @router.delete("/categories/{category_id}", status_code=204)
 def delete_category(
-    category_id: int,
+    category_id: str,
     ctx: RequestContext = Depends(require_permission("categories.delete")),
 ):
     """Soft-deletes the category for every fest of the tenant."""
@@ -289,7 +289,7 @@ def delete_category(
 
 @router.get("/", response_model=list[ProductResponse])
 def list_products(
-    category_id: int,
+    category_id: str,
     current_user: dict = Depends(get_current_user),
     active_event: dict = Depends(get_active_event),
 ):
@@ -326,7 +326,7 @@ def list_products(
 
 @router.get("/changed", response_model=ProductChangesResponse)
 def get_changed_products(
-    category_id: int,
+    category_id: str,
     since: str = Query(..., description="ISO datetime — products changed after this are returned"),
     current_user: dict = Depends(get_current_user),
     active_event: dict = Depends(get_active_event),
@@ -338,13 +338,10 @@ def get_changed_products(
     then — either a full products list (on first view of a category) or a
     handful of updates (on every subsequent poll / pre-booking check).
 
-    Deliberately compares timestamps in Python, not SQL: SQLite stores
-    `datetime('now')` as naive UTC ("2026-08-18 20:15:00"), while `since`
-    arrives as an ISO string with a 'T'/'Z' ("2026-08-18T20:15:00.000Z") — a
-    raw SQL string comparison of those two formats isn't reliable. Fetching
-    a whole category (typically well under 100 rows) and filtering in Python
-    is the same trade-off `sales.py`'s cancel-window check already makes for
-    the same reason.
+    Compares timestamps in Python: database.py hands timestamps over as
+    naive UTC strings ("2026-08-18 20:15:00"), while `since` arrives as an
+    ISO string with a 'T'/'Z' ("2026-08-18T20:15:00.000Z"). A whole category
+    is typically well under 100 rows, so filtering in Python is cheap.
     """
     user_id = current_user["id"]
     tenant_id = current_user["tenant_id"]
@@ -496,7 +493,7 @@ def create_product(
 
         exclude_from_stats = body.exclude_from_stats or body.is_pfand
         cursor = db.execute(
-            "INSERT INTO product (category_id, name, price, sort_order, is_payout, is_pfand, exclude_from_stats, points, stock, requires_pager, group_id, color) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO product (category_id, name, price, sort_order, is_payout, is_pfand, exclude_from_stats, points, stock, requires_pager, group_id, color) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
             (body.category_id, body.name, body.price, next_sort,
              1 if body.is_payout else 0, 1 if body.is_pfand else 0, 1 if exclude_from_stats else 0,
              body.points, body.stock, 1 if body.requires_pager else 0, body.group_id, body.color),
@@ -522,7 +519,7 @@ def create_product(
 
 @router.put("/{product_id}", response_model=ProductResponse)
 def update_product(
-    product_id: int,
+    product_id: str,
     body: ProductUpdate,
     current_user: dict = Depends(get_current_user),
     active_event: dict = Depends(get_active_event),
@@ -592,7 +589,7 @@ def update_product(
             new_group_id = row["group_id"]
 
         db.execute(
-            "UPDATE product SET name=?, price=?, category_id=?, sort_order=?, is_payout=?, is_pfand=?, exclude_from_stats=?, points=?, stock=?, requires_pager=?, group_id=?, color=?, updated_at=datetime('now') WHERE id=?",
+            "UPDATE product SET name=?, price=?, category_id=?, sort_order=?, is_payout=?, is_pfand=?, exclude_from_stats=?, points=?, stock=?, requires_pager=?, group_id=?, color=?, updated_at=now() WHERE id=?",
             (new_name, new_price, new_category_id, new_sort,
              1 if new_is_payout else 0, 1 if new_is_pfand else 0, 1 if new_exclude else 0, new_points, new_stock,
              1 if new_requires_pager else 0, new_group_id, new_color, product_id),
@@ -603,7 +600,7 @@ def update_product(
         # same-category invariant _validate_group_id enforces on creation.
         if new_category_id != row["category_id"]:
             db.execute(
-                "UPDATE product SET category_id=?, updated_at=datetime('now') WHERE group_id=? AND deleted=0",
+                "UPDATE product SET category_id=?, updated_at=now() WHERE group_id=? AND deleted=0",
                 (new_category_id, product_id),
             )
         in_event = catalog.product_in_event(db, event_id, {"id": product_id, "group_id": new_group_id})
@@ -624,7 +621,7 @@ def update_product(
 
 @router.patch("/{product_id}/active", response_model=ProductResponse)
 def set_product_active(
-    product_id: int,
+    product_id: str,
     body: ProductActiveUpdate,
     current_user: dict = Depends(get_current_user),
     active_event: dict = Depends(get_active_event),
@@ -638,7 +635,7 @@ def set_product_active(
         _require_category_flag(db, user_id, row["category_id"], "can_deactivate_article")
 
         db.execute(
-            "UPDATE product SET active=?, updated_at=datetime('now') WHERE id=?",
+            "UPDATE product SET active=?, updated_at=now() WHERE id=?",
             (1 if body.active else 0, product_id),
         )
         in_event = catalog.product_in_event(db, event_id, row)
@@ -665,7 +662,7 @@ def set_product_active(
 
 @router.patch("/{product_id}/event-active", response_model=ProductResponse)
 def set_product_in_event(
-    product_id: int,
+    product_id: str,
     body: EventActiveUpdate,
     current_user: dict = Depends(get_current_user),
     active_event: dict = Depends(get_active_event),
@@ -694,7 +691,7 @@ def set_product_in_event(
 
 @router.delete("/{product_id}", status_code=204)
 def delete_product(
-    product_id: int,
+    product_id: str,
     current_user: dict = Depends(get_current_user),
     active_event: dict = Depends(get_active_event),
 ):
@@ -706,14 +703,14 @@ def delete_product(
         _require_category_flag(db, user_id, row["category_id"], "can_delete_article")
 
         db.execute(
-            "UPDATE product SET deleted=1, updated_at=datetime('now') WHERE id=?",
+            "UPDATE product SET deleted=1, updated_at=now() WHERE id=?",
             (product_id,),
         )
         # Options have no standalone meaning once their base is gone (e.g.
         # "mit Pommes" without "Currywurst") — cascade the soft-delete
         # rather than leaving them as orphaned, ungrouped articles.
         db.execute(
-            "UPDATE product SET deleted=1, updated_at=datetime('now') WHERE group_id=? AND deleted=0",
+            "UPDATE product SET deleted=1, updated_at=now() WHERE group_id=? AND deleted=0",
             (product_id,),
         )
         catalog.bump_revision(db, tenant_id)

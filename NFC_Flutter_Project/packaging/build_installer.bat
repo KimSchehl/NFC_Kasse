@@ -61,6 +61,38 @@ if not exist "packaging\winsw\NfcKasseService.exe" (
     echo   Already present, skipping download.
 )
 
+REM --- Step 3b: fetch the PostgreSQL server binaries if not already present ---
+REM Only bin\ lib\ share\ are kept (server, initdb, psql, pg_dump and the
+REM files initdb needs) -- the ZIP's pgAdmin, docs, headers and debug symbols
+REM would triple the installer size for nothing. Delete packaging\pgsql to
+REM pick up a newer PG_VERSION.
+set "PG_VERSION=18.7-1"
+echo.
+echo [3b/5] Checking PostgreSQL %PG_VERSION% binaries...
+if not exist "packaging\pgsql\bin\postgres.exe" (
+    echo   Downloading postgresql-%PG_VERSION%-windows-x64-binaries.zip ^(~390 MB^)...
+    powershell -NoProfile -Command "$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri 'https://get.enterprisedb.com/postgresql/postgresql-%PG_VERSION%-windows-x64-binaries.zip' -OutFile 'packaging\pgsql.zip'"
+    if errorlevel 1 goto :error
+    powershell -NoProfile -Command "Write-Host ('  SHA256: ' + (Get-FileHash 'packaging\pgsql.zip' -Algorithm SHA256).Hash)"
+    if exist "packaging\pgsql_unzip" rmdir /s /q "packaging\pgsql_unzip"
+    powershell -NoProfile -Command "Expand-Archive -Path 'packaging\pgsql.zip' -DestinationPath 'packaging\pgsql_unzip' -Force"
+    if errorlevel 1 goto :error
+    if exist "packaging\pgsql" rmdir /s /q "packaging\pgsql"
+    mkdir "packaging\pgsql"
+    for %%d in (bin lib share) do (
+        robocopy "packaging\pgsql_unzip\pgsql\%%d" "packaging\pgsql\%%d" /E /NFL /NDL /NJH /NJS >nul
+        if errorlevel 8 goto :error
+    )
+    rmdir /s /q "packaging\pgsql_unzip"
+    del "packaging\pgsql.zip"
+    if not exist "packaging\pgsql\bin\postgres.exe" (
+        echo ERROR: PostgreSQL ZIP had an unexpected layout ^(pgsql\bin\postgres.exe missing^).
+        goto :error
+    )
+) else (
+    echo   Already present, skipping download.
+)
+
 REM --- Step 4: read the release version from pubspec.yaml -------
 echo.
 echo [4/5] Reading version from nfc_kasse_app\pubspec.yaml...

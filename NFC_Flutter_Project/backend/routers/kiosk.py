@@ -122,7 +122,7 @@ def kiosk_chip_info(
                 u.username     AS booked_by_user
             FROM sale s
             JOIN product p ON s.product_id = p.id
-            JOIN user   u ON s.booked_by  = u.id
+            JOIN app_user   u ON s.booked_by  = u.id
             WHERE s.customer_id = ? AND s.event_id = ?
             ORDER BY s.booked_at DESC
             """,
@@ -141,7 +141,7 @@ def kiosk_chip_info(
                 u.display_name AS booked_by_display,
                 u.username     AS booked_by_user
             FROM topup t
-            JOIN user u ON t.booked_by = u.id
+            JOIN app_user u ON t.booked_by = u.id
             WHERE t.customer_id = ? AND t.event_id = ?
             ORDER BY t.booked_at DESC
             """,

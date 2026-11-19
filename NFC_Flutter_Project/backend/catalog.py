@@ -25,7 +25,7 @@ CATEGORY_IN_EVENT_SQL = "c.id IN (SELECT category_id FROM event_category WHERE e
 BASE_ACTIVE_SQL = "COALESCE((SELECT b.active FROM product b WHERE b.id = p.group_id), 1)"
 
 
-def is_manager(db, user_id: int) -> bool:
+def is_manager(db, user_id: str) -> bool:
     """Any category-management permission makes a user a manager: full
     access to every category, without per-category rows."""
     placeholders = ",".join("?" * len(MANAGER_PERMS))
@@ -35,7 +35,7 @@ def is_manager(db, user_id: int) -> bool:
     ).fetchone() is not None
 
 
-def can_book_all(db, user_id: int, category_ids: list[int]) -> bool:
+def can_book_all(db, user_id: str, category_ids: list[str]) -> bool:
     """True if the user has can_book in every one of the categories."""
     placeholders = ",".join("?" * len(category_ids))
     return db.execute(
@@ -44,7 +44,7 @@ def can_book_all(db, user_id: int, category_ids: list[int]) -> bool:
     ).fetchone()[0] >= len(category_ids)
 
 
-def category_access(db, user_id: int, category_id: int) -> dict | None:
+def category_access(db, user_id: str, category_id: str) -> dict | None:
     """The user's 7 flags for this category, or None without a row."""
     row = db.execute(
         f"SELECT {', '.join(ACCESS_FLAGS)} FROM user_category_access WHERE user_id=? AND category_id=?",
@@ -53,7 +53,7 @@ def category_access(db, user_id: int, category_id: int) -> dict | None:
     return {flag: bool(row[flag]) for flag in ACCESS_FLAGS} if row else None
 
 
-def tenant_category(db, tenant_id: int, category_id: int):
+def tenant_category(db, tenant_id: str, category_id: str):
     """The category row if it belongs to the tenant and isn't deleted."""
     return db.execute(
         "SELECT * FROM category WHERE id=? AND tenant_id=? AND deleted=0",
@@ -61,7 +61,7 @@ def tenant_category(db, tenant_id: int, category_id: int):
     ).fetchone()
 
 
-def tenant_product(db, tenant_id: int, product_id: int):
+def tenant_product(db, tenant_id: str, product_id: str):
     """The product row (plus its category's tenant) if it belongs to the
     tenant and isn't deleted."""
     return db.execute(
@@ -74,13 +74,13 @@ def tenant_product(db, tenant_id: int, product_id: int):
     ).fetchone()
 
 
-def category_in_event(db, event_id: int, category_id: int) -> bool:
+def category_in_event(db, event_id: str, category_id: str) -> bool:
     return db.execute(
         "SELECT 1 FROM event_category WHERE event_id=? AND category_id=?", (event_id, category_id)
     ).fetchone() is not None
 
 
-def product_in_event(db, event_id: int, product) -> bool:
+def product_in_event(db, event_id: str, product) -> bool:
     """`product` is a row with id and group_id."""
     base_id = product["group_id"] if product["group_id"] is not None else product["id"]
     return db.execute(
@@ -88,31 +88,31 @@ def product_in_event(db, event_id: int, product) -> bool:
     ).fetchone() is not None
 
 
-def bump_revision(db, tenant_id: int) -> None:
+def bump_revision(db, tenant_id: str) -> None:
     """Every device polls this via /health and reloads categories, articles
     and /me when it changes — call it on any catalog write."""
     db.execute("UPDATE tenant SET catalog_rev = catalog_rev + 1 WHERE id=?", (tenant_id,))
 
 
-def _touch_products(db, base_ids: list[int]) -> None:
+def _touch_products(db, base_ids: list[str]) -> None:
     """Bumps updated_at so other devices' /changed poll picks the change up."""
     if not base_ids:
         return
     placeholders = ",".join("?" * len(base_ids))
     db.execute(
-        f"UPDATE product SET updated_at=datetime('now') WHERE id IN ({placeholders}) OR group_id IN ({placeholders})",
+        f"UPDATE product SET updated_at=now() WHERE id IN ({placeholders}) OR group_id IN ({placeholders})",
         (*base_ids, *base_ids),
     )
 
 
-def set_category_in_event(db, event_id: int, category_id: int, active: bool) -> None:
+def set_category_in_event(db, event_id: str, category_id: str, active: bool) -> None:
     """Switching a category on for the first time in an event also switches
     on all its articles — otherwise it would show up empty. A category that
     was on before keeps its article selection."""
     if not active:
         db.execute("DELETE FROM event_category WHERE event_id=? AND category_id=?", (event_id, category_id))
         return
-    db.execute("INSERT OR IGNORE INTO event_category (event_id, category_id) VALUES (?, ?)", (event_id, category_id))
+    db.execute("INSERT INTO event_category (event_id, category_id) VALUES (?, ?) ON CONFLICT DO NOTHING", (event_id, category_id))
     base_ids = [r["id"] for r in db.execute(
         "SELECT id FROM product WHERE category_id=? AND group_id IS NULL AND deleted=0", (category_id,)
     ).fetchall()]
@@ -125,15 +125,15 @@ def set_category_in_event(db, event_id: int, category_id: int, active: bool) -> 
     ).fetchone()
     if not already:
         db.executemany(
-            "INSERT OR IGNORE INTO event_product (event_id, product_id) VALUES (?, ?)",
+            "INSERT INTO event_product (event_id, product_id) VALUES (?, ?) ON CONFLICT DO NOTHING",
             [(event_id, pid) for pid in base_ids],
         )
         _touch_products(db, base_ids)
 
 
-def set_product_in_event(db, event_id: int, base_id: int, active: bool) -> None:
+def set_product_in_event(db, event_id: str, base_id: str, active: bool) -> None:
     if active:
-        db.execute("INSERT OR IGNORE INTO event_product (event_id, product_id) VALUES (?, ?)", (event_id, base_id))
+        db.execute("INSERT INTO event_product (event_id, product_id) VALUES (?, ?) ON CONFLICT DO NOTHING", (event_id, base_id))
     else:
         db.execute("DELETE FROM event_product WHERE event_id=? AND product_id=?", (event_id, base_id))
     _touch_products(db, [base_id])

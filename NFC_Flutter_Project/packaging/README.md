@@ -54,10 +54,21 @@ reading the environment itself.
 
 ## What the installer does
 
-- Installs program files (backend exe, web app, WinSW) to
-  `C:\Program Files\NFC-Kasse\`.
+- Installs program files (backend exe, web app, WinSW, PostgreSQL 18 in
+  `pgsql\`) to `C:\Program Files\NFC-Kasse\`.
+- Database pages (only while `config.env` has no `DATABASE_URL`): either
+  installs PostgreSQL (root user + password chosen in the wizard; `initdb`
+  into `C:\ProgramData\NFC-Kasse\pgdata`, service `NfcKassePostgres`, port
+  5433, localhost only) or uses an existing server (admin login, used once;
+  or, without any admin login, the wizard shows the CREATE ROLE/DATABASE SQL
+  for the IT admin to run and only checks the kasse user — mode `prepared`).
+  Both then create the kasse role + database `nfc_kasse` and write
+  `DATABASE_URL`/`PG_BIN` into `config.env` — all done by
+  `NfcKasseBackend.exe db-setup` (`backend/pg_setup.py`); the passwords go
+  through a JSON file in Setup's temp folder, never a command line. If it
+  fails, the wizard shows the reason and the backend service is not started.
 - Creates `C:\ProgramData\NFC-Kasse\` for everything that changes at
-  runtime (`kasse.db`, `config.env`, `bon.yaml`, `logs\`, `backups\`) —
+  runtime (`pgdata\`, `config.env`, `bon.yaml`, `logs\`, `backups\`) —
   protected from removal on uninstall (`uninsneveruninstall` in the `.iss`),
   and — unlike the program files in `{app}` — never overwritten by an
   installer upgrade either.
@@ -68,12 +79,12 @@ reading the environment itself.
   starten"/"Dienst stoppen").
 - On first run, `backend/service_main.py` generates `config.env` with a
   real random `SECRET_KEY`, seeds `bon.yaml` from the bundled
-  `bon.yaml.default`, and initializes `kasse.db`. On every subsequent start
-  it takes a WAL-safe backup (rotated, 5 newest kept).
+  `bon.yaml.default`; on every start it waits for the database, takes a
+  `pg_dump` backup (rotated, 5 newest kept) and migrates the schema (Alembic).
 
 Re-running the installer over an existing install upgrades in place: the
-service is stopped before files are replaced, then restarted — `kasse.db`,
-`config.env` and `bon.yaml` are never touched (the installer never lists
+service (and `NfcKassePostgres`) is stopped before files are replaced, then
+restarted — `pgdata`, `config.env` and `bon.yaml` are never touched (the installer never lists
 `C:\ProgramData` as a copy destination in the first place).
 
 ## Operating an installed instance
@@ -94,11 +105,11 @@ service is stopped before files are replaced, then restarted — `kasse.db`,
   hourly rotation) and `C:\ProgramData\NFC-Kasse\logs\winsw\` (raw
   stdout/stderr — the fallback if something goes wrong before the app's
   own logging is set up, e.g. a hand-broken `config.env`).
-- **`reset_db.py` / `migrate.py`** (dev/ops tools, not bundled into the
-  installer) still work against a production install — set `DB_PATH`
-  first:
+- **`reset_db.py`** (dev/ops tool, not bundled into the
+  installer) still works against a production install — set
+  `DATABASE_URL` (as in `C:\ProgramData\NFC-Kasse\config.env`) first:
   ```
-  set DB_PATH=C:\ProgramData\NFC-Kasse\kasse.db
+  set DATABASE_URL=postgresql://...
   python backend\reset_db.py
   ```
 

@@ -26,7 +26,7 @@ class PreferenceItem {
 /// Immutable snapshot of all per-user preferences.
 ///
 /// Layouts: key = 'layout.cat_{id}', profile = 'P' or 'L'
-///   value = `List<int?>` where null is an intentional empty slot
+///   value = `List<String?>` where null is an intentional empty slot
 ///
 /// Color overrides: key = 'product.color.{id}', profile = '*'
 ///   value = '#RRGGBB' hex string; absent = use the product's default color
@@ -62,20 +62,20 @@ class UserPreferences {
   }
 
   /// Returns the saved slot list for [categoryId] / [profile], or null if none.
-  List<int?>? getLayout(int categoryId, String profile) {
+  List<String?>? getLayout(String categoryId, String profile) {
     final raw = _store['layout.cat_$categoryId']?[profile];
     if (raw == null) return null;
-    return (raw as List).map((e) => e as int?).toList();
+    return (raw as List).map((e) => e as String?).toList();
   }
 
   /// Returns this user's color override for [productId], or null if none is set.
-  Color? getProductColor(int productId) {
+  Color? getProductColor(String productId) {
     final raw = _store['product.color.$productId']?['*'];
     if (raw == null) return null;
     return hexToColor(raw as String);
   }
 
-  Color? getCategoryColor(int categoryId) {
+  Color? getCategoryColor(String categoryId) {
     final raw = _store['category.color.$categoryId']?['*'];
     if (raw == null) return null;
     return hexToColor(raw as String);
@@ -86,29 +86,29 @@ class UserPreferences {
   List<CategoryModel> applyCategoryOrder(List<CategoryModel> categories) {
     final raw = _store['category.order']?['*'];
     if (raw == null) return categories;
-    final rank = {for (final (i, id) in (raw as List).indexed) id as int: i};
+    final rank = {for (final (i, id) in (raw as List).indexed) id as String: i};
     final known = categories.where((c) => rank.containsKey(c.id)).toList()
       ..sort((a, b) => rank[a.id]!.compareTo(rank[b.id]!));
     return [...known, ...categories.where((c) => !rank.containsKey(c.id))];
   }
 
-  UserPreferences withLayout(int categoryId, String profile, List<int?> layout) {
+  UserPreferences withLayout(String categoryId, String profile, List<String?> layout) {
     final key = 'layout.cat_$categoryId';
     final newStore = _deepCopy();
     newStore.putIfAbsent(key, () => {})[profile] = layout;
     return UserPreferences(newStore);
   }
 
-  UserPreferences withCategoryOrder(List<int> order) {
+  UserPreferences withCategoryOrder(List<String> order) {
     final newStore = _deepCopy();
     newStore['category.order'] = {'*': order};
     return UserPreferences(newStore);
   }
 
-  UserPreferences withProductColor(int productId, Color? color) =>
+  UserPreferences withProductColor(String productId, Color? color) =>
       _withColor('product.color.$productId', color);
 
-  UserPreferences withCategoryColor(int categoryId, Color? color) =>
+  UserPreferences withCategoryColor(String categoryId, Color? color) =>
       _withColor('category.color.$categoryId', color);
 
   UserPreferences _withColor(String key, Color? color) {

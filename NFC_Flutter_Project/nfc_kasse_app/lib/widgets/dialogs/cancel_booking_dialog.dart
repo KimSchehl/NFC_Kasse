@@ -44,7 +44,7 @@ class _CancelBookingDialogState extends ConsumerState<CancelBookingDialog> {
 
     try {
       final svc = ref.read(salesServiceProvider);
-      final saleIds = (booking['sale_ids'] as List).cast<int>();
+      final saleIds = (booking['sale_ids'] as List).cast<String>();
 
       // Cancel each sale row individually and accumulate the total refund.
       double refunded = 0;

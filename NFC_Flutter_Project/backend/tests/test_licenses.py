@@ -40,7 +40,7 @@ def test_license_check_command_reads_config_env_and_overrides(tmp_path, capsys):
     (tmp_path / "config.env").write_text(
         f"INSTALLATION_ID={_TEST_INSTALLATION_ID}\nPAGER_LICENSE_KEY={_sign_test_license('pager')}\n", encoding="utf-8"
     )
-    code = admin_cli.main(["license-check", "--kasse", "falsch"], tmp_path, db_path=tmp_path / "fehlt.db")
+    code = admin_cli.main(["license-check", "--kasse", "falsch"], tmp_path)
     out = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert code == 0, out
     assert out["licenses"]["pager"]["status"] == "valid"

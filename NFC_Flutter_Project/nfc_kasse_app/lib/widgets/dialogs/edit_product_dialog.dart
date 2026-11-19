@@ -28,7 +28,7 @@ import '../product_color_picker.dart';
 /// separately, via the POS screen's Bearbeitungsmodus.
 class EditProductDialog extends ConsumerStatefulWidget {
   final ProductModel? product;
-  final int categoryId;
+  final String categoryId;
   final List<ProductModel> allCategoryProducts;
   final bool canEditDetails;
   final bool canCreateArticle;
@@ -55,7 +55,7 @@ class EditProductDialog extends ConsumerStatefulWidget {
 /// own default button color; null = theme default (it does not inherit the
 /// base article's color).
 class _OptionDraft {
-  final int? id;
+  final String? id;
   final TextEditingController suffixCtrl;
   final TextEditingController priceCtrl;
   Color? color;
@@ -85,7 +85,7 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
   bool _loading = false;
   String? _error;
   List<_OptionDraft> _options = [];
-  final List<int> _deletedOptionIds = [];
+  final List<String> _deletedOptionIds = [];
 
   bool get isNew => widget.product == null;
 
@@ -208,7 +208,7 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
     // Options are hidden in the UI (and thus never touched by the user) for
     // payout articles — see build() — so skip validating/syncing them here
     // too rather than silently dropping or reinterpreting stale draft rows.
-    final parsedOptions = <({int? id, String suffix, double price, String? color})>[];
+    final parsedOptions = <({String? id, String suffix, double price, String? color})>[];
     if (!savedIsPayout) {
       for (final o in _options) {
         final suffix = o.suffixCtrl.text.trim();
@@ -239,7 +239,7 @@ class _EditProductDialogState extends ConsumerState<EditProductDialog> {
 
     try {
       final svc = ref.read(productServiceProvider);
-      late final int baseId;
+      late final String baseId;
       if (isNew) {
         final created = await svc.createProduct(
           name: name,

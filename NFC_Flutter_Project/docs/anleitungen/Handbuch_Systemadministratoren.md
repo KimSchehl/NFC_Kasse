@@ -193,8 +193,11 @@ Die Installation Schritt für Schritt steht in der Bedieneranleitung, Abschnitt 
 | Was | Wo / Name | Hinweis |
 | --- | --- | --- |
 | Programm | `C:\Program Files\NFC-Kasse\` | inkl. `NfcKasseService.exe` (Dienst-Steuerung) und `Verwaltung\NfcKasseAdmin.exe` |
-| Daten | `C:\ProgramData\NFC-Kasse\` | entsteht beim ersten Start des Dienstes (Abschnitt 6) |
-| Windows-Dienst | Anzeigename **NFC-Kasse Backend**, Dienstname `NfcKasseBackend` | startet automatisch mit Windows, läuft als LocalSystem |
+| Daten | `C:\ProgramData\NFC-Kasse\` | Einstellungen, Sicherungen, Protokolle und die Datenbank des mitinstallierten PostgreSQL (Abschnitt 6) |
+| PostgreSQL 18 | `C:\Program Files\NFC-Kasse\pgsql\` | Datenbankserver und Werkzeuge (`psql`, `pg_dump`). Die Programme werden immer installiert, weil die Sicherungen sie brauchen. |
+| Datenbank-Dienst | Dienstname `NfcKassePostgres` | nur bei **PostgreSQL mitinstallieren**: startet automatisch, Port **5433**, nur vom Laptop selbst erreichbar (`localhost`), läuft als Netzwerkdienst |
+| Datenbank | `nfc_kasse`, Benutzer aus der Setup-Seite **Kassensystem-Benutzer** | gehört diesem Benutzer, der nur auf diese Datenbank Zugriff hat |
+| Windows-Dienst | Anzeigename **NFC-Kasse Backend**, Dienstname `NfcKasseBackend` | startet automatisch mit Windows, läuft als LocalSystem, wartet beim Start bis zu 2 Minuten auf die Datenbank |
 | Firewall-Regel | **NFC-Kasse Backend** | erlaubt eingehende Verbindungen zum Programm, alle Netzwerkprofile |
 | Browser-Richtlinien | Edge und Chrome | erlauben Bluetooth auf localhost und nfc-kasse.lan (Abschnitt 8) |
 | Startmenü | Ordner **NFC-Kasse** | NFC-Kasse öffnen, Dienst starten, Dienst stoppen, NFC-Kasse Verwaltung |
@@ -229,7 +232,7 @@ Alles, was die Kasse speichert, liegt in \*\*C:\\ProgramData\\NFC-Kasse\*\*. Der
 | --- | --- |
 | `config.env` | alle Einstellungen des Servers (Abschnitt 7). Name und Pfand eines Festes stehen nicht hier, sondern in der Datenbank. |
 | `bon.yaml` | Bon-Layout (Abschnitt 9) |
-| `kasse.db` mit `kasse.db-wal` und `kasse.db-shm` | die Datenbank: Veranstalter, Feste, Benutzer, Rechte, Artikel, Chips, Guthaben, Buchungen |
+| `pgdata\` | die Datenbank des mitinstallierten PostgreSQL: Veranstalter, Feste, Benutzer, Rechte, Artikel, Chips, Guthaben, Buchungen. Nie von Hand ändern oder kopieren, dafür gibt es die Sicherungen (Abschnitt 10). Bei einem vorhandenen PostgreSQL-Server liegt die Datenbank dort. |
 | `backups\` | alle Sicherungen der Datenbank (Abschnitt 10) |
 | `logs\kasse_JJJJ-MM-TT_HH.log` | Protokoll der Kasse, eine Datei pro Stunde, aufbewahrt für 7 Tage |
 | `logs\winsw\` | Protokoll des Dienst-Rahmens. Hier stehen Fehler, die schon beim Start passieren, etwa eine fehlerhafte `config.env`. |
@@ -251,6 +254,8 @@ Die Datei liegt in `C:\ProgramData\NFC-Kasse\config.env`. Am einfachsten bearbei
 | `HOST` | Netzwerkschnittstelle (HOST) | `0.0.0.0` | `0.0.0.0` = aus dem ganzen Netz erreichbar. `127.0.0.1` = nur am Laptop selbst. |
 | `PORT` | Port | `8000` | Nicht ändern. Alle Adressen, die App-Voreinstellungen und die Browser-Richtlinien setzen 8000 voraus. |
 | `SECRET_KEY` | (nicht angezeigt) | zufällig | Schlüssel für die Anmeldungen. Eine Änderung meldet alle Geräte ab. |
+| `DATABASE_URL` | (nicht angezeigt) | vom Setup | Verbindung zur Datenbank: `postgresql://BENUTZER:PASSWORT@localhost:5433/nfc_kasse`. Sonderzeichen im Passwort stehen kodiert darin (z. B. `%40` für `@`). Fehlt der Eintrag, startet der Dienst nicht. |
+| `PG_BIN` | (nicht angezeigt) | vom Setup | Ordner mit `pg_dump` und `pg_restore` für die Sicherungen |
 | `INSTALLATION_ID` | Seite Info, Seite Lizenzen | zufällig | Kennung dieser Installation. Nie ändern, alle Lizenzschlüssel hängen daran. |
 | `LICENSE_KEY` | Lizenzen → Kasse (Hauptlizenz) | leer | Hauptlizenz für diese Installation. Ohne gültigen Schlüssel beendet sich der Dienst beim Start mit einer Meldung in `logs\winsw\`. |
 | `BAR_CHIP_UID` | Virtuelle Bar-Chip-UID | `BAR` | Kennung des virtuellen Chips für Barverkäufe an der Bonkasse. Sein Guthaben darf ins Minus gehen. |
@@ -398,7 +403,7 @@ Die Datei `bon_template.yaml` im Programmordner erklärt alle Einträge und enth
 
 ## 10. Datensicherung, Wiederherstellung und Umzug
 
-Eine Sicherung enthält die ganze Datenbank: alle Feste, Artikel, Benutzer, Buchungen und das Guthaben aller Chips. `config.env` und `bon.yaml` sind nicht enthalten. Bedient wird das auf der Seite **Daten** im Verwaltungstool (Bedieneranleitung, Abschnitt 11.6). Die Sicherung läuft über die Backup-Funktion von SQLite und ist deshalb auch bei laufendem Dienst vollständig.
+Eine Sicherung enthält die ganze Datenbank: alle Feste, Artikel, Benutzer, Buchungen und das Guthaben aller Chips. `config.env` und `bon.yaml` sind nicht enthalten. Bedient wird das auf der Seite **Daten** im Verwaltungstool (Bedieneranleitung, Abschnitt 11.6). Die Sicherung läuft über `pg_dump` von PostgreSQL und ist deshalb auch bei laufendem Dienst vollständig. Jede Sicherung besteht aus einer `.dump`-Datei und einer gleichnamigen `.json` mit den Angaben für die Liste im Verwaltungstool.
 
 ### 10.1 Automatische Sicherungen
 
@@ -406,12 +411,11 @@ Alle Sicherungen liegen in `C:\ProgramData\NFC-Kasse\backups\`. Der Anfang des D
 
 | Datei | Entsteht | Aufbewahrt |
 | --- | --- | --- |
-| `kasse_…db` | bei jedem Start des Dienstes, also bei jedem Windows-Start und jedem **Neu starten** | die fünf neuesten |
-| `vor-festwechsel_…db` | vor jedem **Fest starten** und **Fest beenden** | alle |
-| `vor-veranstalterwechsel_…db` | vor jedem Wechsel des Veranstalters | alle |
-| `vor-update_…db` | einmal, bevor ein Update die Datenbank umbaut | alle |
-| `vor-wiederherstellung_…db` | vor jedem **Wiederherstellen** und **Sicherung importieren** | alle |
-| `manuell_…db` | mit **Jetzt sichern** auf der Seite Daten | alle |
+| `kasse_….dump` | bei jedem Start des Dienstes, also bei jedem Windows-Start, jedem **Neu starten** und vor dem Umbau der Datenbank nach einem Update | die fünf neuesten |
+| `vor-festwechsel_….dump` | vor jedem **Fest starten** und **Fest beenden** | alle |
+| `vor-veranstalterwechsel_….dump` | vor jedem Wechsel des Veranstalters | alle |
+| `vor-wiederherstellung_….dump` | vor jedem **Wiederherstellen** und **Sicherung importieren** | alle |
+| `manuell_….dump` | mit **Jetzt sichern** auf der Seite Daten | alle |
 
 Fünf Neustarts kurz hintereinander, etwa beim Einrichten des Druckers, verdrängen alle älteren `kasse_`-Sicherungen. Die anderen Sicherungen löscht die Kasse nie, räumen Sie den Ordner gelegentlich selbst auf.
 
@@ -421,7 +425,7 @@ Fünf Neustarts kurz hintereinander, etwa beim Einrichten des Druckers, verdrän
 2. Bei der neuen Sicherung in der Liste auf das Symbol **Exportieren** klicken und sie auf einen USB-Stick speichern.
 3. Zusätzlich `config.env` und `bon.yaml` aus `C:\ProgramData\NFC-Kasse\` mitkopieren, falls sich daran etwas geändert hat.
 
-Kopieren Sie `kasse.db` nicht einfach im laufenden Betrieb. Die letzten Buchungen stehen dann eventuell noch in `kasse.db-wal` und fehlen in der Kopie.
+Kopieren Sie nie den Ordner `pgdata` als Sicherung. Eine Kopie bei laufender Datenbank ist unbrauchbar, sichern Sie immer über das Verwaltungstool.
 
 ### 10.3 Wiederherstellen
 
@@ -430,17 +434,17 @@ Alle Buchungen nach dem Zeitpunkt der Sicherung gehen dabei verloren. Guthaben s
 1. Im Verwaltungstool die Seite **Daten** öffnen.
 2. Bei der gewünschten Sicherung auf das Symbol **Wiederherstellen** klicken, oder **Sicherung importieren** für eine Datei vom USB-Stick.
 3. Zur Bestätigung `WIEDERHERSTELLEN` eintippen.
-4. Das Tool sichert den aktuellen Stand, hält den Dienst an, spielt die Sicherung ein und startet den Dienst wieder.
+4. Das Tool sichert den aktuellen Stand, hält den Dienst an, spielt die Sicherung ein und startet den Dienst wieder. Stammt die Sicherung von einer älteren Programmversion, bringt die Kasse sie dabei auf den aktuellen Stand. Sicherungen einer neueren Version lehnt sie ab.
 5. In der App unter **Statistik** prüfen, ob die Zahlen stimmen.
 
 ### 10.4 Umzug auf einen anderen Laptop
 
 Ziehen Sie `config.env` mit um, dann bleibt die Installations-ID gleich und alle Lizenzen gelten weiter.
 
-1. Alter Laptop: im Verwaltungstool **Stoppen**. Aus `C:\ProgramData\NFC-Kasse\` die Dateien `config.env`, `bon.yaml` und `kasse.db` (mit `kasse.db-wal` und `kasse.db-shm`, falls vorhanden) auf einen USB-Stick kopieren.
+1. Alter Laptop: im Verwaltungstool **Jetzt sichern** und die Sicherung auf einen USB-Stick **exportieren** (Abschnitt 10.2). Dann **Stoppen** und aus `C:\ProgramData\NFC-Kasse\` die Dateien `config.env` und `bon.yaml` auf den USB-Stick kopieren.
 2. Neuer Laptop: NFC-Kasse installieren (Abschnitt 5) und im Verwaltungstool **Stoppen**.
-3. Im Datenordner des neuen Laptops `kasse.db-wal` und `kasse.db-shm` löschen, dann die Dateien vom USB-Stick hineinkopieren und überschreiben.
-4. **Starten**. Auf der Seite **Info** muss dieselbe Installations-ID stehen wie vorher.
+3. Auf dem neuen Laptop in `config.env` die Zeilen `SECRET_KEY`, `INSTALLATION_ID` und die Lizenzschlüssel durch die vom USB-Stick ersetzen. `DATABASE_URL` und `PG_BIN` **nicht** überschreiben, sie gehören zur Datenbank des neuen Laptops. `bon.yaml` vom USB-Stick hineinkopieren.
+4. Im Verwaltungstool **Sicherung importieren** mit der Datei vom USB-Stick (Abschnitt 10.3), dann **Starten**. Auf der Seite **Info** muss dieselbe Installations-ID stehen wie vorher.
 5. Im Router die IP-Reservierung auf die MAC-Adresse des neuen Laptops ändern (Abschnitt 2.3).
 6. Bei seriellem Drucker den COM-Port prüfen, er hat am neuen Laptop oft eine andere Nummer.
 
@@ -452,7 +456,9 @@ Ziehen Sie `config.env` mit um, dann bleibt die Installations-ID gleich und alle
 2. Laden Sie die neueste **NFC-Kasse-Setup.exe** von **nfc-kasse.de/download**.
 3. Starten Sie sie. Auf der Seite **Installationsmodus** ist **Aktualisieren** schon gewählt. Weiter bis **Installieren**.
 4. Ist das Verwaltungstool offen, bietet das Setup an, es zu schließen, und öffnet es nach dem Update wieder.
-5. Das Setup stoppt den Dienst und wartet, bis er wirklich beendet ist (bis zu etwa 25 Sekunden, notfalls beendet es ihn hart, die Datenbank nimmt dabei keinen Schaden). Dann ersetzt es die Programmdateien und startet den Dienst neu. Lässt sich der Dienst gar nicht beenden, bricht das Setup vor dem Kopieren mit der Meldung „Der NFC-Kasse-Dienst konnte nicht beendet werden“ ab. Dann den Laptop neu starten und das Setup erneut ausführen. `config.env`, `bon.yaml` und die Daten bleiben erhalten. Bringt das Update einen neuen Aufbau der Datenbank mit, baut der Dienst sie beim ersten Start um und legt vorher die Sicherung `vor-update_…` an (Abschnitt 10.1).
+5. Das Setup stoppt den Dienst und wartet, bis er wirklich beendet ist (bis zu etwa 25 Sekunden, notfalls beendet es ihn hart, die Datenbank nimmt dabei keinen Schaden). Dann ersetzt es die Programmdateien und startet den Dienst neu. Lässt sich der Dienst gar nicht beenden, bricht das Setup vor dem Kopieren mit der Meldung „Der NFC-Kasse-Dienst konnte nicht beendet werden“ ab. Dann den Laptop neu starten und das Setup erneut ausführen. `config.env`, `bon.yaml` und die Daten bleiben erhalten. Bringt das Update einen neuen Aufbau der Datenbank mit, baut der Dienst sie beim ersten Start um, nachdem er die Sicherung `kasse_…` angelegt hat (Abschnitt 10.1). Ein mitinstallierter Datenbank-Dienst wird für das Update kurz angehalten und danach wieder gestartet.
+
+Beim ersten Update einer Version, die noch keine PostgreSQL-Datenbank kannte, fragt das Setup nach der Datenbank wie bei einer Neuinstallation (Abschnitt 5.1). Die Kasse startet dann mit einer leeren Datenbank. Die alte Datei `kasse.db` bleibt unverändert im Datenordner liegen.
 
 Updaten Sie nie während einer Veranstaltung.
 
@@ -464,9 +470,9 @@ Bringt das Server-Update eine neue App-Version mit, zeigt die App nach der Anmel
 
 **Einstellungen → Apps → Installierte Apps → NFC-Kasse Backend → Deinstallieren**. Oder die Setup-Datei starten und **Deinstallieren** wählen.
 
-Zuerst fragt das Programm, ob auch alle Daten gelöscht werden sollen. **Nein** ist vorgewählt und behält `C:\ProgramData\NFC-Kasse\` komplett. Bei **Ja** sind Datenbank, Sicherungen, Einstellungen und Installations-ID unwiderruflich weg. Lizenzen müssten danach neu ausgestellt werden.
+Zuerst fragt das Programm, ob auch alle Daten gelöscht werden sollen. **Nein** ist vorgewählt und behält `C:\ProgramData\NFC-Kasse\` komplett, auch die Datenbank in `pgdata`. Bei **Ja** sind Datenbank, Sicherungen, Einstellungen und Installations-ID unwiderruflich weg. Lizenzen müssten danach neu ausgestellt werden. Eine Datenbank auf einem vorhandenen PostgreSQL-Server bleibt in jedem Fall dort.
 
-Dienst, Firewall-Regel und Browser-Richtlinien entfernt die Deinstallation immer.
+Dienste (auch `NfcKassePostgres`), Firewall-Regel und Browser-Richtlinien entfernt die Deinstallation immer.
 
 ### 11.4 Lizenzen
 

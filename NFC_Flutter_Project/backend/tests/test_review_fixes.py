@@ -3,7 +3,7 @@
 import json
 
 import database
-from tests.conftest import add_category, add_product
+from tests.conftest import ADMIN_SQL, add_category, add_product, seeded_id
 
 
 def _book(client, headers, product_ids, uid="TESTUID01"):
@@ -59,7 +59,7 @@ def test_topup_limits(client, auth_headers):
 
 
 def test_last_manager_cannot_drop_own_permission_management(client, auth_headers):
-    resp = client.put("/api/users/1/permissions", json={"permission_ids": ["users.view"]}, headers=auth_headers)
+    resp = client.put(f"/api/users/{seeded_id(ADMIN_SQL)}/permissions", json={"permission_ids": ["users.view"]}, headers=auth_headers)
     assert resp.status_code == 400
 
 

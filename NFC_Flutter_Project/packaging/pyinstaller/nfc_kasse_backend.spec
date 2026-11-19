@@ -50,6 +50,9 @@ a = Analysis(
         # -> loaded by python-escpos itself from its own package directory
         # (_internal/escpos/capabilities.json in the frozen build) -- see
         # the comment above ESCPOS_CAPABILITIES's definition.
+        (str(BACKEND / "alembic"), "alembic"),
+        # -> schema.py's _script_location() (sys._MEIPASS/alembic): the
+        # migrations run on every service start.
         (str(BACKEND / "webapp"), "webapp"),
         # -> Path(__file__).parent from main.py's webapp mount
         (str(REPO_ROOT / "packaging" / "pyinstaller" / "build" / "updates_seed"), "updates"),
@@ -74,6 +77,14 @@ a = Analysis(
         "httptools",
         "websockets",
         "wsproto",
+        # Alembic loads env.py and the revision files from disk at runtime;
+        # the modules they import are invisible to Analysis. psycopg's C
+        # speedups are picked at runtime too.
+        "alembic",
+        "alembic.runtime.migration",
+        "sqlalchemy.dialects.postgresql.psycopg",
+        "psycopg_binary",
+        "psycopg_pool",
         # python-escpos is imported lazily inside printer.py's _get_printer()
         # specifically so the server starts without it installed — invisible
         # to Analysis for the same reason.

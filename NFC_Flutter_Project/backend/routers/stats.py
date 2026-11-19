@@ -4,8 +4,8 @@ management (Tagesabschluss). The CSV export for accounting lives in the admin
 tool (admin_cli.py csv-export).
 
 All endpoints require the corresponding `statistics.*` permission.
-Time filters use ISO-8601 strings compared directly against the SQLite
-`booked_at` TEXT column (stored as UTC, formatted as `YYYY-MM-DD HH:MM:SS`).
+Time filters are ISO-8601 strings; PostgreSQL casts them to the
+`booked_at` TIMESTAMPTZ column (a string without offset counts as UTC).
 """
 
 import logging
@@ -54,9 +54,9 @@ def _build_time_filter(period_start: str | None, period_end: str | None) -> tupl
 
 def _resolve_time_filter(
     db,
-    event_id: int,
+    event_id: str,
     period_ids: str | None,
-    period_id: int | None,
+    period_id: str | None,
     period_start: str | None,
     period_end: str | None,
 ) -> tuple[str, list]:
@@ -69,7 +69,7 @@ def _resolve_time_filter(
     selected periods; if any selected period is still open, no upper bound.
     """
     if period_ids:
-        ids = [int(x) for x in period_ids.split(",") if x.strip().isdigit()]
+        ids = [x.strip() for x in period_ids.split(",") if x.strip()]
         if ids:
             ph = ",".join("?" * len(ids))
             rows = db.execute(
@@ -105,7 +105,7 @@ def _resolve_time_filter(
 
 
 def _period_time_bounds(
-    db, event_id: int, period_ids: str | None
+    db, event_id: str, period_ids: str | None
 ) -> tuple[str | None, str | None]:
     """
     Returns (min_started_at, max_closed_at) for a given period_ids string.
@@ -114,7 +114,7 @@ def _period_time_bounds(
     """
     if not period_ids:
         return None, None
-    ids = [int(x) for x in period_ids.split(",") if x.strip().isdigit()]
+    ids = [x.strip() for x in period_ids.split(",") if x.strip()]
     if not ids:
         return None, None
     ph = ",".join("?" * len(ids))
@@ -181,18 +181,18 @@ def close_period(
             detail="Tagesabschluss ist nur während eines laufenden Festes möglich.",
         )
 
-    with get_db(exclusive=True) as db:
+    with get_db(exclusive=True, tenant_id=ctx["user"]["tenant_id"]) as db:
         # Without this, a Tagesabschluss racing "Fest beenden" would reopen
         # a period on the fest that was just archived.
         ensure_event_active(db, event_id)
         # Close any currently open period for this event.
         db.execute(
-            "UPDATE stats_period SET closed_at = datetime('now') WHERE event_id=? AND closed_at IS NULL",
+            "UPDATE stats_period SET closed_at = now() WHERE event_id=? AND closed_at IS NULL",
             (event_id,),
         )
         # Open the new period.
         cursor = db.execute(
-            "INSERT INTO stats_period (event_id, label, created_by) VALUES (?, ?, ?)",
+            "INSERT INTO stats_period (event_id, label, created_by) VALUES (?, ?, ?) RETURNING id",
             (event_id, body.label, user_id),
         )
         new_id = cursor.lastrowid
@@ -222,7 +222,7 @@ def close_period(
 @router.get("/revenue", response_model=RevenueResponse)
 def get_revenue(
     period_ids: str | None = Query(None, description="Comma-separated period IDs (highest priority)"),
-    period_id: int | None = Query(None, description="Single period ID (fallback)"),
+    period_id: str | None = Query(None, description="Single period ID (fallback)"),
     period_start: str | None = Query(None, description="ISO datetime, e.g. 2026-06-01T00:00:00"),
     period_end: str | None = Query(None, description="ISO datetime, e.g. 2026-06-01T23:59:59"),
     ctx: RequestContext = Depends(require_permission("statistics.revenue")),
@@ -288,7 +288,7 @@ def get_revenue(
             [event_id, *time_params, event_id, event_id],
         ).fetchall()
 
-    articles_by_cat: dict[int, list[CategoryArticle]] = {}
+    articles_by_cat: dict[str, list[CategoryArticle]] = {}
     for ar in article_rows:
         cid = ar["category_id"]
         if cid not in articles_by_cat:
@@ -327,10 +327,10 @@ def get_revenue(
 @router.get("/transactions", response_model=TransactionListResponse)
 def get_transactions(
     period_ids: str | None = Query(None),
-    period_id: int | None = Query(None),
+    period_id: str | None = Query(None),
     period_start: str | None = Query(None),
     period_end: str | None = Query(None),
-    category_id: int | None = Query(None),
+    category_id: str | None = Query(None),
     customer_name: str | None = Query(None, description="Filter by customer name (case-insensitive substring)"),
     limit: int = Query(500, ge=1, le=5000),
     offset: int = Query(0, ge=0),
@@ -359,7 +359,7 @@ def get_transactions(
             JOIN customer cu ON s.customer_id = cu.id
             JOIN product p ON s.product_id = p.id
             JOIN category c ON p.category_id = c.id
-            JOIN user u ON s.booked_by = u.id
+            JOIN app_user u ON s.booked_by = u.id
             WHERE s.event_id=? {time_where} {category_where} {name_where}
             ORDER BY s.booked_at DESC
             LIMIT ? OFFSET ?

@@ -8,7 +8,7 @@ title NFC-Kasse - Veranstalter und Feste loeschen
 :: * Asks for admin rights (needed to stop/start the service)
 :: * Installs Python 3.13 via winget if missing
 :: * Creates its own .venv with questionary on first run
-:: Optional: loeschen.bat --db "D:\pfad\kasse.db"
+:: Optional: loeschen.bat --data-dir "D:\pfad\NFC-Kasse"
 :: ============================================================
 
 cd /d "%~dp0"

@@ -1,8 +1,8 @@
 import logging
-import sqlite3
 
 from fastapi import APIRouter, Depends, HTTPException
 
+import database
 from database import get_db
 from dependencies import RequestContext, ensure_event_active, require_permission
 from schemas import PayoutResponse, TopupRequest, TopupResponse
@@ -11,7 +11,7 @@ router = APIRouter(prefix="/api/topup", tags=["topup"])
 logger = logging.getLogger(__name__)
 
 
-def _get_or_create_customer(db, tenant_id: int, nfc_uid: str) -> int:
+def _get_or_create_customer(db, tenant_id: str, nfc_uid: str) -> int:
     """Returns customer_id, creating the customer if the UID is new."""
     row = db.execute(
         "SELECT id FROM customer WHERE tenant_id=? AND nfc_uid=?",
@@ -20,7 +20,7 @@ def _get_or_create_customer(db, tenant_id: int, nfc_uid: str) -> int:
     if row:
         return row["id"]
     cursor = db.execute(
-        "INSERT INTO customer (tenant_id, nfc_uid, balance) VALUES (?, ?, 0.0)",
+        "INSERT INTO customer (tenant_id, nfc_uid, balance) VALUES (?, ?, 0.0) RETURNING id",
         (tenant_id, nfc_uid),
     )
     return cursor.lastrowid
@@ -40,7 +40,7 @@ def topup(
     event_id = ctx["event"]["id"]
 
     try:
-        with get_db(exclusive=True) as db:
+        with get_db(exclusive=True, tenant_id=tenant_id) as db:
             ensure_event_active(db, event_id)
             customer_id = _get_or_create_customer(db, tenant_id, body.nfc_uid)
 
@@ -58,7 +58,7 @@ def topup(
             new_balance = db.execute(
                 "SELECT balance FROM customer WHERE id=?", (customer_id,)
             ).fetchone()["balance"]
-    except sqlite3.OperationalError:
+    except database.OperationalError:
         logger.error(
             "Topup failed: database busy (nfc_uid=%s amount=%.2f user_id=%s)",
             body.nfc_uid, body.amount, user_id,
@@ -86,7 +86,7 @@ def payout(
     event_id = ctx["event"]["id"]
 
     try:
-        with get_db(exclusive=True) as db:
+        with get_db(exclusive=True, tenant_id=tenant_id) as db:
             ensure_event_active(db, event_id)
             customer = db.execute(
                 "SELECT id, balance FROM customer WHERE tenant_id=? AND nfc_uid=?",
@@ -117,7 +117,7 @@ def payout(
                 "UPDATE customer SET balance=0.0 WHERE id=?",
                 (customer["id"],),
             )
-    except sqlite3.OperationalError:
+    except database.OperationalError:
         logger.error(
             "Payout failed: database busy (nfc_uid=%s user_id=%s)", nfc_uid, user_id,
         )

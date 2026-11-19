@@ -28,17 +28,17 @@ logger = logging.getLogger(__name__)
 
 class _HelpManager:
     def __init__(self) -> None:
-        self._connections: dict[int, WebSocket] = {}
+        self._connections: dict[str, WebSocket] = {}
 
-    async def connect(self, user_id: int, ws: WebSocket) -> None:
+    async def connect(self, user_id: str, ws: WebSocket) -> None:
         await ws.accept()
         self._connections[user_id] = ws
 
-    def disconnect(self, user_id: int) -> None:
+    def disconnect(self, user_id: str) -> None:
         self._connections.pop(user_id, None)
 
     async def broadcast(self, message: dict) -> None:
-        dead: list[int] = []
+        dead: list[str] = []
         for uid, ws in list(self._connections.items()):
             try:
                 await ws.send_json(message)
@@ -55,13 +55,13 @@ _manager = _HelpManager()
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _load_active_requests(db, event_id: int) -> list[dict]:
+def _load_active_requests(db, event_id: str) -> list[dict]:
     reqs = db.execute(
         """SELECT r.id, r.requester_id,
                   COALESCE(u.display_name, u.username) AS requester_name,
                   r.created_at
            FROM help_request r
-           JOIN user u ON u.id = r.requester_id
+           JOIN app_user u ON u.id = r.requester_id
            WHERE r.event_id = ? AND r.status = 'active'
            ORDER BY r.created_at""",
         (event_id,),
@@ -74,7 +74,7 @@ def _load_active_requests(db, event_id: int) -> list[dict]:
                       COALESCE(u.display_name, u.username) AS responder_name,
                       hr.response, hr.created_at
                FROM help_response hr
-               JOIN user u ON u.id = hr.responder_id
+               JOIN app_user u ON u.id = hr.responder_id
                WHERE hr.request_id = ?
                ORDER BY hr.created_at""",
             (req["id"],),
@@ -100,14 +100,14 @@ async def ws_endpoint(ws: WebSocket, token: str = Query(...)) -> None:
         if payload.get("type") != "access":
             await ws.close(code=1008)
             return
-        user_id = int(payload["sub"])
+        user_id = payload["sub"]
     except (JWTError, ValueError, TypeError):
         await ws.close(code=1008)
         return
 
     with get_db() as db:
         user = db.execute(
-            "SELECT id, tenant_id FROM user WHERE id=? AND active=1", (user_id,)
+            "SELECT id, tenant_id FROM app_user WHERE id=? AND active=1", (user_id,)
         ).fetchone()
         if not user:
             await ws.close(code=1008)
@@ -155,7 +155,7 @@ async def create_request(
             (user_id, event_id),
         )
         cursor = db.execute(
-            "INSERT INTO help_request (event_id, requester_id) VALUES (?, ?)",
+            "INSERT INTO help_request (event_id, requester_id) VALUES (?, ?) RETURNING id",
             (event_id, user_id),
         )
         request_id = cursor.lastrowid
@@ -178,7 +178,7 @@ async def create_request(
 
 @router.post("/{request_id}/respond")
 async def respond(
-    request_id: int,
+    request_id: str,
     body: HelpRespondBody,
     current_user: dict = Depends(get_current_user),
     active_event: dict = Depends(get_active_event),
@@ -225,7 +225,7 @@ async def respond(
 
 @router.delete("/{request_id}", status_code=204)
 async def resolve(
-    request_id: int,
+    request_id: str,
     current_user: dict = Depends(get_current_user),
     active_event: dict = Depends(get_active_event),
 ) -> None:

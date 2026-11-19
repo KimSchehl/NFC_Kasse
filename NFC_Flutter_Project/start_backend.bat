@@ -118,29 +118,13 @@ if not defined SECRET_KEY (
     exit /b 1
 )
 
-:: ---- 5. Init database if needed ----------------------------
+:: ---- 5. Database schema (PostgreSQL, DATABASE_URL from config.env) ----
 cd backend
-if not exist "kasse.db" (
-    echo  [SETUP] kasse.db not found -- creating database ...
-    "!PYTHON!" init_db.py
-    if errorlevel 1 (
-        echo  [ERROR] Database creation failed.
-        pause
-        exit /b 1
-    )
-    echo.
-    echo  [SETUP] Done. Default login: admin / admin
-    echo  [SETUP] Change the password immediately after first login!
-    echo.
-) else (
-    echo  [OK] kasse.db found.
-    :: ---- Automatisches Backup ----------------------------------------
-    if not exist "backups" mkdir "backups"
-    for /f "usebackq" %%t in (`powershell -NoProfile -Command "Get-Date -Format 'yyyyMMdd-HHmm'"`) do set "TS=%%t"
-    copy /y "kasse.db" "backups\kasse_!TS!.db" >nul
-    echo  [BACKUP] backups\kasse_!TS!.db
-    :: Nur die 5 neuesten Backups behalten
-    for /f "usebackq skip=5 delims=" %%f in (`powershell -NoProfile -Command "Get-ChildItem 'backups\kasse_*.db' | Sort-Object LastWriteTime -Descending | Select-Object -ExpandProperty Name"`) do del "backups\%%f" >nul 2>&1
+"!PYTHON!" init_db.py
+if errorlevel 1 (
+    echo  [ERROR] Database setup failed. Is PostgreSQL running and DATABASE_URL correct?
+    pause
+    exit /b 1
 )
 cd ..
 

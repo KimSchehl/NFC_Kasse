@@ -27,7 +27,6 @@ import db_backup
 
 DATA_DIR = Path(os.environ.get("NFC_KASSE_DATA_DIR", r"C:\ProgramData\NFC-Kasse"))
 CONFIG_PATH = DATA_DIR / "config.env"
-DB_PATH = DATA_DIR / "kasse.db"
 LOGS_DIR = DATA_DIR / "logs"
 BACKUPS_DIR = DATA_DIR / "backups"
 
@@ -68,10 +67,26 @@ def _ensure_bon_yaml() -> None:
     )
 
 
+def _wait_for_database(seconds: int = 120) -> None:
+    """At boot the PostgreSQL service may still be starting."""
+    import time
+
+    import database
+
+    deadline = time.monotonic() + seconds
+    while True:
+        try:
+            database.connect().close()
+            return
+        except database.OperationalError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(2)
+
+
 def _rotate_backup() -> None:
-    """One automatic safety copy per (re)start, the 5 newest kept. Written
-    through db_backup so the copy includes un-checkpointed WAL content."""
-    db_backup.create_backup(DB_PATH, BACKUPS_DIR, prefix="kasse")
+    """One automatic safety copy per (re)start, the 5 newest kept."""
+    db_backup.create_backup(BACKUPS_DIR, prefix="kasse")
     db_backup.prune(BACKUPS_DIR, prefix="kasse", keep=5)
 
 
@@ -154,13 +169,18 @@ def _require_main_license() -> None:
 
 def main() -> None:
     if len(sys.argv) > 1:
-        # Imported only here, never at module top: admin_cli imports
-        # database, which freezes DB_PATH from the environment at import
-        # time — before main() below has set it, that would be the wrong
-        # (relative) path for the service run. admin_cli sets
-        # database.DB_PATH explicitly for its own commands.
+        # admin_cli and db_backup read DATABASE_URL from DATA_DIR's config.env
+        # themselves (database.use_config) — config.env isn't loaded here.
         import admin_cli
 
+        if sys.argv[1] == "db-setup":
+            # Installer: config.env must exist (SECRET_KEY, ...) before
+            # DATABASE_URL is added to it.
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            _ensure_config()
+            import pg_setup
+
+            sys.exit(pg_setup.main(sys.argv[2:], DATA_DIR))
         if sys.argv[1] in admin_cli.COMMANDS:
             sys.exit(admin_cli.main(sys.argv[1:], DATA_DIR))
         sys.exit(db_backup.main(sys.argv[1:], DATA_DIR))
@@ -176,7 +196,6 @@ def main() -> None:
     from dotenv import load_dotenv
 
     load_dotenv(dotenv_path=CONFIG_PATH, override=False)
-    os.environ.setdefault("DB_PATH", str(DB_PATH))
     os.environ.setdefault("NFC_KASSE_LOG_DIR", str(LOGS_DIR))
     # routers/printer.py reads this directly (bon.yaml lives in DATA_DIR, not
     # next to the program files) — must be set even when NFC_KASSE_DATA_DIR
@@ -190,17 +209,27 @@ def main() -> None:
     )
     _require_main_license()
 
-    # 2. First-run DB init OR startup backup rotation — the same branching
-    #    start_backend.bat's step 5 does, now against ProgramData.
-    if not DB_PATH.exists():
-        import init_db as idb
+    # 2. Backup of an existing database, then bring the schema up to date
+    #    (first run: create and seed it). The PostgreSQL database itself is
+    #    created by the installer; DATABASE_URL comes from config.env.
+    import database
+    import init_db
+    import schema
 
-        conn = idb.init_db()
-        idb.seed_permissions(conn)
-        idb.seed_default_data(conn)
-        conn.close()
-    else:
+    database.use_config(DATA_DIR)  # db_backup imported database before config.env was loaded
+    if not os.environ.get("DATABASE_URL"):
+        print(
+            "NFC-Kasse startet nicht: keine Datenbank eingerichtet (DATABASE_URL fehlt in config.env). "
+            "Bitte das Setup erneut ausführen.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    _wait_for_database()
+    with database.get_db() as db:
+        existing = schema.current(db) is not None
+    if existing:
         _rotate_backup()
+    init_db.setup()
 
     # 3. Only now is it safe to import main (and therefore config,
     #    logging_config, database, dependencies, every router).

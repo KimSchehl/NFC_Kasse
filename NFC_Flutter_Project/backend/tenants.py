@@ -22,13 +22,13 @@ def active_tenant_id(db) -> int:
     row = db.execute("SELECT id FROM tenant WHERE active = 1 ORDER BY id LIMIT 1").fetchone()
     if row:
         return row["id"]
-    row = db.execute("SELECT MIN(id) AS id FROM tenant").fetchone()
+    row = db.execute("SELECT id FROM tenant ORDER BY id LIMIT 1").fetchone()
     if row is None or row["id"] is None:
         raise EventError("Kein Veranstalter angelegt.")
     return row["id"]
 
 
-def active_event(db, tenant_id: int | None = None):
+def active_event(db, tenant_id: str | None = None):
     """The running event (fest or Intern) of the tenant — by default of
     the active Veranstalter. None if the database has no event yet."""
     if tenant_id is None:
@@ -40,8 +40,8 @@ def ensure_bar_chips(db, bar_chip_uid: str) -> None:
     """Every Veranstalter has its own virtual BAR chip for cash sales."""
     db.execute(
         """
-        INSERT OR IGNORE INTO customer (tenant_id, nfc_uid, balance, is_available)
-        SELECT id, ?, 0.0, 0 FROM tenant
+        INSERT INTO customer (tenant_id, nfc_uid, balance, is_available)
+        SELECT id, ?, 0.0, 0 FROM tenant ON CONFLICT DO NOTHING
         """,
         (bar_chip_uid,),
     )
@@ -56,7 +56,7 @@ def _tenant_dict(db, row) -> dict:
         "id": row["id"],
         "name": row["name"],
         "active": bool(row["active"]),
-        "users": count("SELECT COUNT(*) FROM user WHERE tenant_id = ? AND deleted = 0"),
+        "users": count("SELECT COUNT(*) FROM app_user WHERE tenant_id = ? AND deleted = 0"),
         "categories": count("SELECT COUNT(*) FROM category WHERE tenant_id = ? AND deleted = 0"),
         "fests": count("SELECT COUNT(*) FROM event WHERE tenant_id = ? AND is_intern = 0"),
         "running": None if running is None else ("Intern" if running["is_intern"] else running["name"]),
@@ -85,14 +85,14 @@ def create_tenant(db, *, name: str, admin_username: str, admin_password: str, ba
     if db.execute("SELECT 1 FROM tenant WHERE name = ?", (name,)).fetchone():
         raise EventError(f"Einen Veranstalter „{name}“ gibt es schon.")
 
-    tenant_id = db.execute("INSERT INTO tenant (name, plan, active) VALUES (?, 'local', 0)", (name,)).lastrowid
+    tenant_id = db.execute("INSERT INTO tenant (name, plan, active) VALUES (?, 'local', 0) RETURNING id", (name,)).lastrowid
     intern_id = db.execute(
-        "INSERT INTO event (tenant_id, name, active, is_intern) VALUES (?, 'Intern', 1, 1)", (tenant_id,)
+        "INSERT INTO event (tenant_id, name, active, is_intern) VALUES (?, 'Intern', 1, 1) RETURNING id", (tenant_id,)
     ).lastrowid
     db.execute("INSERT INTO stats_period (event_id, label) VALUES (?, 'Intern')", (intern_id,))
     password_hash = bcrypt.hashpw(admin_password.encode(), bcrypt.gensalt()).decode()
     admin_id = db.execute(
-        "INSERT INTO user (tenant_id, username, password_hash, display_name) VALUES (?, ?, ?, 'Administrator')",
+        "INSERT INTO app_user (tenant_id, username, password_hash, display_name) VALUES (?, ?, ?, 'Administrator') RETURNING id",
         (tenant_id, admin_username, password_hash),
     ).lastrowid
     db.execute(
@@ -110,7 +110,7 @@ def create_tenant(db, *, name: str, admin_username: str, admin_password: str, ba
     return _tenant_dict(db, db.execute("SELECT * FROM tenant WHERE id = ?", (tenant_id,)).fetchone())
 
 
-def check_can_activate(db, tenant_id: int) -> None:
+def check_can_activate(db, tenant_id: str) -> None:
     if not db.execute("SELECT 1 FROM tenant WHERE id = ?", (tenant_id,)).fetchone():
         raise EventError("Veranstalter nicht gefunden.")
     current = active_tenant_id(db)
@@ -121,7 +121,7 @@ def check_can_activate(db, tenant_id: int) -> None:
         raise EventError("Es läuft noch ein Fest. Bitte zuerst das Fest beenden, dann den Veranstalter wechseln.")
 
 
-def activate_tenant(db, tenant_id: int) -> dict:
+def activate_tenant(db, tenant_id: str) -> dict:
     """Must run inside get_db(exclusive=True). Only while the current
     Veranstalter runs Intern (no fest). Logs every device out: refresh
     tokens are revoked, and get_current_user refuses users of a
@@ -133,7 +133,7 @@ def activate_tenant(db, tenant_id: int) -> dict:
     return _tenant_dict(db, db.execute("SELECT * FROM tenant WHERE id = ?", (tenant_id,)).fetchone())
 
 
-def rename_tenant(db, tenant_id: int, name: str) -> dict:
+def rename_tenant(db, tenant_id: str, name: str) -> dict:
     name = name.strip()
     if not name:
         raise EventError("Der Name des Veranstalters darf nicht leer sein.")

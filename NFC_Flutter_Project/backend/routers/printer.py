@@ -28,6 +28,7 @@ import logging
 import os
 import threading
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -70,7 +71,7 @@ router = APIRouter(prefix="/api/print", tags=["print"])
 def _bon_yaml_path() -> Path:
     """Mirrors logging_config.py's log_dir() NFC_KASSE_LOG_DIR pattern:
     production (service_main.py) sets NFC_KASSE_DATA_DIR before this module
-    is ever imported, so bon.yaml lives next to config.env/kasse.db/logs in
+    is ever imported, so bon.yaml lives next to config.env/logs/backups in
     C:\\ProgramData\\NFC-Kasse and survives installer upgrades — unlike the
     old location alongside the program files, which an upgrade overwrites.
     Dev (start_backend.bat) never sets it, so this falls back to the
@@ -330,7 +331,7 @@ def _print_worker_iteration() -> None:
 
                 with get_db() as db:
                     db.execute(
-                        "UPDATE print_job SET status = 'done', processed_at = datetime('now') WHERE id = ?",
+                        "UPDATE print_job SET status = 'done', processed_at = now() WHERE id = ?",
                         (job_id,),
                     )
 
@@ -405,11 +406,11 @@ def print_bon(
     event_name = ctx["event"]["name"]
     username: str = ctx["user"].get("display_name") or ctx["user"]["username"]
 
-    sale_ids: list[int] = []
-    print_job_ids: list[int] = []
-    product_map: dict[int, dict] = {}
+    sale_ids: list[str] = []
+    print_job_ids: list[str] = []
+    product_map: dict[str, dict] = {}
 
-    with get_db(exclusive=True) as db:
+    with get_db(exclusive=True, tenant_id=tenant_id) as db:
         ensure_event_active(db, event_id)
         bar_row = db.execute(
             "SELECT id FROM customer WHERE tenant_id = ? AND nfc_uid = ?",
@@ -423,7 +424,7 @@ def print_bon(
         bar_customer_id = bar_row["id"]
 
         # Expand item list to one entry per unit
-        product_ids_flat: list[int] = []
+        product_ids_flat: list[str] = []
         for item in body.items:
             product_ids_flat.extend([item.product_id] * max(1, item.quantity))
 
@@ -506,7 +507,7 @@ def print_bon(
             for _ in range(max(1, item.quantity)):
                 cursor = db.execute(
                     "INSERT INTO sale (event_id, customer_id, product_id, price_at_sale, booked_by) "
-                    "VALUES (?, ?, ?, ?, ?)",
+                    "VALUES (?, ?, ?, ?, ?) RETURNING id",
                     (event_id, bar_customer_id, item.product_id, info["price"], user_id),
                 )
                 sale_id = cursor.lastrowid
@@ -515,7 +516,7 @@ def print_bon(
                 job_cursor = db.execute(
                     "INSERT INTO print_job "
                     "(event_id, sale_id, username, event_name, product_name, price) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    "VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
                     (event_id, sale_id, username, event_name, info["name"], info["price"]),
                 )
                 print_job_ids.append(job_cursor.lastrowid)
@@ -539,7 +540,7 @@ def get_print_job_status(
     this until every job has settled or it gives up waiting.
     """
     try:
-        job_ids = [int(x) for x in ids.split(",") if x.strip()]
+        job_ids = [str(uuid.UUID(x.strip())) for x in ids.split(",") if x.strip()]
     except ValueError:
         raise HTTPException(status_code=400, detail="Ungültige Job-IDs")
     if not job_ids or len(job_ids) > 200:

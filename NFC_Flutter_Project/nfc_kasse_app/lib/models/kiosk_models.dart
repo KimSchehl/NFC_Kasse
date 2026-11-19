@@ -1,6 +1,6 @@
 class KioskTransaction {
   final String type; // 'sale' | 'topup'
-  final int id;
+  final String id;
   final String description;
   final double price; // negative = sale (money out), positive = topup (money in)
   final DateTime bookedAt;
@@ -21,7 +21,7 @@ class KioskTransaction {
 
   factory KioskTransaction.fromJson(Map<String, dynamic> j) => KioskTransaction(
         type: j['type'] as String,
-        id: j['id'] as int,
+        id: j['id'] as String,
         description: j['description'] as String,
         price: (j['price'] as num).toDouble(),
         bookedAt: DateTime.parse(j['booked_at'] as String),

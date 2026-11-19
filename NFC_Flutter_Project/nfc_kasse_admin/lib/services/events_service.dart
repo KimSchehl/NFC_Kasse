@@ -11,7 +11,7 @@ DateTime? parseDbTimestamp(String? value) {
 }
 
 class StatsPeriodInfo {
-  final int id;
+  final String id;
   final String label;
   final DateTime? startedAt;
   final DateTime? closedAt;
@@ -19,7 +19,7 @@ class StatsPeriodInfo {
   const StatsPeriodInfo({required this.id, required this.label, this.startedAt, this.closedAt});
 
   factory StatsPeriodInfo.fromJson(Map<String, dynamic> j) => StatsPeriodInfo(
-        id: j['id'] as int,
+        id: j['id'] as String,
         label: j['label'] as String,
         startedAt: parseDbTimestamp(j['started_at'] as String?),
         closedAt: parseDbTimestamp(j['closed_at'] as String?),
@@ -28,7 +28,7 @@ class StatsPeriodInfo {
 
 /// Ein Fest oder das dauerhafte „Intern“-Event.
 class KasseEvent {
-  final int id;
+  final String id;
   final String name;
   final String? date;
   final bool active;
@@ -53,7 +53,7 @@ class KasseEvent {
   });
 
   factory KasseEvent.fromJson(Map<String, dynamic> j) => KasseEvent(
-        id: j['id'] as int,
+        id: j['id'] as String,
         name: j['name'] as String,
         date: j['date'] as String?,
         active: j['active'] as bool,
@@ -74,23 +74,23 @@ class KasseEvent {
 /// Eine Kategorie des Veranstalters und die Events, in denen sie
 /// eingeschaltet ist (für die Auswahl im „Fest starten“-Dialog).
 class CategoryInfo {
-  final int id;
+  final String id;
   final String name;
-  final List<int> eventIds;
+  final List<String> eventIds;
 
   const CategoryInfo({required this.id, required this.name, this.eventIds = const []});
 
   factory CategoryInfo.fromJson(Map<String, dynamic> j) => CategoryInfo(
-        id: j['id'] as int,
+        id: j['id'] as String,
         name: j['name'] as String,
-        eventIds: [for (final e in (j['event_ids'] as List? ?? const [])) e as int],
+        eventIds: [for (final e in (j['event_ids'] as List? ?? const [])) e as String],
       );
 }
 
 class EventsOverview {
   final List<KasseEvent> events;
   final List<CategoryInfo> categories;
-  final int activeEventId;
+  final String activeEventId;
 
   /// Letzte Buchung, Aufladung oder Auszahlung im aktiven Event — null,
   /// wenn dort noch nichts passiert ist.
@@ -119,7 +119,7 @@ class EventsOverview {
           for (final c in (j['categories'] as List? ?? const []))
             CategoryInfo.fromJson(c as Map<String, dynamic>),
         ],
-        activeEventId: j['active_event_id'] as int,
+        activeEventId: j['active_event_id'] as String,
         lastActivityAt: parseDbTimestamp(j['last_activity_at'] as String?),
         secondsSinceLastActivity: j['seconds_since_last_activity'] as int?,
         openPrintJobs: j['open_print_jobs'] as int,
@@ -185,8 +185,8 @@ class EventStartOptions {
   final String? date;
   final double chipDeposit;
   final bool resetStock;
-  final List<int>? categoryIds;
-  final int? sourceEventId;
+  final List<String>? categoryIds;
+  final String? sourceEventId;
   final String? presetPath;
   final bool includeArticles;
   final bool includeBonLayout;
@@ -252,11 +252,11 @@ class EventsService {
 
   static Future<void> end() => BackendCli.run(['event-end']);
 
-  static Future<void> exportPreset(int eventId, String path) =>
+  static Future<void> exportPreset(String eventId, String path) =>
       BackendCli.run(['preset-export', '$eventId', path]);
 
   /// Gibt die Anzahl exportierter Buchungen zurück.
-  static Future<int> exportCsv(int eventId, String path, {int? periodId}) async {
+  static Future<int> exportCsv(String eventId, String path, {String? periodId}) async {
     final json = await BackendCli.run([
       'csv-export',
       '$eventId',

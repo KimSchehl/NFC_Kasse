@@ -2,8 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nfc_kasse_app/models/cart_item.dart';
 import 'package:nfc_kasse_app/models/product_model.dart';
 
-const _beer = ProductModel(id: 1, name: 'Bier', price: 2.50, categoryId: 1, sortOrder: 0, active: true);
-const _refund = ProductModel(id: 2, name: 'Pfand', price: -2.0, categoryId: 1, sortOrder: 0, active: true);
+const _beer = ProductModel(id: '1', name: 'Bier', price: 2.50, categoryId: '1', sortOrder: 0, active: true);
+const _refund = ProductModel(id: '2', name: 'Pfand', price: -2.0, categoryId: '1', sortOrder: 0, active: true);
 
 void main() {
   group('CartItem.subtotal', () {

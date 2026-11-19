@@ -7,6 +7,7 @@ without a code change.  In development (e.g. Android emulator) the default
 covers localhost only.
 """
 
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -17,11 +18,10 @@ setup_logging()
 
 import device_registry
 import tenants
-import database
 from database import get_db
-from migrations import migrate_v3, run_migrations
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from psycopg.errors import InvalidTextRepresentation
 from fastapi.staticfiles import StaticFiles
 
 from config import ALLOWED_ORIGINS, BAR_CHIP_UID, LEADERBOARD_ENABLED, PAGER_ENABLED, WEBAPP_ROUTE
@@ -35,205 +35,10 @@ if PAGER_ENABLED:
     from routers import pager
 
 
-def _migrate() -> None:
-    """Creates tables added after initial DB setup (safe to run on every start)."""
-    with get_db() as db:
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS user_preference_store (
-                user_id  INTEGER NOT NULL REFERENCES user(id),
-                key      TEXT    NOT NULL,
-                profile  TEXT    NOT NULL DEFAULT '*',
-                value    TEXT    NOT NULL,
-                PRIMARY KEY (user_id, key, profile)
-            )
-        """)
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS help_request (
-                id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                event_id     INTEGER NOT NULL REFERENCES event(id),
-                requester_id INTEGER NOT NULL REFERENCES user(id),
-                status       TEXT    NOT NULL DEFAULT 'active',
-                created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
-            )
-        """)
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS help_response (
-                id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                request_id   INTEGER NOT NULL REFERENCES help_request(id),
-                responder_id INTEGER NOT NULL REFERENCES user(id),
-                response     TEXT    NOT NULL,
-                created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
-                UNIQUE(request_id, responder_id)
-            )
-        """)
-        # Insert 'help.receive' permission node if not yet seeded
-        db.execute("""
-            INSERT OR IGNORE INTO permission_node (id, parent_id, label, node_type, sort_order)
-            VALUES ('help', NULL, 'Notfall', 'group', 5)
-        """)
-        db.execute("""
-            INSERT OR IGNORE INTO permission_node (id, parent_id, label, node_type, sort_order)
-            VALUES ('help.receive', 'help', 'Notfall-Kontakt', 'w', 1)
-        """)
-        # Insert 'bon.drucken' permission node if not yet seeded
-        db.execute("""
-            INSERT OR IGNORE INTO permission_node (id, parent_id, label, node_type, sort_order)
-            VALUES ('bon', NULL, 'Bon-Druck', 'group', 6)
-        """)
-        db.execute("""
-            INSERT OR IGNORE INTO permission_node (id, parent_id, label, node_type, sort_order)
-            VALUES ('bon.drucken', 'bon', 'Bon drucken', 'w', 1)
-        """)
-        # Insert 'kiosk.access' permission node if not yet seeded
-        db.execute("""
-            INSERT OR IGNORE INTO permission_node (id, parent_id, label, node_type, sort_order)
-            VALUES ('kiosk', NULL, 'Kundenterminal', 'group', 7)
-        """)
-        db.execute("""
-            INSERT OR IGNORE INTO permission_node (id, parent_id, label, node_type, sort_order)
-            VALUES ('kiosk.access', 'kiosk', 'Kiosk-Modus', 'w', 1)
-        """)
-        # Insert 'logs.*' permission nodes if not yet seeded
-        db.execute("""
-            INSERT OR IGNORE INTO permission_node (id, parent_id, label, node_type, sort_order)
-            VALUES ('logs', NULL, 'Protokolle', 'group', 8)
-        """)
-        db.execute("""
-            INSERT OR IGNORE INTO permission_node (id, parent_id, label, node_type, sort_order)
-            VALUES ('logs.view', 'logs', 'Protokolle einsehen', 'r', 1)
-        """)
-        db.execute("""
-            INSERT OR IGNORE INTO permission_node (id, parent_id, label, node_type, sort_order)
-            VALUES ('logs.configure', 'logs', 'Protokoll-Level verwalten', 'w', 2)
-        """)
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS device_log_level (
-                device_id     TEXT PRIMARY KEY,
-                label         TEXT,
-                platform      TEXT,
-                forced_level  TEXT,
-                updated_by    INTEGER REFERENCES user(id),
-                updated_at    TEXT
-            )
-        """)
-        # customer_name column — added for kiosk self-service naming
-        try:
-            db.execute("ALTER TABLE customer ADD COLUMN customer_name TEXT")
-        except Exception:
-            pass  # column already exists
-        # points per product — leaderboard scoring (kept even when LEADERBOARD=false,
-        # so data is preserved when the feature is toggled on/off)
-        try:
-            db.execute("ALTER TABLE product ADD COLUMN points INTEGER NOT NULL DEFAULT 0")
-        except Exception:
-            pass
-        # stock tracking + change timestamp (for the /api/products/changed sync
-        # endpoint). No DEFAULT possible via ALTER TABLE ADD COLUMN in SQLite —
-        # existing rows get NULL, which /changed correctly treats as "never
-        # changed" until the next save touches them.
-        try:
-            db.execute("ALTER TABLE product ADD COLUMN stock INTEGER")
-        except Exception:
-            pass
-        try:
-            db.execute("ALTER TABLE product ADD COLUMN updated_at TEXT")
-        except Exception:
-            pass
-        # requires_pager per product — pager add-on (kept even when PAGER=false,
-        # same reasoning as the points/leaderboard column above)
-        try:
-            db.execute("ALTER TABLE product ADD COLUMN requires_pager INTEGER NOT NULL DEFAULT 0")
-        except Exception:
-            pass
-        # group_id — self-referential "this row is an option of that base article"
-        # link (e.g. "Currywurst mit Pommes" -> "Currywurst"). See init_db.py.
-        try:
-            db.execute("ALTER TABLE product ADD COLUMN group_id INTEGER REFERENCES product(id)")
-        except Exception:
-            pass
-        try:
-            db.execute("ALTER TABLE product ADD COLUMN color TEXT")
-        except Exception:
-            pass
-        try:
-            db.execute("ALTER TABLE product ADD COLUMN is_pfand INTEGER NOT NULL DEFAULT 0")
-        except Exception:
-            pass
-        # deleted — soft-delete for users, mirrors product.deleted (rows stay
-        # for sale.booked_by/user_permission.granted_by/etc. audit trails).
-        # Deleting a user also renames it (see routers/users.py's delete_user)
-        # rather than relaxing the UNIQUE(tenant_id, username) constraint,
-        # which SQLite can't drop without rebuilding the table -- risky while
-        # foreign_keys=ON and half the schema references user(id).
-        try:
-            db.execute("ALTER TABLE user ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0")
-        except Exception:
-            pass
-        # leaderboard_score table — full add-on, separate from customer table
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS leaderboard_score (
-                customer_id INTEGER PRIMARY KEY REFERENCES customer(id),
-                points      INTEGER NOT NULL DEFAULT 0,
-                opt_in      INTEGER NOT NULL DEFAULT 0,
-                updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
-            )
-        """)
-        # Migrate legacy columns from customer table (if they existed) into leaderboard_score
-        try:
-            db.execute("""
-                INSERT OR IGNORE INTO leaderboard_score (customer_id, points, opt_in)
-                SELECT id,
-                       COALESCE((
-                           SELECT SUM(CASE WHEN s.cancelled=0 THEN p.points ELSE 0 END)
-                           FROM sale s JOIN product p ON s.product_id = p.id
-                           WHERE s.customer_id = customer.id
-                       ), 0) - COALESCE(points_earned_before_reset, 0),
-                       COALESCE(leaderboard_opt_in, 0)
-                FROM customer
-                WHERE leaderboard_opt_in = 1
-            """)
-        except Exception:
-            pass  # old columns may not exist on fresh installs
-        run_migrations(db, bar_chip_uid=BAR_CHIP_UID)
-        # Virtual BAR chip for cash sales — one per Veranstalter.
-        tenants.ensure_bar_chips(db, BAR_CHIP_UID)
-        # Print job queue table
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS print_job (
-                id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                event_id     INTEGER NOT NULL REFERENCES event(id),
-                sale_id      INTEGER REFERENCES sale(id),
-                username     TEXT    NOT NULL,
-                event_name   TEXT    NOT NULL,
-                product_name TEXT    NOT NULL,
-                price        REAL    NOT NULL,
-                status       TEXT    NOT NULL DEFAULT 'pending',
-                error_msg    TEXT,
-                created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
-                processed_at TEXT
-            )
-        """)
-        # Pager order table — pager add-on, see PAGER_ENABLED
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS pager_order (
-                id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                event_id     INTEGER NOT NULL REFERENCES event(id),
-                created_by   INTEGER NOT NULL REFERENCES user(id),
-                item_summary TEXT    NOT NULL,
-                pager_number INTEGER NOT NULL,
-                sale_ids     TEXT,
-                status       TEXT    NOT NULL DEFAULT 'open',
-                created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
-                done_at      TEXT
-            )
-        """)
-        db.execute("CREATE INDEX IF NOT EXISTS idx_pager_order_operator ON pager_order(created_by, event_id, status)")
-    # Own connection (foreign keys off for the table rebuilds), so only after
-    # the block above has committed.
-    migrate_v3(database.DB_PATH)
+with get_db() as _db:
+    # Virtual BAR chip for cash sales — one per Veranstalter.
+    tenants.ensure_bar_chips(_db, BAR_CHIP_UID)
 
-
-_migrate()
 if LEADERBOARD_ENABLED:
     leaderboard.check_and_notify()
 
@@ -291,6 +96,14 @@ async def _event_changed(_request, exc: EventChangedError):
     # "detail" is what every client already shows as the error text; "code"
     # lets the app react (reload articles/rights) without parsing that text.
     return JSONResponse(status_code=409, content={"detail": str(exc), "code": "event_changed"})
+
+
+@app.exception_handler(InvalidTextRepresentation)
+async def _malformed_id(request, exc):
+    # An id that isn't a UUID (e.g. an old numeric id from a stale client)
+    # can't match any row: same answer as an unknown id, not a 500.
+    logging.getLogger(__name__).warning("Malformed id in %s %s: %s", request.method, request.url.path, exc)
+    return JSONResponse(status_code=404, content={"detail": "Nicht gefunden"})
 
 
 # Start the background print-queue worker (daemon thread — stops with the server).

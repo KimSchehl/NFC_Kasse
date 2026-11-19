@@ -58,22 +58,36 @@ os.environ.setdefault("PAGER_LICENSE_KEY", _sign_test_license("pager"))
 os.environ.setdefault("LEADERBOARD_LICENSE_KEY", _sign_test_license("leaderboard"))
 
 
-def add_category(conn, name: str, event_id: int | None = None) -> int:
+# The seeded rows, for SQL in tests (ids are UUIDs; uuidv7 sorts by creation).
+TENANT_SQL = "(SELECT id FROM tenant ORDER BY id LIMIT 1)"
+ADMIN_SQL = "(SELECT id FROM app_user WHERE username = 'admin' ORDER BY id LIMIT 1)"
+FEST_SQL = "(SELECT id FROM event WHERE is_intern = 0 ORDER BY id LIMIT 1)"
+
+
+def seeded_id(sql: str) -> str:
+    """Id of a seeded row, e.g. seeded_id(ADMIN_SQL)."""
+    import database
+
+    with database.get_db() as conn:
+        return conn.execute("SELECT " + sql).fetchone()[0]
+
+
+def add_category(conn, name: str, event_id: str | None = None) -> str:
     """A category of tenant 1, switched on in `event_id` (default: the
     active event). Categories belong to the tenant since schema v3."""
     if event_id is None:
         event_id = conn.execute("SELECT id FROM event WHERE active = 1").fetchone()[0]
-    cat_id = conn.execute("INSERT INTO category (tenant_id, name) VALUES (1, ?)", (name,)).lastrowid
+    cat_id = conn.execute(f"INSERT INTO category (tenant_id, name) VALUES ({TENANT_SQL}, ?) RETURNING id", (name,)).lastrowid
     conn.execute("INSERT INTO event_category (event_id, category_id) VALUES (?, ?)", (event_id, cat_id))
     return cat_id
 
 
-def add_product(conn, cat_id: int, name: str, price: float, event_id: int | None = None, **cols) -> int:
+def add_product(conn, cat_id: str, name: str, price: float, event_id: str | None = None, **cols) -> str:
     """An article in `cat_id`; a base article is switched on in `event_id`
     (default: the active event), an option (group_id=...) follows its base."""
     names = ["category_id", "name", "price", *cols]
     p_id = conn.execute(
-        f"INSERT INTO product ({', '.join(names)}) VALUES ({', '.join('?' * len(names))})",
+        f"INSERT INTO product ({', '.join(names)}) VALUES ({', '.join('?' * len(names))}) RETURNING id",
         (cat_id, name, price, *cols.values()),
     ).lastrowid
     if cols.get("group_id") is None:
@@ -83,42 +97,52 @@ def add_product(conn, cat_id: int, name: str, price: float, event_id: int | None
     return p_id
 
 
-@pytest.fixture
-def db(tmp_path, monkeypatch):
-    """Fresh isolated SQLite database for each test."""
-    db_file = str(tmp_path / "test.db")
+# PostgreSQL server for the tests: a role that may create databases
+# (see docs/POSTGRES_PLAN.md). Every test gets its own copy of a template
+# database that is migrated and seeded once per run.
+TEST_PG_URL = os.environ.get("TEST_PG_URL", "postgresql://nfc_kasse_dev:nfc_kasse_dev@localhost:5432/")
+_TEMPLATE_DB = "nfc_kasse_test_template"
+_TEST_DB = "nfc_kasse_test"
 
+
+def _pg_admin(sql: str) -> None:
+    import psycopg
+
+    with psycopg.connect(TEST_PG_URL + "postgres", autocommit=True) as conn:
+        conn.execute(sql)
+
+
+@pytest.fixture(scope="session")
+def _template_db():
     import database
-    import init_db as idb
+    import init_db
 
-    monkeypatch.setattr(database, "DB_PATH", db_file)
-    monkeypatch.setattr(idb, "DB_PATH", db_file)
-
-    conn = idb.init_db()
-    idb.seed_permissions(conn)
-    idb.seed_default_data(conn)
-    conn.close()
-
-    return db_file
+    _pg_admin(f"DROP DATABASE IF EXISTS {_TEMPLATE_DB} WITH (FORCE)")
+    _pg_admin(f"CREATE DATABASE {_TEMPLATE_DB}")
+    database.DATABASE_URL = TEST_PG_URL + _TEMPLATE_DB
+    init_db.setup()
+    database.close_pool()
+    # Background threads (print worker, ...) outlive a test; they must never
+    # reconnect to the template, or copying it fails.
+    database.DATABASE_URL = TEST_PG_URL + _TEST_DB
+    yield _TEMPLATE_DB
+    database.close_pool()
+    _pg_admin(f"DROP DATABASE IF EXISTS {_TEST_DB} WITH (FORCE)")
+    _pg_admin(f"DROP DATABASE IF EXISTS {_TEMPLATE_DB} WITH (FORCE)")
 
 
 @pytest.fixture
-def legacy_v2_db(tmp_path, monkeypatch):
-    """An isolated database in the frozen v2 schema (before Veranstalter
-    owned categories and rights) — for the migration tests."""
-    db_file = str(tmp_path / "legacy.db")
-
+def db(_template_db, monkeypatch):
+    """Fresh isolated database for each test; returns its URL."""
     import database
-    from tests import legacy_init_db_v2 as legacy
 
-    monkeypatch.setattr(database, "DB_PATH", db_file)
-    monkeypatch.setattr(legacy, "DB_PATH", db_file)
-
-    conn = legacy.init_db()
-    legacy.seed_permissions(conn)
-    legacy.seed_default_data(conn)
-    conn.close()
-    return db_file
+    database.close_pool()
+    _pg_admin(f"DROP DATABASE IF EXISTS {_TEST_DB} WITH (FORCE)")
+    _pg_admin(f"CREATE DATABASE {_TEST_DB} TEMPLATE {_template_db}")
+    database.close_pool()  # a background thread may have reopened it during the drop
+    monkeypatch.setattr(database, "DATABASE_URL", TEST_PG_URL + _TEST_DB)
+    yield database.DATABASE_URL
+    database.close_pool()
 
 
 @pytest.fixture

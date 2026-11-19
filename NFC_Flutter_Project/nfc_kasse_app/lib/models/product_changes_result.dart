@@ -4,7 +4,7 @@ import 'product_model.dart';
 /// catalog sync poll (see `ProductSyncNotifier` in providers.dart).
 class ProductChangesResult {
   final List<ProductModel> products;
-  final List<int> removedIds;
+  final List<String> removedIds;
   final DateTime checkedAt;
 
   const ProductChangesResult({
@@ -17,7 +17,7 @@ class ProductChangesResult {
         products: (j['products'] as List)
             .map((p) => ProductModel.fromJson(p as Map<String, dynamic>))
             .toList(),
-        removedIds: (j['removed_ids'] as List).cast<int>(),
+        removedIds: (j['removed_ids'] as List).cast<String>(),
         checkedAt: DateTime.parse(j['checked_at'] as String),
       );
 }

@@ -36,7 +36,7 @@ class PrintService {
   /// Polls the queued [jobIds] until the printer has handled all of them or
   /// [timeout] passes. Transient network errors are retried until the deadline.
   Future<PrintResult> waitForPrintJobs(
-    List<int> jobIds, {
+    List<String> jobIds, {
     Duration timeout = const Duration(seconds: 10),
   }) async {
     final deadline = DateTime.now().add(timeout);

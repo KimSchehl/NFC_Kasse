@@ -157,7 +157,7 @@ class _SendHelpDialogState extends ConsumerState<_SendHelpDialog> {
 // ---------------------------------------------------------------------------
 
 class _ActiveRequestDialog extends ConsumerStatefulWidget {
-  final int requestId;
+  final String requestId;
   const _ActiveRequestDialog({required this.requestId});
 
   @override

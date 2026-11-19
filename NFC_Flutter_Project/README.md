@@ -9,7 +9,7 @@ Each topic has exactly one place. The code itself is the final word; the documen
 | Topic | Single source |
 |---|---|
 | Architecture, permission model, conventions, dev commands | [`../CLAUDE.md`](../CLAUDE.md) |
-| Database schema and design decisions | `backend/init_db.py` (commented `CREATE TABLE`s, permission tree in `seed_permissions()`), upgrades of existing databases in `backend/migrations.py` |
+| Database schema and design decisions | `backend/alembic/versions/` (baseline with commented `CREATE TABLE`s), seed data and permission tree in `backend/init_db.py` |
 | HTTP API | Swagger UI of the running backend at `http://<server>:8000/docs` (generated from the routers) |
 | Running the tests | [`TESTING.md`](TESTING.md) |
 | Packaging (PyInstaller, Inno Setup) | [`packaging/README.md`](packaging/README.md) |
@@ -25,7 +25,7 @@ Each topic has exactly one place. The code itself is the final word; the documen
 
 ```
 NFC_Flutter_Project/
-├── backend/            FastAPI + SQLite backend, Windows service, admin CLI (admin_cli.py)
+├── backend/            FastAPI + PostgreSQL backend, Windows service, admin CLI (admin_cli.py)
 ├── nfc_kasse_app/      Flutter POS app (Android, web build served by the backend under /webapp)
 ├── nfc_kasse_admin/    Flutter Windows admin tool (service, Veranstalter, Feste, config, bon layout, backups)
 ├── license_tool/       Generates licence keys for Pager / Leaderboard

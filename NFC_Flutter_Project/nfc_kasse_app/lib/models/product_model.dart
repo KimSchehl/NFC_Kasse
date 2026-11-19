@@ -8,10 +8,10 @@ import '../utils/color_hex.dart';
 /// [defaultColor] is the button color every cashier sees; a cashier can
 /// override it on their own device, see [UserPreferences].
 class ProductModel {
-  final int id;
+  final String id;
   final String name;
   final double price;
-  final int categoryId;
+  final String categoryId;
   final int sortOrder;
   final bool active;
   final bool isPayout;
@@ -20,7 +20,7 @@ class ProductModel {
   final int points;
   final int? stock;
   final bool requiresPager;
-  final int? groupId;
+  final String? groupId;
   final String? color;
 
   /// Switched on in the running fest (an option follows its base article).
@@ -47,10 +47,10 @@ class ProductModel {
   });
 
   factory ProductModel.fromJson(Map<String, dynamic> j) => ProductModel(
-        id: j['id'] as int,
+        id: j['id'] as String,
         name: j['name'] as String,
         price: (j['price'] as num).toDouble(),
-        categoryId: j['category_id'] as int,
+        categoryId: j['category_id'] as String,
         sortOrder: j['sort_order'] as int? ?? 0,
         active: j['active'] as bool? ?? true,
         isPayout: j['is_payout'] as bool? ?? false,
@@ -59,7 +59,7 @@ class ProductModel {
         points: j['points'] as int? ?? 0,
         stock: j['stock'] as int?,
         requiresPager: j['requires_pager'] as bool? ?? false,
-        groupId: j['group_id'] as int?,
+        groupId: j['group_id'] as String?,
         color: j['color'] as String?,
         inEvent: j['in_event'] as bool? ?? true,
       );

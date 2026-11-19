@@ -1,104 +1,122 @@
-# Plan: PostgreSQL-Unterstützung (Vorbereitung Cloud-SaaS)
+# Plan: Umstieg auf PostgreSQL (Vorbereitung Cloud-SaaS)
 
-Stand: 17. November 2026 · Vorschlag, noch nichts umgesetzt
+Stand: 19. November 2026 · Phasen 1–6 fertig (Version 1.1.0, nicht committet). Nächster großer Schritt: Cloud-Betrieb (Version 1.2.0)
 
 ## Ziel
 
-Das Backend läuft auf **beiden** Datenbanken mit demselben Code:
+Das Backend läuft **nur noch auf PostgreSQL**, lokal wie später in der Cloud. SQLite fällt weg.
 
-- **SQLite** bleibt für die lokale Windows-Installation (Installer, Dienst, Sicherungen, Verwaltungstool). Für Veranstalter vor Ort ändert sich nichts.
-- **PostgreSQL** kommt dazu, für den späteren Cloud-Betrieb mit hunderten Veranstaltern in einer Datenbank.
+- **Lokal:** Der Installer bringt PostgreSQL mit und richtet es als eigenen Windows-Dienst ein. Für den Veranstalter vor Ort bleibt die Bedienung gleich.
+- **Cloud (später):** dieselbe Software und dasselbe Schema, mit hunderten Veranstaltern in einer Datenbank.
+- **Wechsel lokal ↔ Cloud:** Ein Veranstalter kann später per Funktion umziehen, ohne dass er exportieren und importieren muss. Dafür haben alle Datensätze weltweit eindeutige IDs (UUID). Der Umzug kopiert dann einfach alle Zeilen seines Veranstalters in die andere Datenbank.
+- **Später, eigenes Projekt:** ein Import-Tool, das eine alte lokale `kasse.db` (SQLite) einmalig in PostgreSQL überführt.
 
-Welche Datenbank genutzt wird, entscheidet eine Einstellung in `config.env`, z. B. `DATABASE_URL=postgresql://…`. Ohne sie bleibt alles beim heutigen `kasse.db`.
+## Entscheidungen (Kim, 17.11.2026)
 
-Nicht Teil dieses Plans: Cloud-Login mit Veranstalter-Auswahl, Hosting, Abrechnung, Hybrid-Login in der App (siehe `ROADMAP.md`).
-
-## Ausgangslage (Analyse)
-
-Das Backend benutzt `sqlite3` direkt mit handgeschriebenem SQL, ohne ORM. Alle Zugriffe laufen über `database.get_db()` (rund 100 Aufrufe, 21 davon mit `exclusive=True`). Die Mandantentrennung über `tenant_id` aus dem Token ist bereits gebaut.
-
-Was heute nur auf SQLite läuft:
-
-| Stelle | Umfang | Lösung |
+| # | Thema | Entscheidung |
 | --- | --- | --- |
-| Platzhalter `?` | ~300 Abfragen | bleiben, die DB-Schicht übersetzt sie für PostgreSQL |
-| `datetime('now')` in SQL und als Spalten-Default | ~45 Stellen | Zeit kommt aus Python als Parameter (UTC); Defaults im Schema dialektneutral |
-| `datetime(x,'localtime')`, `strftime('%s', …)` | 4 Stellen (`event_lifecycle.py`) | in Python rechnen |
-| `cursor.lastrowid` | 21 Stellen | `INSERT … RETURNING id` (SQLite 3.50 kann das auch) |
-| `INSERT OR IGNORE` / `INSERT OR REPLACE` | 28 Stellen | `ON CONFLICT … DO NOTHING / DO UPDATE` (beide DBs) |
-| `BEGIN EXCLUSIVE` | `get_db(exclusive=True)` | siehe Entscheidung 4 |
-| `PRAGMA`, `sqlite_master`, `AUTOINCREMENT` | Schema, Migrationen, Backup | nur noch im SQLite-Zweig bzw. im Schema-Modul |
-| Tabelle `user` | ~30 Abfragen + Tests | `user` ist in PostgreSQL ein reserviertes Wort, siehe Entscheidung 3 |
-| `except sqlite3.OperationalError` | `topup.py`, `admin_cli.py` | allgemeine Fehlerklasse der DB-Schicht |
-| `GROUP BY` | 3 Abfragen (`stats.py`, `leaderboard.py`) | PostgreSQL ist strenger; die Testsuite auf PostgreSQL findet das |
-| Geld als `REAL`, Zeit als `TEXT`, Wahrheitswerte als `INTEGER` | ganzes Schema | siehe Entscheidung 5 |
+| 0 | Datenbank | Nur PostgreSQL, auch lokal |
+| 1 | Zugriff | Treiber `psycopg` (Version 3) mit Verbindungspool, SQL bleibt handgeschrieben. **Alembic** übernimmt die Schemaänderungen und ersetzt `user_version` und `migrations.py` |
+| 2 | Schema | Wird einmal definiert, als Alembic-Basis-Migration. Die Altlasten fallen weg: `migrations.py`, `main._migrate()`, `migrate.py`, `tests/legacy_init_db_v2.py`, `test_v3_migration.py` |
+| 3 | Tabelle `user` | wird zu `app_user` (`user` ist in PostgreSQL ein reserviertes Wort) |
+| 4 | Sperre beim Buchen | `get_db(exclusive=True)` sperrt nur den eigenen Veranstalter (`pg_advisory_xact_lock`). Buchungen eines Veranstalters laufen nacheinander wie heute, verschiedene Veranstalter laufen parallel |
+| 5 | Typen | Geld `NUMERIC(10,2)`, an den Code wird es weiter als `float` gegeben. Zeit `TIMESTAMPTZ` (UTC). Wahrheitswerte bleiben `SMALLINT` 0/1. API und App bleiben gleich |
+| 6 | IDs | **UUID** (Version 7, zeitlich sortierbar) als Primärschlüssel aller Tabellen, lokal und in der Cloud. App und Admin-Tool behandeln IDs als Text |
+| 6b | PostgreSQL-Version | **18** (hat `uuidv7()` eingebaut), lokal im Installer und auf dem Entwicklungs-PC |
+| 6c | Umzug-Vorbereitung | Jede Veranstalter-Tabelle hat `tenant_id` und `updated_at` (per Trigger). Kein Live-Abgleich, deshalb kein Lösch-Protokoll (19.11.2026) |
+| 7 | Mandantentrennung | Alles in einer Datenbank, getrennt über `tenant_id`. Jede Tabelle mit Veranstalter-Daten bekommt eine eigene `tenant_id`, auch `sale`, `topup`, `print_job` usw. Das braucht man für den Umzug und für Row-Level-Security in der Cloud |
 
-Altlasten, die weg können, weil es keine älteren Installationen gibt: `migrations.py` (v2 → v3), `main._migrate()` (`ALTER TABLE` / `CREATE TABLE IF NOT EXISTS` beim Start), `migrate.py`, `tests/legacy_init_db_v2.py`, `test_v3_migration.py`. Das spart einen zweiten Schema-Weg, der sonst für beide Datenbanken gepflegt werden müsste.
+## Was sich im Code ändert (Analyse)
 
-SQLite-only bleiben dürfen: `db_backup.py` (Dateisicherung), Wiederherstellung und die Sicherungsseite im Verwaltungstool. In der Cloud sichert der PostgreSQL-Anbieter bzw. `pg_dump`.
-
-## Entscheidungen für Kim
-
-### 1. Datenbank-Schicht
-
-- **A (Empfehlung): SQLAlchemy Core + Alembic, SQL bleibt handgeschrieben.** `get_db()` liefert weiter ein Objekt mit `execute()`/`fetchone()`/Zeilen mit `row["spalte"]`, darunter steckt eine SQLAlchemy-Engine (Verbindungspool für die Cloud, Dialekte, ausgereifter PostgreSQL-Treiber psycopg 3). Die Router ändern sich kaum.
-- B: eigener dünner Adapter direkt auf `sqlite3` / `psycopg`. Weniger Abhängigkeiten, aber Pool, Migrationen und Dialektunterschiede baut man selbst nach.
-- C: ORM-Umbau aller Router. Sauber, aber faktisch ein Neuschreiben von 10 000 Zeilen Backend. Nicht empfohlen.
-
-### 2. Schema und Migrationen
-
-- **Empfehlung:** Das Schema wird **einmal** als SQLAlchemy-`Table`-Definitionen beschrieben (neues Modul `schema.py`, ersetzt die `CREATE TABLE`-Texte in `init_db.py`). Daraus entstehen beide Datenbanken. Künftige Änderungen laufen über **Alembic**-Migrationen (für SQLite im „batch mode“). Startpunkt ist eine Basis-Migration „v4“, alle Altlasten oben fallen weg.
-- `init_db.py` bleibt der Einstieg (legt Schema an, füllt Rechte-Baum, Admin, Intern-Fest, BAR-Chip), aber ohne eigenes DDL.
-- `CLAUDE.md` wird angepasst: Schema-Quelle ist dann `schema.py` + `alembic/versions/`.
-
-### 3. Tabelle `user`
-
-- **Empfehlung: umbenennen in `app_user`.** Einmal suchen-und-ersetzen in Backend und Tests, danach nie wieder Anführungszeichen-Fallen.
-- Alternative: überall `"user"` in Anführungszeichen schreiben. Funktioniert in beiden DBs, wird aber bei jeder neuen Abfrage vergessen.
-
-### 4. Sperren bei Buchungen (heute `BEGIN EXCLUSIVE`)
-
-`BEGIN EXCLUSIVE` sperrt die ganze Datenbank. In der Cloud würde ein Bezahlvorgang bei Veranstalter A die Kassen aller anderen Veranstalter blockieren.
-
-- **Empfehlung:** `get_db(exclusive=True)` bleibt als Aufruf gleich. Auf SQLite weiter `BEGIN EXCLUSIVE` (lokal ist das richtig und bewährt). Auf PostgreSQL sperrt es nur den eigenen Veranstalter (`pg_advisory_xact_lock(tenant_id)`): alle Buchungen eines Veranstalters laufen nacheinander wie heute, verschiedene Veranstalter parallel. Dafür bekommt `get_db` die `tenant_id` mitgegeben.
-- Später möglich, wenn ein einzelner großer Veranstalter zu viele gleichzeitige Buchungen hat: Zeilensperren (`SELECT … FOR UPDATE` auf Chip und Lagerbestand). Das ist feiner, aber jede Buchungsstelle muss einzeln geprüft werden. Nicht jetzt.
-
-### 5. Datentypen
-
-- **Geld:** heute `REAL` (Euro als Kommazahl). **Empfehlung:** in PostgreSQL `NUMERIC(10,2)`, die DB-Schicht gibt weiter `float` an den Code zurück, API und App bleiben gleich. Ein Umstieg auf ganze Cent wäre die sauberste Lösung, betrifft aber auch App und Admin-Tool und ist ein eigenes Thema.
-- **Zeit:** heute `TEXT` mit UTC. **Empfehlung:** PostgreSQL `TIMESTAMPTZ`, SQLite bleibt Text. Die DB-Schicht liefert in beiden Fällen dasselbe Format (`"YYYY-MM-DD HH:MM:SS"`, UTC), damit Storno-Zeitfenster, Artikel-Sync und CSV-Export unverändert funktionieren.
-- **Wahrheitswerte:** **Empfehlung:** bleiben `INTEGER` 0/1 (in PostgreSQL `SMALLINT`). `BOOLEAN` würde jede Abfrage mit `= 1` brechen und bringt keinen Nutzen.
-
-### 6. Mandantentrennung in PostgreSQL
-
-- **Empfehlung (jetzt):** eine Datenbank, ein Schema, Trennung über `tenant_id` wie bereits gebaut. Die Tests prüfen weiter, dass Veranstalter sich nicht sehen.
-- **Später (Cloud-Phase):** PostgreSQL Row-Level-Security als zweites Sicherheitsnetz (`SET app.tenant_id` pro Anfrage, Richtlinie pro Tabelle). Dafür bräuchten Tabellen ohne eigene `tenant_id` (z. B. `sale`, `topup`, `print_job`, die über `event_id` dranhängen) eine eigene Spalte. Nicht jetzt, aber das Schema wird so angelegt, dass es nachrüstbar ist.
-- Schema- oder Datenbank-pro-Veranstalter: bei hunderten Veranstaltern nicht sinnvoll (Migrationen hundertfach).
-
-### 7. Tests
-
-- **Empfehlung:** dieselbe pytest-Suite läuft gegen beide Datenbanken. Standard bleibt SQLite (schnell, ohne Installation). Mit `TEST_DATABASE_URL=postgresql://…` laufen die Tests gegen PostgreSQL. Auf diesem PC ist weder PostgreSQL noch Docker installiert. Kim müsste eins davon einrichten (PostgreSQL 16 für Windows reicht), sonst kann ich die PostgreSQL-Seite nicht prüfen.
+| Stelle | Umfang | Änderung |
+| --- | --- | --- |
+| `database.py` | 1 Datei | psycopg-Pool; Zeilen bleiben über `row["spalte"]` zugreifbar; Platzhalter `?` werden zentral übersetzt, damit ~300 Abfragen unverändert bleiben; `DATABASE_URL` in `config.env` |
+| `datetime('now')`, `datetime(x,'localtime')`, `strftime` | ~50 Stellen | `now()` bzw. Umrechnung in Python |
+| `cursor.lastrowid` | 21 Stellen | entfällt, die UUID wird in Python erzeugt und mitgegeben |
+| `INSERT OR IGNORE` / `OR REPLACE` | 28 Stellen | `ON CONFLICT …` |
+| `sqlite3.OperationalError` | `topup.py`, `admin_cli.py` | psycopg-Fehlerklassen |
+| Tabelle `user` | ~30 Abfragen + Tests | `app_user` |
+| `GROUP BY` | 3 Abfragen | PostgreSQL ist strenger, die Tests zeigen, wo es hakt |
+| Integer-IDs in Python (`int(...)`, Pfad-Parameter `{id}: int`) | Router, Schemas | `UUID` |
+| Flutter-App | ~12 Model-Felder + Provider, Präferenz-Schlüssel `category.color.{id}`, `category.order` | `int id` → `String id` |
+| Admin-Tool | Dart-Seiten, die IDs verwenden | `String`; Sicherungsseite auf `pg_dump`/`pg_restore` |
+| `db_backup.py` | ganze Datei | `pg_dump`/`pg_restore` statt Dateikopie |
+| Installer | Inno Setup, WinSW | PostgreSQL-Binärdateien mitliefern, beim ersten Start `initdb`, eigener Dienst, eigener Port (z. B. 5433 statt 5432, um Konflikte zu vermeiden), Datenbank-Passwort zufällig in `config.env` |
+| Tests | conftest | Statt einer Temp-SQLite-Datei bekommt jeder Test eine frische Datenbank aus einer Vorlage (`CREATE DATABASE … TEMPLATE`). Dafür muss PostgreSQL auf dem Entwicklungs-PC installiert sein |
 
 ## Phasen
 
 | # | Phase | Ergebnis |
 | --- | --- | --- |
-| 1 | Altlasten entfernen | `migrations.py`, `main._migrate()`, `migrate.py`, Legacy-Tests weg; `user` → `app_user`; Tests grün auf SQLite |
-| 2 | Dialektneutrales SQL | `datetime('now')`, `lastrowid`, `INSERT OR …`, `localtime`/`strftime` ersetzt; Tests grün auf SQLite. Danach läuft nichts mehr nur auf SQLite außer Schema, Backup und Sperre |
-| 3 | DB-Schicht | `database.py` auf SQLAlchemy-Engine, `DATABASE_URL`, Sperre je Dialekt, eine Fehlerklasse statt `sqlite3.OperationalError`; Tests grün auf SQLite |
-| 4 | Schema + Alembic | `schema.py`, Basis-Migration, `init_db.py` ohne DDL; Installer/PyInstaller bekommen Alembic + Migrationsdateien mit |
-| 5 | PostgreSQL-Lauf | Tests gegen PostgreSQL, Abweichungen (GROUP BY, Typen) beheben; `CLAUDE.md`/`README.md` aktualisieren |
+| 1 | **Machbarkeit Installer** (zuerst, größtes Risiko) | Die Installer-EXE enthält alles: PostgreSQL-18-Binärdateien, beim Setup `initdb` in `ProgramData`, eigener Dienst (`pg_ctl register` oder WinSW), Port 5433, zufälliges Passwort in `config.env`. Dienst startet auf dem Thin Client, RAM- und Platzbedarf gemessen, Deinstallation fragt, ob die Daten bleiben |
+| 2 | Altlasten raus, `user` → `app_user` | Tests grün (noch auf SQLite) |
+| 3 | DB-Schicht + Alembic-Basis-Schema | `database.py` auf psycopg, alle SQLite-Funktionen ersetzt; Tests grün auf PostgreSQL |
+| 4 | UUID + `tenant_id` überall | Backend und Tests auf UUID |
+| 5 | App + Admin-Tool | IDs als Text, Sicherung/Wiederherstellung über `pg_dump` |
+| 6 | Doku | `CLAUDE.md`, `README.md`, Bedieneranleitung (Sicherungen) |
 
-Jede Phase hält die lokale Installation lauffähig und ist für sich committbar. Phase 1 und 2 sind auch ohne PostgreSQL nützlich und risikoarm.
+Kim baut und testet selbst (Flutter, PyInstaller, Inno Setup). Jede Phase ist für sich committbar. Ab Phase 3 läuft das Backend nur noch mit PostgreSQL.
+
+## Cloud-Ausblick (nicht Teil dieses Umbaus)
+
+**Konten.** Es gibt drei Ebenen:
+1. **Plattform-Admin** (Kim): verwaltet Veranstalter, Lizenzen und Abos.
+2. **Veranstalter-Konto** (Inhaber): meldet sich im Web-Portal mit E-Mail und Passwort an. Zwei-Faktor-Anmeldung per Authenticator-App (TOTP) ist Pflicht, Passkeys kommen später.
+3. **Kassen-Benutzer** (heutige `app_user`): Benutzername und Passwort wie heute, ohne 2FA, weil das an der Kasse unpraktisch ist. Dafür wird jedes Gerät einmal per QR-Code aus dem Portal registriert. Damit weiß das Gerät, zu welchem Veranstalter es gehört (das löst den fehlenden Veranstalter-Wähler beim Login), und ein gestohlenes Passwort allein reicht nicht.
+
+**Web-Portal.** Zum Beispiel `cloud.nfc-kasse.de` für das Portal (das, was heute das Admin-Tool lokal macht: Feste, Benutzer, Sicherungen, Abo) und `api.nfc-kasse.de` für die Geräte. Die heutigen Admin-CLI-Befehle werden dafür zu geschützten HTTP-Endpunkten für den Inhaber.
+
+**Datenbank.** Dasselbe Schema wie lokal, dazu Tabellen für Inhaber-Konten, Geräte-Registrierung und Abos.
+
+**Absicherung.**
+- Die Datenbank ist **nie direkt aus dem Internet erreichbar**. Nur das Backend spricht mit ihr, im privaten Netz des Anbieters. Port 5432 bleibt nach außen zu.
+- HTTPS überall (Reverse-Proxy, Let's Encrypt).
+- Das Backend nutzt einen Datenbank-Benutzer mit minimalen Rechten. Row-Level-Security ist das zweite Netz: Selbst ein vergessener `tenant_id`-Filter liefert keine fremden Daten.
+- Login-Sperre nach Fehlversuchen und Rate-Limits auf der API.
+- Geheimnisse liegen in einem Secret-Store, nicht im Code. Updates kommen regelmäßig, Logs werden überwacht.
+- Sicherungen sind verschlüsselt und liegen getrennt vom Server.
+- DSGVO: Hosting in Deutschland oder der EU, mit Auftragsverarbeitungsvertrag beim Anbieter.
+
+**Ausfallsicherheit.**
+- PostgreSQL läuft mit einem Primärserver und zwei Standby-Servern in drei Rechenzentren (Zonen). Mindestens ein Standby wird *synchron* beschrieben, damit bei einem Ausfall keine Buchung verloren geht.
+- Fällt der Primärserver aus, übernimmt ein Standby automatisch. Das dauert etwa 10 bis 30 Sekunden, nicht null. Die App wiederholt Anfragen in dieser Zeit.
+- Gleichzeitiges Schreiben an drei Standorten (Multi-Master) ist bei Guthaben nicht sinnvoll, weil Konflikte Geld kosten.
+- Zusätzlich gibt es Sicherungen mit Wiederherstellung auf jeden Zeitpunkt (PITR). Replikation kopiert auch Fehler, Sicherungen nicht.
+- Empfehlung: ein **verwaltetes PostgreSQL mit HA-Option** bei einem deutschen oder EU-Anbieter, statt das selbst mit Patroni zu betreiben. Der Backend-Server läuft ebenfalls mehrfach hinter einem Load-Balancer.
+- **Größtes reales Risiko ist das Internet am Festplatz**, nicht das Rechenzentrum. Eine reine Cloud-Kasse steht still, wenn das Netz weg ist. Wer davon abhängig ist, nimmt den Lokal-Betrieb.
+
+**Betriebsarten (frei wählbar beim Kauf oder bei der Miete).**
+
+| Art | Wo laufen die Tablets hin | Ohne Internet |
+| --- | --- | --- |
+| Lokal | lokaler Server (Laptop) im Fest-WLAN, wie heute | läuft |
+| Cloud | direkt `api.nfc-kasse.de`, kein Server vor Ort | steht still |
+
+**Wechsel zwischen lokal und Cloud (Entscheidung Kim, 19.11.2026): nur vor oder nach einem Fest, kein Live-Abgleich.**
+- Ein Veranstalter zieht mit seinen kompletten Daten um, während bei ihm „Intern“ läuft (kein Fest). Der Umzug kopiert alle Zeilen mit seiner `tenant_id` von der einen in die andere Datenbank. Wegen der UUIDs gibt es dabei keine ID-Kollisionen.
+- Während eines Fests gibt es genau eine Datenbank für diesen Veranstalter. Es gibt keinen Konflikt um Guthaben, weil nirgends parallel gebucht wird.
+- Danach ist die Quelle für diesen Veranstalter gesperrt oder gelöscht, damit nicht versehentlich an zwei Orten weitergearbeitet wird.
+- Den „Hybrid-Betrieb“ mit Sync-Dienst aus dem ersten Entwurf gibt es nicht. Das Lösch-Protokoll `sync_tombstone` ist deshalb wieder entfernt, `tenant_id` und `updated_at` bleiben (Umzug, Row-Level-Security).
+
+**Infrastruktur für den Start: 1 Hetzner-Server + 2 Proxmox-Server.**
+- Die drei Server sind per **WireGuard-VPN** verbunden. Die Datenbank lauscht nur im VPN.
+- **Hetzner ist der Primärserver** (feste IP, gutes Netz). Darauf laufen API, Portal und PostgreSQL. Reverse-Proxy mit HTTPS (Caddy oder nginx).
+- **Beide Proxmox-Server sind Standbys** mit Streaming-Replikation. Am Anfang sind sie **asynchron**: Synchron über eine Heim- oder Büroleitung würde jede Buchung um die Leitungslaufzeit bremsen, und bei Leitungsausfall würden Schreibzugriffe hängen. Lokal-Kunden sind vom Cloud-Server ohnehin unabhängig.
+- **Sicherungen** mit pgBackRest (Wiederherstellung auf jeden Zeitpunkt) auf einen Proxmox-Server und zusätzlich auf eine Hetzner Storage Box.
+- **Übernahme bei Ausfall** zunächst per Hand nach Checkliste (Standby hochstufen, DNS umstellen). Automatisch mit Patroni und etcd über alle drei Server erst, wenn zahlende Cloud-Kunden da sind. Voraussetzung dafür ist, dass die Proxmox-Standorte eine feste IP oder einen Tunnel haben, damit die API dort erreichbar ist.
 
 ## Risiken
 
-- **Installer:** SQLAlchemy, Alembic und psycopg landen im PyInstaller-Paket (einige MB mehr). psycopg wird lokal nicht gebraucht und kann im lokalen Paket fehlen.
-- **Zeitformat:** Wenn die DB-Schicht Zeiten nicht exakt wie heute formatiert, brechen Storno-Fenster und Artikel-Sync still. Dafür gibt es Tests, die bleiben Pflicht.
-- **`GROUP BY`/Typen in PostgreSQL** zeigen sich erst im PostgreSQL-Testlauf (Phase 5).
+- **PostgreSQL auf dem Thin Client:** RAM, Platz, Portkonflikte, Virenscanner, Updates der PostgreSQL-Hauptversion. Deshalb ist das Phase 1.
+- **UUID-Umstellung** betrifft App, Admin-Tool und gespeicherte Präferenzen. Weil es keine Installationen gibt, ist jetzt der günstigste Zeitpunkt.
+- **Zeitformat:** Storno-Fenster und Artikel-Sync hängen am Format der Zeitstempel. Die bestehenden Tests sichern das ab.
 
 ## Fortschritt
 
 | Phase | Status | Notiz |
 | --- | --- | --- |
-| 1–5 | offen | wartet auf Kims Entscheidungen |
+| 2 | fertig (18.11.2026, nicht committet) | `migrations.py`, `migrate.py`, `main._migrate()`, v2-Legacy-Tests entfernt; Start legt nur noch die BAR-Chips an (frisches Schema nachweislich unverändert). Tabelle `user` → `app_user` (54 Stellen in Backend, Lösch-Tool, Tests). `SCHEMA_VERSION` 4, ältere Sicherungen/Datenbanken werden abgelehnt. 161 Tests grün (SQLite) |
+| 3 | fertig (18.11.2026, nicht committet) | `database.py` auf psycopg-3-Pool (`DATABASE_URL`, Verbindungsprüfung beim Ausleihen), alte Schnittstelle bleibt (`?`, `row["x"]`, `lastrowid` über `lastval()`). Sperre: `pg_advisory_xact_lock` pro Veranstalter bzw. global für Admin-Befehle. Schema als Alembic-Revision `0001_baseline` (NUMERIC, TIMESTAMPTZ, SMALLINT-Flags); ungenutzte Tabellen `leaderboard_score`, `user_setting` entfallen. `init_db.setup()` migriert und füllt, läuft bei jedem Dienststart. Sicherungen über `pg_dump`/`pg_restore` (`*.dump`, Admin-Tool angepasst), Lösch- und Reset-Tool umgestellt, PyInstaller-Spec bündelt `alembic/`. Tests laufen gegen PostgreSQL (Vorlage-DB pro Lauf, Kopie pro Test): 161 grün |
+| 1 | fertig, auf Kims Laptop getestet (19.11.2026, nicht committet): mitinstalliert (Dienst auf 5433, ~37 MB privater RAM, 144 MB Programme) und vorhandener Server (Admin legt selbst an) laufen | Installer bringt PostgreSQL 18 mit (`build_installer.bat` lädt die EDB-Binärdateien, nur bin/lib/share). Neue Setup-Seiten: Datenbank (mitinstallieren / vorhandener Server, Setup legt an / vorhandener Server, IT-Admin legt Benutzer + DB selbst an und bekommt die SQL-Befehle angezeigt, Modus `prepared`), Datenbank-Administrator (Root-Benutzer + Passwort, wiederholen, anzeigen) bzw. Zugang zum vorhandenen Server, Kassensystem-Benutzer. `NfcKasseBackend.exe db-setup` (`pg_setup.py`): initdb (UTF-8, deutsche ICU-Sortierung, Port 5433, nur localhost), Dienst `NfcKassePostgres`, Rolle + DB `nfc_kasse`, `DATABASE_URL`/`PG_BIN` in config.env, Schema. Update stoppt/startet den DB-Dienst, Deinstallation entfernt ihn, `pgdata` nur auf Wunsch. Dienst wartet beim Start bis 2 min auf die DB. Getestet: db-setup gegen Wegwerf-Server, Installer-Skript kompiliert (mit Platzhalter-Dateien), 163 Tests grün |
+| 4+5 | fertig (19.11.2026, nicht committet) | Baseline: alle Schlüssel UUID (`uuidv7()`), `tenant_id` in allen Veranstalter-Tabellen (Trigger füllt sie aus der Elternzeile), `updated_at` per Trigger. Backend: IDs als Text, ungültige ID → 404, Sperre per Hash der Veranstalter-UUID. Setup lehnt eine vorhandene `nfc_kasse`-DB mit fremden Tabellen ab. App und Admin-Tool: IDs als `String` (Analyzer sauber). Tests: Backend 165 grün; App grün bis auf 7 alte Preisformat-Tests (unverändert, schlagen schon vorher fehl) |
+| 6 | fertig | Doku (CLAUDE.md, Plan), Version 1.1.0 |

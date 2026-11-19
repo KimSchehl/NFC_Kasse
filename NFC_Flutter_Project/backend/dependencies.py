@@ -31,7 +31,7 @@ def verify_password(plain: str, hashed: str) -> bool:
 # JWT — access token
 # ---------------------------------------------------------------------------
 
-def create_access_token(user_id: int) -> str:
+def create_access_token(user_id: str) -> str:
     payload = {
         "sub": str(user_id),
         "type": "access",
@@ -69,13 +69,13 @@ def hash_refresh_token(token: str) -> str:
 
 def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
     payload = _decode_access_token(token)
-    user_id = int(payload["sub"])
+    user_id = payload["sub"]
     with get_db() as db:
         # Users of a Veranstalter that isn't active any more (switched in the
         # admin tool) are logged out right away, not when their token expires.
         user = db.execute(
             """
-            SELECT u.* FROM user u JOIN tenant t ON t.id = u.tenant_id
+            SELECT u.* FROM app_user u JOIN tenant t ON t.id = u.tenant_id
             WHERE u.id=? AND u.active=1 AND u.deleted=0 AND t.active=1
             """,
             (user_id,),
@@ -116,7 +116,7 @@ class EventChangedError(Exception):
 NOT_IN_EVENT = "Ein Artikel ist in diesem Fest nicht mehr aktiv. Die Kasse lädt neu – bitte noch einmal versuchen."
 
 
-def ensure_event_active(db, event_id: int) -> None:
+def ensure_event_active(db, event_id: str) -> None:
     """
     Call first thing inside get_db(exclusive=True) in every endpoint that
     writes rows for ctx["event"]. get_active_event() runs before that lock
@@ -150,7 +150,7 @@ class RequestContext(TypedDict):
     event: dict
 
 
-def user_has_permission(db, user_id: int, permission_id: str) -> bool:
+def user_has_permission(db, user_id: str, permission_id: str) -> bool:
     """Global permissions belong to the user, not to a fest."""
     return db.execute(
         "SELECT 1 FROM user_permission WHERE user_id=? AND permission_id=?",
@@ -158,7 +158,7 @@ def user_has_permission(db, user_id: int, permission_id: str) -> bool:
     ).fetchone() is not None
 
 
-def raise_if_missing_permission(db, user_id: int, permission_id: str) -> None:
+def raise_if_missing_permission(db, user_id: str, permission_id: str) -> None:
     if user_has_permission(db, user_id, permission_id):
         return
     # permission_node.label is the same German display label the

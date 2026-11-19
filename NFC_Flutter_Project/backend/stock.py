@@ -13,12 +13,12 @@ from fastapi import HTTPException
 LOW_STOCK_THRESHOLD = 10  # matches sales.py's CANCEL_WINDOW_MINUTES style — a local constant, not a config.env setting
 
 
-def check_stock_and_decrement(db, product_ids_flat: list[int], products_by_id: dict) -> list[dict]:
+def check_stock_and_decrement(db, product_ids_flat: list[str], products_by_id: dict) -> list[dict]:
     """
     Validates sufficient stock for every product being booked and decrements
     it. `product_ids_flat` may contain repeats (one entry per unit — quantity
     is the count of repeats). `products_by_id` values must support `[]`
-    indexing for `id`, `name`, `stock` (a sqlite3.Row or dict both work; never
+    indexing for `id`, `name`, `stock` (a database.Row or dict both work; never
     use `.get()` here so either works identically).
 
     Must be called inside the same `get_db(exclusive=True)` transaction as
@@ -57,7 +57,7 @@ def check_stock_and_decrement(db, product_ids_flat: list[int], products_by_id: d
             continue
         new_stock = p["stock"] - qty
         db.execute(
-            "UPDATE product SET stock=?, updated_at=datetime('now') WHERE id=?",
+            "UPDATE product SET stock=?, updated_at=now() WHERE id=?",
             (new_stock, product_id),
         )
         if new_stock <= LOW_STOCK_THRESHOLD:

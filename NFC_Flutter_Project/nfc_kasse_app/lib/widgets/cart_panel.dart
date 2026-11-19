@@ -248,7 +248,7 @@ class _CartPanelState extends ConsumerState<CartPanel> {
       final svc = ref.read(printServiceProvider);
       final result = await svc.printBons(items);
       final printed = (result['bons_printed'] as num?)?.toInt() ?? 0;
-      final jobIds = ((result['print_job_ids'] as List?) ?? const []).cast<int>();
+      final jobIds = ((result['print_job_ids'] as List?) ?? const []).cast<String>();
       final bonWord = printed == 1 ? 'Bon' : 'Bons';
 
       cart.clear();

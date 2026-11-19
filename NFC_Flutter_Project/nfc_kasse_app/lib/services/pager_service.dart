@@ -13,7 +13,7 @@ class PagerService {
         .toList();
   }
 
-  Future<PagerOrderModel> markDone(int id) async {
+  Future<PagerOrderModel> markDone(String id) async {
     final resp = await _client.dio.post('/api/pager/$id/done');
     return PagerOrderModel.fromJson(resp.data as Map<String, dynamic>);
   }

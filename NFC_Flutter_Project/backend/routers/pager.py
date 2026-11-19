@@ -45,14 +45,14 @@ def list_pager_orders(
 
 @router.post("/{pager_order_id}/done", response_model=PagerOrderResponse)
 def mark_pager_order_done(
-    pager_order_id: int,
+    pager_order_id: str,
     current_user: dict = Depends(get_current_user),
     active_event: dict = Depends(get_active_event),
 ):
     user_id = current_user["id"]
     event_id = active_event["id"]
 
-    with get_db(exclusive=True) as db:
+    with get_db(exclusive=True, tenant_id=current_user["tenant_id"]) as db:
         # created_by is part of the WHERE clause, not just a post-hoc check —
         # this is what stops one operator from closing another's entry by
         # guessing an ID (no separate permission node exists for this).
@@ -66,7 +66,7 @@ def mark_pager_order_done(
             raise HTTPException(status_code=400, detail="Pager-Eintrag bereits erledigt")
 
         db.execute(
-            "UPDATE pager_order SET status='done', done_at=datetime('now') WHERE id=?",
+            "UPDATE pager_order SET status='done', done_at=now() WHERE id=?",
             (pager_order_id,),
         )
         updated = db.execute(

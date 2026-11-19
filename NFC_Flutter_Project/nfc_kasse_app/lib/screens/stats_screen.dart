@@ -70,7 +70,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
   late final TabController _tab;
 
   List<StatsPeriod> _periods = [];
-  Set<int> _selectedPeriodIds = {};
+  Set<String> _selectedPeriodIds = {};
   bool _loadingPeriods = true;
 
   /// Null = "Alle Zeiten", "5" = single period, "1,3,5" = combined.
@@ -226,7 +226,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen>
 
   Future<void> _openPeriodSelector() async {
     AppLogger.trace('Perioden-Auswahl geöffnet', logger: 'ui.stats');
-    final result = await showDialog<Set<int>>(
+    final result = await showDialog<Set<String>>(
       context: context,
       builder: (ctx) => _PeriodSelectorDialog(
         periods: _periods,
@@ -1142,7 +1142,7 @@ class _ChipsTabState extends ConsumerState<_ChipsTab> {
 
 class _PeriodSelectorDialog extends StatefulWidget {
   final List<StatsPeriod> periods;
-  final Set<int> selected;
+  final Set<String> selected;
   final String Function(StatsPeriod) periodLabel;
 
   const _PeriodSelectorDialog({
@@ -1156,7 +1156,7 @@ class _PeriodSelectorDialog extends StatefulWidget {
 }
 
 class _PeriodSelectorDialogState extends State<_PeriodSelectorDialog> {
-  late Set<int> _current;
+  late Set<String> _current;
 
   @override
   void initState() {

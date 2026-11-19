@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 CANCEL_WINDOW_MINUTES = 5
 
 
-def _get_or_create_customer(db, tenant_id: int, nfc_uid: str) -> tuple[int, bool]:
+def _get_or_create_customer(db, tenant_id: str, nfc_uid: str) -> tuple[int, bool]:
     """
     Returns (customer_id, is_new_customer).
 
@@ -57,7 +57,7 @@ def _get_or_create_customer(db, tenant_id: int, nfc_uid: str) -> tuple[int, bool
 
     # Brand new chip: create row and immediately mark as in use (is_available=0).
     cursor = db.execute(
-        "INSERT INTO customer (tenant_id, nfc_uid, balance, is_available) VALUES (?, ?, 0.0, 0)",
+        "INSERT INTO customer (tenant_id, nfc_uid, balance, is_available) VALUES (?, ?, 0.0, 0) RETURNING id",
         (tenant_id, nfc_uid),
     )
     return cursor.lastrowid, True
@@ -85,7 +85,7 @@ def _resolve_base_products(db, products_by_id: dict) -> dict:
     return {r["id"]: r for r in rows}
 
 
-def _effective(products_by_id: dict, base_rows: dict, product_id: int, field: str):
+def _effective(products_by_id: dict, base_rows: dict, product_id: str, field: str):
     """
     Returns the value of `field` that actually applies to `product_id` — the
     base article's value if `product_id` is one of its options, else the
@@ -100,7 +100,7 @@ def _effective(products_by_id: dict, base_rows: dict, product_id: int, field: st
     return base[field]
 
 
-def _build_pager_item_summary(product_ids: list[int], products_by_id: dict) -> str:
+def _build_pager_item_summary(product_ids: list[str], products_by_id: dict) -> str:
     """
     Builds the denormalized display string for a pager_order row, e.g.
     "2× Pizza Salami, Steak" — [product_ids] is already filtered to the
@@ -165,7 +165,7 @@ def create_booking(
 
     # BEGIN EXCLUSIVE: balance read + deduction must be atomic to prevent two
     # concurrent bookings from both reading the same pre-deduction balance.
-    with get_db(exclusive=True) as db:
+    with get_db(exclusive=True, tenant_id=current_user["tenant_id"]) as db:
         ensure_event_active(db, event_id)
         customer_id, is_new = _get_or_create_customer(db, tenant_id, body.nfc_uid)
 
@@ -294,7 +294,7 @@ def create_booking(
             cursor = db.execute(
                 """
                 INSERT INTO sale (event_id, customer_id, product_id, price_at_sale, booked_by)
-                VALUES (?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?) RETURNING id
                 """,
                 (event_id, customer_id, body.product_ids[0], payout_amount, user_id),
             )
@@ -335,7 +335,7 @@ def create_booking(
                 cursor = db.execute(
                     """
                     INSERT INTO sale (event_id, customer_id, product_id, price_at_sale, points, booked_by)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?) RETURNING id
                     """,
                     (event_id, customer_id, product_id, product_map[product_id], points, user_id),
                 )
@@ -404,14 +404,14 @@ def create_booking(
 
 @router.post("/{sale_id}/cancel", response_model=CancelResponse)
 def cancel_booking(
-    sale_id: int,
+    sale_id: str,
     current_user: dict = Depends(get_current_user),
     active_event: dict = Depends(get_active_event),
 ):
     user_id = current_user["id"]
     event_id = active_event["id"]
 
-    with get_db(exclusive=True) as db:
+    with get_db(exclusive=True, tenant_id=current_user["tenant_id"]) as db:
         ensure_event_active(db, event_id)
         sale = db.execute(
             """
@@ -458,7 +458,7 @@ def cancel_booking(
 
             if not has_unlimited:
                 booked_at = datetime.fromisoformat(sale["booked_at"])
-                # SQLite stores `datetime('now')` as UTC without timezone suffix.
+                # database.py returns timestamps as UTC without timezone suffix.
                 if booked_at.tzinfo is None:
                     booked_at = booked_at.replace(tzinfo=timezone.utc)
                 elapsed = datetime.now(timezone.utc) - booked_at
@@ -483,7 +483,7 @@ def cancel_booking(
 
         db.execute(
             """
-            UPDATE sale SET cancelled=1, cancelled_by=?, cancelled_at=datetime('now')
+            UPDATE sale SET cancelled=1, cancelled_by=?, cancelled_at=now()
             WHERE id=?
             """,
             (user_id, sale_id),
@@ -496,7 +496,7 @@ def cancel_booking(
         # (WHERE clause matches nothing) if this product was never
         # stock-tracked in the first place.
         db.execute(
-            "UPDATE product SET stock = stock + 1, updated_at = datetime('now') "
+            "UPDATE product SET stock = stock + 1, updated_at = now() "
             "WHERE id=? AND stock IS NOT NULL",
             (stock_points_owner_id,),
         )

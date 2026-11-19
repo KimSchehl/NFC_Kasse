@@ -51,7 +51,7 @@ class RefreshRequest(BaseModel):
 
 
 class CategoryPermissionResponse(BaseModel):
-    category_id: int
+    category_id: str
     category_name: str
     can_book: bool
     can_storno_5min: bool
@@ -63,7 +63,7 @@ class CategoryPermissionResponse(BaseModel):
 
 
 class MeResponse(BaseModel):
-    id: int
+    id: str
     username: str
     display_name: str | None
     permissions: list[str]
@@ -82,7 +82,7 @@ class MeResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 class CategoryWithPermissionsResponse(BaseModel):
-    id: int
+    id: str
     name: str
     sort_order: int
     color: str | None = None  # default colour '#RRGGBB'; None = theme default
@@ -97,7 +97,7 @@ class CategoryWithPermissionsResponse(BaseModel):
 
 
 class CategoryResponse(BaseModel):
-    id: int
+    id: str
     name: str
     sort_order: int
 
@@ -130,10 +130,10 @@ class CategoryUpdate(BaseModel):
 # ---------------------------------------------------------------------------
 
 class ProductResponse(BaseModel):
-    id: int
+    id: str
     name: str
     price: float
-    category_id: int
+    category_id: str
     sort_order: int
     active: bool
     is_payout: bool = False
@@ -142,7 +142,7 @@ class ProductResponse(BaseModel):
     points: int = 0
     stock: int | None = None  # None = not stock-tracked (unlimited)
     requires_pager: bool = False
-    group_id: int | None = None  # None = standalone; else an "option" of that base article
+    group_id: str | None = None  # None = standalone; else an "option" of that base article
     color: str | None = None  # default button color '#RRGGBB'; None = theme default
     in_event: bool = True  # switched on in the running fest (an option follows its base)
 
@@ -150,7 +150,7 @@ class ProductResponse(BaseModel):
 class ProductCreate(BaseModel):
     name: str
     price: float
-    category_id: int
+    category_id: str
     sort_order: int = 0
     is_payout: bool = False
     is_pfand: bool = False
@@ -158,7 +158,7 @@ class ProductCreate(BaseModel):
     points: int = 0
     stock: int | None = None
     requires_pager: bool = False
-    group_id: int | None = None
+    group_id: str | None = None
     color: str | None = None
 
     @field_validator("stock")
@@ -177,7 +177,7 @@ class ProductCreate(BaseModel):
 class ProductUpdate(BaseModel):
     name: str | None = None
     price: float | None = None
-    category_id: int | None = None  # move to a different category; omitted = unchanged
+    category_id: str | None = None  # move to a different category; omitted = unchanged
     sort_order: int | None = None
     is_payout: bool | None = None
     is_pfand: bool | None = None
@@ -186,7 +186,7 @@ class ProductUpdate(BaseModel):
     stock: int | None = None  # see products.py's update_product: distinguishes
     # "omitted" (model_fields_set) from "explicitly null" (clear tracking)
     requires_pager: bool | None = None
-    group_id: int | None = None  # same tri-state as stock: None can mean either
+    group_id: str | None = None  # same tri-state as stock: None can mean either
     # "unchanged" or "explicitly ungroup" depending on model_fields_set
     color: str | None = None  # same tri-state as stock: explicit null clears the default color
 
@@ -219,7 +219,7 @@ class LowStockWarning(BaseModel):
 
 class ProductChangesResponse(BaseModel):
     products: list[ProductResponse]
-    removed_ids: list[int]
+    removed_ids: list[str]
     checked_at: str
 
 
@@ -228,7 +228,7 @@ class ProductChangesResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 class AdminCategoryResponse(BaseModel):
-    id: int
+    id: str
     name: str
     sort_order: int
     color: str | None = None
@@ -250,12 +250,12 @@ class AdminProductsResponse(BaseModel):
 
 class BookingRequest(BaseModel):
     nfc_uid: str
-    product_ids: list[int]
+    product_ids: list[str]
     pager_number: int | None = None
 
     @field_validator("product_ids")
     @classmethod
-    def must_not_be_empty(cls, v: list[int]) -> list[int]:
+    def must_not_be_empty(cls, v: list[str]) -> list[str]:
         if not v:
             raise ValueError("Artikel-Liste darf nicht leer sein")
         return v
@@ -269,7 +269,7 @@ class BookingRequest(BaseModel):
 
 
 class PagerOrderResponse(BaseModel):
-    id: int
+    id: str
     item_summary: str
     pager_number: int
     status: str
@@ -280,7 +280,7 @@ class PagerOrderResponse(BaseModel):
 class BookingResponse(BaseModel):
     success: bool
     new_balance: float
-    sale_ids: list[int]
+    sale_ids: list[str]
     chip_deposit_applied: float = 0.0   # Pfand deducted on new-customer issuance
     chip_deposit_refunded: float = 0.0  # Pfand returned on payout
     low_stock_warnings: list[LowStockWarning] = []
@@ -332,7 +332,7 @@ class PayoutResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 class UserResponse(BaseModel):
-    id: int
+    id: str
     username: str
     display_name: str | None
     active: bool
@@ -379,7 +379,7 @@ class PermissionsUpdate(BaseModel):
 
 
 class CategoryAccessItem(BaseModel):
-    category_id: int
+    category_id: str
     can_book: bool = False
     can_storno_5min: bool = False
     can_storno_unlimited: bool = False
@@ -394,7 +394,7 @@ class CategoryAccessUpdate(BaseModel):
 
 
 class RoleTemplateResponse(BaseModel):
-    id: int
+    id: str
     name: str
     description: str | None
     permission_ids: list[str]
@@ -405,7 +405,7 @@ class RoleTemplateResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 class StatsPeriodResponse(BaseModel):
-    id: int
+    id: str
     label: str
     started_at: str
     closed_at: str | None = None  # None = currently open period
@@ -495,7 +495,7 @@ class RevenueResponse(BaseModel):
 
 
 class TransactionItem(BaseModel):
-    id: int
+    id: str
     booked_at: str
     nfc_uid: str
     customer_name: str | None
@@ -537,7 +537,7 @@ class ChipSummaryResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 class PrintBonItem(BaseModel):
-    product_id: int
+    product_id: str
     quantity: int = 1
 
 
@@ -555,13 +555,13 @@ class PrintBonRequest(BaseModel):
 class PrintBonResponse(BaseModel):
     success: bool
     bons_printed: int
-    sale_ids: list[int]
+    sale_ids: list[str]
     low_stock_warnings: list[LowStockWarning] = []
-    print_job_ids: list[int] = []
+    print_job_ids: list[str] = []
 
 
 class PrintJobStatus(BaseModel):
-    id: int
+    id: str
     status: str  # pending | printing | done | error
     error_msg: str | None = None
 
@@ -651,7 +651,7 @@ class LogEntryOut(BaseModel):
     trace_id: str | None
     origin: str
     device_id: str | None
-    user_id: int | None
+    user_id: str | None
     username: str | None
     path: str | None
     method: str | None

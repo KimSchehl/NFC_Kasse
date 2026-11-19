@@ -8,7 +8,7 @@ class LogEntry {
   final String? traceId;
   final String origin;
   final String? deviceId;
-  final int? userId;
+  final String? userId;
   final String? username;
   final String? path;
   final String? method;
@@ -39,7 +39,7 @@ class LogEntry {
         traceId: j['trace_id'] as String?,
         origin: j['origin'] as String? ?? 'server',
         deviceId: j['device_id'] as String?,
-        userId: j['user_id'] as int?,
+        userId: j['user_id'] as String?,
         username: j['username'] as String?,
         path: j['path'] as String?,
         method: j['method'] as String?,

@@ -22,7 +22,7 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
 
 
-def _build_token_response(user_id: int) -> tuple[str, str]:
+def _build_token_response(user_id: str) -> tuple[str, str]:
     """
     Creates a new access + refresh token pair and persists the hashed refresh
     token in the database.
@@ -55,7 +55,7 @@ def login(body: LoginRequest):
             # Locally only the active Veranstalter's users can log in — the same
             # username may exist at another Veranstalter.
             """
-            SELECT u.* FROM user u JOIN tenant t ON t.id = u.tenant_id
+            SELECT u.* FROM app_user u JOIN tenant t ON t.id = u.tenant_id
             WHERE u.username=? AND u.active=1 AND u.deleted=0 AND t.active=1
             """,
             (body.username,),
@@ -83,7 +83,7 @@ def login_form(form_data: OAuth2PasswordRequestForm = Depends()):
             # Locally only the active Veranstalter's users can log in — the same
             # username may exist at another Veranstalter.
             """
-            SELECT u.* FROM user u JOIN tenant t ON t.id = u.tenant_id
+            SELECT u.* FROM app_user u JOIN tenant t ON t.id = u.tenant_id
             WHERE u.username=? AND u.active=1 AND u.deleted=0 AND t.active=1
             """,
             (form_data.username,),
@@ -107,9 +107,9 @@ def refresh(body: RefreshRequest):
     with get_db() as db:
         row = db.execute(
             """
-            SELECT rt.*, u.active AND NOT u.deleted AND t.active AS user_active
+            SELECT rt.*, (u.active = 1 AND u.deleted = 0 AND t.active = 1) AS user_active
             FROM refresh_token rt
-            JOIN user u ON rt.user_id = u.id
+            JOIN app_user u ON rt.user_id = u.id
             JOIN tenant t ON t.id = u.tenant_id
             WHERE rt.token_hash=?
             """,

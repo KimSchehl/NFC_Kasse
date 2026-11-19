@@ -3,7 +3,7 @@ Event lifecycle — starting and ending a Fest, Festvorlagen (export/import)
 and the CSV export for accounting.
 
 Exactly one event is active per tenant (enforced by a partial unique index,
-see migrations.py). The "Intern" event is permanent and always exists; the
+see init_db.py). The "Intern" event is permanent and always exists; the
 kasse runs on it whenever no fest is active, so Guthaben and chips are never
 tied to a single fest. Starting a fest switches away from Intern; ending a
 fest switches back to it.
@@ -67,7 +67,7 @@ def _event_dict(row) -> dict:
     }
 
 
-def _active_event(db, tenant_id: int):
+def _active_event(db, tenant_id: str):
     row = db.execute(
         "SELECT * FROM event WHERE tenant_id=? AND active=1", (tenant_id,)
     ).fetchone()
@@ -76,7 +76,7 @@ def _active_event(db, tenant_id: int):
     return row
 
 
-def _event(db, tenant_id: int, event_id: int):
+def _event(db, tenant_id: str, event_id: str):
     row = db.execute(
         "SELECT * FROM event WHERE id=? AND tenant_id=?", (event_id, tenant_id)
     ).fetchone()
@@ -90,17 +90,17 @@ def _event(db, tenant_id: int, event_id: int):
 # ---------------------------------------------------------------------------
 
 def _seconds_since(db, timestamp: str | None) -> int | None:
-    """Age in seconds of a stored timestamp, computed by SQLite itself — same
-    clock and same UTC format that wrote it, so the admin tool needs no
-    timezone handling to show "vor 12 Sekunden"."""
+    """Age in seconds of a stored timestamp, computed by the database itself —
+    same clock that wrote it, so the admin tool needs no timezone handling
+    to show "vor 12 Sekunden"."""
     if timestamp is None:
         return None
     return db.execute(
-        "SELECT CAST(strftime('%s', 'now') - strftime('%s', ?) AS INTEGER)", (timestamp,)
+        "SELECT CAST(EXTRACT(EPOCH FROM now() - CAST(? AS timestamptz)) AS INTEGER)", (timestamp,)
     ).fetchone()[0]
 
 
-def overview(db, tenant_id: int) -> dict:
+def overview(db, tenant_id: str) -> dict:
     """Every event with its periods (for the CSV export's Zeitraum picker),
     plus what the "Fest beenden" confirmation should warn about."""
     events = []
@@ -175,18 +175,18 @@ def overview(db, tenant_id: int) -> dict:
 # Start / end
 # ---------------------------------------------------------------------------
 
-def check_can_start(db, tenant_id: int) -> None:
+def check_can_start(db, tenant_id: str) -> None:
     if not _active_event(db, tenant_id)["is_intern"]:
         raise EventError("Es läuft bereits ein Fest. Bitte zuerst beenden.")
 
 
-def check_can_end(db, tenant_id: int) -> None:
+def check_can_end(db, tenant_id: str) -> None:
     if _active_event(db, tenant_id)["is_intern"]:
         raise EventError("Es läuft gerade kein Fest.")
 
 
 def _activate_from_event(
-    db, tenant_id: int, source_event_id: int | None, target_event_id: int, category_ids: list[int] | None,
+    db, tenant_id: str, source_event_id: str | None, target_event_id: str, category_ids: list[str] | None,
 ) -> None:
     """
     Switches on in the new fest what the source event showed: the same
@@ -209,21 +209,21 @@ def _activate_from_event(
             catalog.set_category_in_event(db, target_event_id, category_id, True)
             continue
         db.execute(
-            "INSERT OR IGNORE INTO event_category (event_id, category_id) VALUES (?, ?)",
+            "INSERT INTO event_category (event_id, category_id) VALUES (?, ?) ON CONFLICT DO NOTHING",
             (target_event_id, category_id),
         )
         db.execute(
             """
-            INSERT OR IGNORE INTO event_product (event_id, product_id)
+            INSERT INTO event_product (event_id, product_id)
             SELECT ?, ep.product_id FROM event_product ep
             JOIN product p ON p.id = ep.product_id
-            WHERE ep.event_id = ? AND p.category_id = ? AND p.deleted = 0
+            WHERE ep.event_id = ? AND p.category_id = ? AND p.deleted = 0 ON CONFLICT DO NOTHING
             """,
             (target_event_id, source_event_id, category_id),
         )
 
 
-def _activate_from_preset(db, tenant_id: int, preset: EventPreset, target_event_id: int) -> None:
+def _activate_from_preset(db, tenant_id: str, preset: EventPreset, target_event_id: str) -> None:
     """
     Switches on the preset's categories and articles, matched by name to
     the tenant's own. Missing ones are created from the preset; existing
@@ -246,11 +246,11 @@ def _activate_from_preset(db, tenant_id: int, preset: EventPreset, target_event_
             db.execute("UPDATE category SET color=? WHERE id=? AND color IS NULL", (cat.color, category_id))
         else:
             category_id = db.execute(
-                "INSERT INTO category (tenant_id, name, sort_order, color) VALUES (?, ?, ?, ?)",
+                "INSERT INTO category (tenant_id, name, sort_order, color) VALUES (?, ?, ?, ?) RETURNING id",
                 (tenant_id, cat.name, cat.sort_order, cat.color),
             ).lastrowid
         db.execute(
-            "INSERT OR IGNORE INTO event_category (event_id, category_id) VALUES (?, ?)",
+            "INSERT INTO event_category (event_id, category_id) VALUES (?, ?) ON CONFLICT DO NOTHING",
             (target_event_id, category_id),
         )
         category_id_by_ref[cat.ref] = category_id
@@ -272,7 +272,7 @@ def _activate_from_preset(db, tenant_id: int, preset: EventPreset, target_event_
             INSERT INTO product
                 (category_id, name, price, sort_order, is_payout, is_pfand, exclude_from_stats,
                  points, requires_pager, stock, group_id, color)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
             """,
             (
                 category_id, p.name, p.price, p.sort_order,
@@ -283,7 +283,7 @@ def _activate_from_preset(db, tenant_id: int, preset: EventPreset, target_event_
         product_id_by_ref[p.ref] = product_id
         if group_id is None:
             db.execute(
-                "INSERT OR IGNORE INTO event_product (event_id, product_id) VALUES (?, ?)",
+                "INSERT INTO event_product (event_id, product_id) VALUES (?, ?) ON CONFLICT DO NOTHING",
                 (target_event_id, product_id),
             )
 
@@ -291,15 +291,15 @@ def _activate_from_preset(db, tenant_id: int, preset: EventPreset, target_event_
 def start_event(
     db,
     *,
-    tenant_id: int,
+    tenant_id: str,
     name: str,
     date: str | None = None,
     chip_deposit: float = 0.0,
     reset_stock: bool = False,
-    source_event_id: int | None = None,
+    source_event_id: str | None = None,
     preset: EventPreset | None = None,
     include_articles: bool = True,
-    category_ids: list[int] | None = None,
+    category_ids: list[str] | None = None,
 ) -> dict:
     """Must run inside get_db(exclusive=True). Takes no safety backup itself
     — the caller does that first, outside the transaction.
@@ -324,7 +324,7 @@ def start_event(
     new_id = db.execute(
         """
         INSERT INTO event (tenant_id, name, active, date, chip_deposit, is_intern, started_at)
-        VALUES (?, ?, 0, ?, ?, 0, datetime('now'))
+        VALUES (?, ?, 0, ?, ?, 0, now()) RETURNING id
         """,
         (tenant_id, name, date, chip_deposit),
     ).lastrowid
@@ -337,7 +337,7 @@ def start_event(
     if reset_stock:
         db.execute(
             """
-            UPDATE product SET stock = NULL, updated_at = datetime('now')
+            UPDATE product SET stock = NULL, updated_at = now()
             WHERE id IN (SELECT product_id FROM event_product WHERE event_id = ?) AND stock IS NOT NULL
             """,
             (new_id,),
@@ -349,7 +349,7 @@ def start_event(
     return _event_dict(db.execute("SELECT * FROM event WHERE id=?", (new_id,)).fetchone())
 
 
-def update_active_event(db, *, tenant_id: int, name: str | None = None, chip_deposit: float | None = None) -> dict:
+def update_active_event(db, *, tenant_id: str, name: str | None = None, chip_deposit: float | None = None) -> dict:
     """
     Changes the running fest's name and/or Pfand — live: every request reads
     the active event anew, so the next bon and the next new chip use it.
@@ -373,7 +373,7 @@ def update_active_event(db, *, tenant_id: int, name: str | None = None, chip_dep
     return _event_dict(db.execute("SELECT * FROM event WHERE id=?", (active["id"],)).fetchone())
 
 
-def end_event(db, *, tenant_id: int) -> dict:
+def end_event(db, *, tenant_id: str) -> dict:
     """Must run inside get_db(exclusive=True). Returns the ended fest."""
     check_can_end(db, tenant_id)
     active = _active_event(db, tenant_id)
@@ -387,16 +387,16 @@ def end_event(db, *, tenant_id: int) -> dict:
     # Close the fest's open period so its revenue stays bounded, same as
     # a manual Tagesabschluss.
     db.execute(
-        "UPDATE stats_period SET closed_at = datetime('now') WHERE event_id=? AND closed_at IS NULL",
+        "UPDATE stats_period SET closed_at = now() WHERE event_id=? AND closed_at IS NULL",
         (active["id"],),
     )
     # Pager orders belong to physical devices still with a guest; sale,
     # print_job and topup are pure history and need no such cleanup.
     db.execute(
-        "UPDATE pager_order SET status='done', done_at=datetime('now') WHERE event_id=? AND status='open'",
+        "UPDATE pager_order SET status='done', done_at=now() WHERE event_id=? AND status='open'",
         (active["id"],),
     )
-    db.execute("UPDATE event SET active=0, ended_at=datetime('now') WHERE id=?", (active["id"],))
+    db.execute("UPDATE event SET active=0, ended_at=now() WHERE id=?", (active["id"],))
     db.execute("UPDATE event SET active=1 WHERE id=?", (intern_id,))
     # Keep Intern's own running period going across Festende instead of
     # fragmenting it every time — only open a new one if it somehow
@@ -413,7 +413,7 @@ def end_event(db, *, tenant_id: int) -> dict:
 # Festvorlage
 # ---------------------------------------------------------------------------
 
-def build_preset(db, *, tenant_id: int, event_id: int, data_dir: Path) -> EventPreset:
+def build_preset(db, *, tenant_id: str, event_id: str, data_dir: Path) -> EventPreset:
     """
     Builds a Festvorlage from the categories and articles switched on in
     event_id plus the current bon.yaml/config.env settings. Only reads —
@@ -537,11 +537,11 @@ def _money(value: float) -> str:
 
 
 def _local(ts: str | None, seconds: bool = False) -> str:
-    """'JJJJ-MM-TT HH:MM:SS' (already shifted with SQLite's 'localtime')
-    -> 'TT.MM.JJJJ HH:MM[:SS]'."""
+    """'JJJJ-MM-TT HH:MM:SS' in UTC (as stored) -> 'TT.MM.JJJJ HH:MM[:SS]'
+    in the server's local time."""
     if not ts:
         return ""
-    d = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+    d = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).astimezone()
     return d.strftime("%d.%m.%Y %H:%M:%S" if seconds else "%d.%m.%Y %H:%M")
 
 
@@ -564,9 +564,9 @@ def _article_kind(row) -> str:
 def export_csv(
     db,
     *,
-    tenant_id: int,
-    event_id: int,
-    period_id: int | None = None,
+    tenant_id: str,
+    event_id: str,
+    period_id: str | None = None,
     bar_chip_uid: str = "BAR",
 ) -> tuple[str, int]:
     """
@@ -599,8 +599,8 @@ def export_csv(
 
     sales = db.execute(
         f"""
-        SELECT s.id, datetime(s.booked_at, 'localtime') AS booked_local, s.price_at_sale,
-               s.cancelled, datetime(s.cancelled_at, 'localtime') AS cancelled_local,
+        SELECT s.id, s.booked_at, s.price_at_sale,
+               s.cancelled, s.cancelled_at,
                s.customer_id, cu.nfc_uid, u.username,
                p.id AS product_id, p.name AS product_name, p.price, p.sort_order AS product_sort,
                p.is_payout, p.is_pfand, p.exclude_from_stats,
@@ -609,7 +609,7 @@ def export_csv(
         JOIN customer cu ON s.customer_id = cu.id
         JOIN product p ON s.product_id = p.id
         JOIN category c ON p.category_id = c.id
-        JOIN user u ON s.booked_by = u.id
+        JOIN app_user u ON s.booked_by = u.id
         WHERE s.event_id = ? {where.format(col="s.booked_at")}
         ORDER BY s.booked_at, s.id
         """,
@@ -631,11 +631,11 @@ def export_csv(
                 "Betrag", "Kassierer", "Storniert", "Storniert am"])
     for r in sales:
         w.writerow([
-            r["id"], _local(r["booked_local"], seconds=True),
+            r["id"], _local(r["booked_at"], seconds=True),
             "Bar (Bon-Druck)" if r["nfc_uid"] == bar_chip_uid else r["nfc_uid"],
             r["category_name"], r["product_name"], _article_kind(r),
             _money(r["price_at_sale"]), r["username"],
-            "ja" if r["cancelled"] else "nein", _local(r["cancelled_local"], seconds=True),
+            "ja" if r["cancelled"] else "nein", _local(r["cancelled_at"], seconds=True),
         ])
 
     # --- 2. Verkaufte Artikel ---------------------------------------------
@@ -694,7 +694,6 @@ def export_csv(
     ).fetchone()
 
     start, end = (period["started_at"], period["closed_at"]) if period else (event["started_at"], event["ended_at"])
-    start, end = db.execute("SELECT datetime(?, 'localtime'), datetime(?, 'localtime')", (start, end)).fetchone()
     label = period["label"] if period else "gesamtes Fest"
     span = f"{label} ({_local(start)} – {_local(end) or 'läuft'})" if start else label
 

@@ -7,15 +7,15 @@ deliberately not mentioned in CLAUDE.md, the project README or the manuals.
 Deletes a whole **Veranstalter** (users, rights, categories, articles, chips,
 every Fest and Intern) or a single **ended Fest** (its sales, top-ups,
 Tagesabschluss periods, pagers, bons, leaderboard opt-ins) from the server's
-`kasse.db`. Not part of the installer and not reachable over HTTP — run it on
+database. Not part of the installer and not reachable over HTTP — run it on
 the server by hand.
 
 ## Usage
 
-Double-click `loeschen.bat` (or `loeschen.bat --db "D:\path\kasse.db"`).
+Double-click `loeschen.bat` (or `loeschen.bat --data-dir "D:\path\NFC-Kasse"`).
 On first run it asks for admin rights, installs Python 3.13 via winget if
 missing and creates its own `.venv` with `questionary` (arrow-key menus).
-Default database: `C:\ProgramData\NFC-Kasse\kasse.db`.
+Default data folder (its `config.env` holds `DATABASE_URL`): `C:\ProgramData\NFC-Kasse`.
 
 1. If the `NfcKasseBackend` service runs, the tool offers to stop it and
    starts it again on exit (devices are offline meanwhile).

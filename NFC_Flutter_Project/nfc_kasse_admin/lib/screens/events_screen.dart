@@ -269,9 +269,9 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
   }
 
   Future<void> _exportCsv(KasseEvent event) async {
-    int? periodId;
+    String? periodId;
     if (event.periods.length > 1) {
-      final choice = await showDialog<({int? periodId})>(
+      final choice = await showDialog<({String? periodId})>(
         context: context,
         builder: (_) => _CsvPeriodDialog(event: event),
       );
@@ -529,7 +529,7 @@ class _CsvPeriodDialog extends StatefulWidget {
 }
 
 class _CsvPeriodDialogState extends State<_CsvPeriodDialog> {
-  int? _periodId;
+  String? _periodId;
 
   String _label(StatsPeriodInfo p) {
     final from = p.startedAt == null ? '?' : _formatDateTime(p.startedAt!);
@@ -543,16 +543,16 @@ class _CsvPeriodDialogState extends State<_CsvPeriodDialog> {
       title: Text('CSV-Export: ${widget.event.displayName}'),
       content: SizedBox(
         width: 460,
-        child: RadioGroup<int?>(
+        child: RadioGroup<String?>(
           groupValue: _periodId,
           onChanged: (v) => setState(() => _periodId = v),
           child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const RadioListTile<int?>(value: null, title: Text('Gesamter Zeitraum')),
+                const RadioListTile<String?>(value: null, title: Text('Gesamter Zeitraum')),
                 for (final p in widget.event.periods)
-                  RadioListTile<int?>(value: p.id, title: Text(_label(p))),
+                  RadioListTile<String?>(value: p.id, title: Text(_label(p))),
               ],
             ),
           ),
@@ -597,7 +597,7 @@ class _StartFestDialogState extends State<_StartFestDialog> {
   bool _includePrinter = false;
   bool _includeBonText = false;
   bool _resetStock = false;
-  Set<int> _categoryIds = {};
+  Set<String> _categoryIds = {};
   String? _error;
 
   @override
@@ -611,7 +611,7 @@ class _StartFestDialogState extends State<_StartFestDialog> {
   /// Wählt die Quelle und schlägt deren Warengruppen vor.
   void _setSource(String source) {
     _source = source;
-    final eventId = int.tryParse(source);
+    final eventId = source == _sourceEmpty || source == _sourceFile ? null : source;
     _categoryIds = {
       for (final c in widget.overview.categories)
         if (eventId != null && c.eventIds.contains(eventId)) c.id,
@@ -698,7 +698,7 @@ class _StartFestDialogState extends State<_StartFestDialog> {
         chipDeposit: deposit,
         resetStock: _hasArticles && _resetStock,
         categoryIds: fromFile ? null : _categoryIds.toList(),
-        sourceEventId: fromFile || _source == _sourceEmpty ? null : int.parse(_source),
+        sourceEventId: fromFile || _source == _sourceEmpty ? null : _source,
         presetPath: fromFile ? _preset!.path : null,
         includeArticles: _includeArticles,
         includeBonLayout: fromFile && _includeBonLayout,

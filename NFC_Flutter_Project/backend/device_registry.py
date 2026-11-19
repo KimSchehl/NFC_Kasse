@@ -5,9 +5,8 @@ seen, and whether an admin has forced a specific log level on them.
 Hybrid in-memory + persisted, mirroring routers/help.py's _HelpManager
 in-memory-dict pattern but without its overwrite problem (this only tracks
 per-device metadata, not live connections). /health is polled every 10s per
-device — writing to SQLite on every poll would be unnecessary load (exactly
-the kind of contention the JSON-lines-over-SQLite decision for logs itself
-was already avoiding), so only actual level changes and first-time
+device — writing to the database on every poll would be unnecessary load
+(the same reason logs are JSON lines, not table rows), so only actual level changes and first-time
 registration touch the DB; last_seen lives purely in memory and is
 naturally rebuilt as devices keep polling.
 
@@ -67,15 +66,15 @@ def touch(device_id: str, platform: str | None, label: str | None) -> str | None
 def _persist_registration(device_id: str, platform: str | None, label: str | None) -> None:
     with get_db() as db:
         db.execute(
-            """INSERT OR IGNORE INTO device_log_level (device_id, label, platform, forced_level)
-               VALUES (?, ?, ?, NULL)""",
+            """INSERT INTO device_log_level (device_id, label, platform, forced_level)
+               VALUES (?, ?, ?, NULL) ON CONFLICT DO NOTHING""",
             (device_id, label, platform),
         )
     with _lock:
         _known_labels[device_id] = {"label": label, "platform": platform}
 
 
-def set_forced_level(device_id: str, level: str | None, admin_user_id: int) -> None:
+def set_forced_level(device_id: str, level: str | None, admin_user_id: str) -> None:
     with _lock:
         if level is None:
             _forced_levels.pop(device_id, None)
@@ -84,7 +83,7 @@ def set_forced_level(device_id: str, level: str | None, admin_user_id: int) -> N
     with get_db() as db:
         db.execute(
             """INSERT INTO device_log_level (device_id, forced_level, updated_by, updated_at)
-               VALUES (?, ?, ?, datetime('now'))
+               VALUES (?, ?, ?, now())
                ON CONFLICT(device_id) DO UPDATE SET
                    forced_level = excluded.forced_level,
                    updated_by   = excluded.updated_by,

@@ -20,7 +20,7 @@ class SalesService {
   /// [pagerNumber] is only relevant when the cart contains a `requiresPager`
   /// article (pager add-on) — omitted/null both when the feature is off and
   /// when the cashier chose "Überspringen".
-  Future<Map<String, dynamic>> book(String nfcUid, List<int> productIds, {int? pagerNumber}) async {
+  Future<Map<String, dynamic>> book(String nfcUid, List<String> productIds, {int? pagerNumber}) async {
     final resp = await _client.dio.post('/api/sales/', data: {
       'nfc_uid': nfcUid,
       'product_ids': productIds,
@@ -31,7 +31,7 @@ class SalesService {
 
   /// Cancels a single sale row by ID and refunds its price to the customer.
   /// The cancel dialog calls this once per sale_id in the booking.
-  Future<Map<String, dynamic>> cancelSale(int saleId) async {
+  Future<Map<String, dynamic>> cancelSale(String saleId) async {
     final resp = await _client.dio.post('/api/sales/$saleId/cancel');
     return resp.data as Map<String, dynamic>;
   }

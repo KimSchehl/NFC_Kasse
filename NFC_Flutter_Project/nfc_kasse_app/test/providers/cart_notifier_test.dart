@@ -3,9 +3,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nfc_kasse_app/models/product_model.dart';
 import 'package:nfc_kasse_app/providers/providers.dart';
 
-const _beer = ProductModel(id: 1, name: 'Bier', price: 2.50, categoryId: 1, sortOrder: 0, active: true);
-const _water = ProductModel(id: 2, name: 'Wasser', price: 1.50, categoryId: 1, sortOrder: 1, active: true);
-const _refund = ProductModel(id: 3, name: 'Pfand', price: -2.0, categoryId: 1, sortOrder: 2, active: true);
+const _beer = ProductModel(id: '1', name: 'Bier', price: 2.50, categoryId: '1', sortOrder: 0, active: true);
+const _water = ProductModel(id: '2', name: 'Wasser', price: 1.50, categoryId: '1', sortOrder: 1, active: true);
+const _refund = ProductModel(id: '3', name: 'Pfand', price: -2.0, categoryId: '1', sortOrder: 2, active: true);
 
 void main() {
   late ProviderContainer container;
@@ -28,7 +28,7 @@ void main() {
       final items = container.read(cartProvider);
       expect(items.length, 1);
       expect(items.first.quantity, 1);
-      expect(items.first.product.id, 1);
+      expect(items.first.product.id, '1');
     });
 
     test('increments quantity when adding the same product twice', () {
@@ -78,7 +78,7 @@ void main() {
       n.addProduct(_beer);
       n.addProduct(_beer);
       n.addProduct(_water);
-      expect(n.productIds, [1, 1, 2]);
+      expect(n.productIds, ['1', '1', '2']);
     });
 
     test('is empty when cart is empty', () {
@@ -91,15 +91,15 @@ void main() {
       final n = container.read(cartProvider.notifier);
       n.addProduct(_beer);
       n.addProduct(_water);
-      n.removeItem(1);
+      n.removeItem('1');
       final items = container.read(cartProvider);
       expect(items.length, 1);
-      expect(items.first.product.id, 2);
+      expect(items.first.product.id, '2');
     });
 
     test('is a no-op for an unknown product ID', () {
       container.read(cartProvider.notifier).addProduct(_beer);
-      container.read(cartProvider.notifier).removeItem(999);
+      container.read(cartProvider.notifier).removeItem('999');
       expect(container.read(cartProvider).length, 1);
     });
   });

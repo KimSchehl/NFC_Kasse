@@ -316,7 +316,7 @@ class _RunningFestSection extends ConsumerStatefulWidget {
 class _RunningFestSectionState extends ConsumerState<_RunningFestSection> {
   final _name = TextEditingController();
   final _deposit = TextEditingController();
-  int? _loadedEventId;
+  String? _loadedEventId;
   bool _busy = false;
 
   @override

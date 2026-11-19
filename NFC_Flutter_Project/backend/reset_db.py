@@ -5,13 +5,12 @@ WICHTIG: Backend (start_backend.bat) muss gestoppt sein!
 """
 
 import os
-import sqlite3
 import sys
 from pathlib import Path
 
+import database
 from db_backup import create_backup
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kasse.db")
 BACKUP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backups")
 
 
@@ -29,25 +28,22 @@ def _header():
 
 
 def _check_db():
-    if not os.path.exists(DB_PATH):
-        print(f"  FEHLER: kasse.db nicht gefunden unter:\n  {DB_PATH}")
+    try:
+        database.connect().close()
+    except database.Error as exc:
+        print(f"  FEHLER: Datenbank nicht erreichbar:\n  {exc}")
         print()
-        print("  Starte zuerst das Backend einmal, um die DB zu erstellen.")
+        print("  DATABASE_URL setzen und das Backend einmal starten, um die DB einzurichten.")
         sys.exit(1)
 
 
 def _backup():
-    """Sichert kasse.db vor dem Reset. Kein Datei-Kopieren: die WAL-Datei
-    würde sonst fehlen (siehe db_backup.py)."""
-    return create_backup(Path(DB_PATH), Path(BACKUP_DIR), prefix="vor-reset")
+    """Sichert die Datenbank vor dem Reset (pg_dump, siehe db_backup.py)."""
+    return create_backup(Path(BACKUP_DIR), prefix="vor-reset")
 
 
 def _get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=OFF")   # Deaktiviert für Bulk-Deletes
-    return conn
+    return database.connect()
 
 
 def _confirm(warnung: str) -> bool:
@@ -99,6 +95,7 @@ def reset_chips_komplett():
 
     backup = _backup()
     conn = _get_db()
+    conn.execute("DELETE FROM print_job WHERE sale_id IS NOT NULL")
     conn.execute("DELETE FROM sale")
     conn.execute("DELETE FROM topup")
     conn.execute("DELETE FROM leaderboard_entry")
@@ -158,6 +155,7 @@ def reset_transaktionen():
 
     backup = _backup()
     conn = _get_db()
+    conn.execute("DELETE FROM print_job WHERE sale_id IS NOT NULL")
     conn.execute("DELETE FROM sale")
     conn.execute("DELETE FROM topup")
     conn.commit()
@@ -205,7 +203,7 @@ def main():
         s = _stats(conn)
         conn.close()
 
-        print(f"  Datenbank:  {DB_PATH}")
+        print("  Datenbank:  " + database.DATABASE_URL.rsplit("/", 1)[-1])
         print()
         print(f"  Aktueller Stand:")
         print(f"    Chips:          {s['chips']}")

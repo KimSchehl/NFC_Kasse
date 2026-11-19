@@ -7,12 +7,11 @@ again afterwards. Always writes a backup "vor-loeschen_*" next to the
 regular backups first, so a mistake can be undone in the admin tool
 (Sicherungen → Wiederherstellen).
 
-    python delete_tool.py [--db PATH] [--no-service]
+    python delete_tool.py [--data-dir PFAD] [--no-service]
 """
 
 import argparse
 import os
-import sqlite3
 import subprocess
 import sys
 import time
@@ -21,13 +20,14 @@ from pathlib import Path
 import questionary
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
+import database  # noqa: E402
 import db_backup  # noqa: E402
 
 import purge  # noqa: E402
 
 # questionary replaces a Choice value of None by its title, so "back" needs its own value.
 BACK = "__back__"
-DEFAULT_DB = Path(os.environ.get("NFC_KASSE_DATA_DIR", r"C:\ProgramData\NFC-Kasse")) / "kasse.db"
+DEFAULT_DATA_DIR = Path(os.environ.get("NFC_KASSE_DATA_DIR", r"C:\ProgramData\NFC-Kasse"))
 
 
 def euro(value) -> str:
@@ -113,20 +113,19 @@ def confirm_by_name(kind: str, name: str) -> bool:
     return True
 
 
-def run_delete(db, db_path: Path, label: str, action) -> None:
-    backup = db_backup.create_backup(db_path, db_path.parent / "backups", prefix="vor-loeschen", label=label)
+def run_delete(db, data_dir: Path, label: str, action) -> None:
+    backup = db_backup.create_backup(data_dir / "backups", prefix="vor-loeschen", label=label)
     say(f"Backup angelegt: {backup}")
-    db.execute("BEGIN EXCLUSIVE")
     try:
         action(db)
-        db.execute("COMMIT")
+        db.commit()
     except Exception:
-        db.execute("ROLLBACK")
+        db.rollback()
         raise
     say("Gelöscht.")
 
 
-def delete_tenant_flow(db, db_path: Path) -> None:
+def delete_tenant_flow(db, data_dir: Path) -> None:
     tenant_id = pick_tenant(db, deletable_only=True)
     if tenant_id is None:
         return
@@ -143,10 +142,10 @@ def delete_tenant_flow(db, db_path: Path) -> None:
         say(f"  dazu {euro(t['open_deposit'])} Pfand. Dieses Geld ist danach nicht mehr nachvollziehbar.")
     say()
     if confirm_by_name("des Veranstalters", t["name"]):
-        run_delete(db, db_path, t["name"], lambda conn: purge.delete_tenant(conn, tenant_id))
+        run_delete(db, data_dir, t["name"], lambda conn: purge.delete_tenant(conn, tenant_id))
 
 
-def delete_fest_flow(db, db_path: Path) -> None:
+def delete_fest_flow(db, data_dir: Path) -> None:
     tenants = purge.list_tenants(db)
     tenant_id = tenants[0]["id"] if len(tenants) == 1 else pick_tenant(db, deletable_only=False)
     if tenant_id is None:
@@ -173,24 +172,23 @@ def delete_fest_flow(db, db_path: Path) -> None:
     say("  Artikel gehören dem Veranstalter und bleiben ebenfalls.")
     say()
     if confirm_by_name("des Fests", f["name"]):
-        run_delete(db, db_path, f["name"], lambda conn: purge.delete_fest(conn, event_id))
+        run_delete(db, data_dir, f["name"], lambda conn: purge.delete_fest(conn, event_id))
 
 
 # ---------------------------------------------------------------- main
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Veranstalter oder Feste aus der NFC-Kasse löschen")
-    parser.add_argument("--db", type=Path, default=DEFAULT_DB, help=f"Datenbank (Standard: {DEFAULT_DB})")
+    parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR,
+                        help=f"Datenordner mit config.env (Standard: {DEFAULT_DATA_DIR})")
     parser.add_argument("--no-service", action="store_true", help="Windows-Dienst nicht anfassen")
     args = parser.parse_args()
-    db_path: Path = args.db
+    data_dir: Path = args.data_dir
+    database.use_config(data_dir)
 
     say("NFC-Kasse: Veranstalter und Feste löschen")
-    say(f"Datenbank: {db_path}")
+    say(f"Datenordner: {data_dir}")
     say()
-    if not db_path.exists():
-        say("Datenbank nicht gefunden. Pfad mit --db angeben.")
-        return 1
 
     restart = False
     if not args.no_service and service_state() in ("RUNNING", "START_PENDING"):
@@ -216,12 +214,12 @@ def main() -> int:
             ).ask()
             if choice in (None, BACK):
                 break
-            db = purge.connect(db_path)
+            db = database.connect()
             try:
-                (delete_fest_flow if choice == "fest" else delete_tenant_flow)(db, db_path)
+                (delete_fest_flow if choice == "fest" else delete_tenant_flow)(db, data_dir)
             except (purge.PurgeError, db_backup.BackupError) as e:
                 say(f"Nicht möglich: {e}")
-            except sqlite3.Error as e:
+            except database.Error as e:
                 say(f"Datenbankfehler, nichts gelöscht: {e}")
             finally:
                 db.close()

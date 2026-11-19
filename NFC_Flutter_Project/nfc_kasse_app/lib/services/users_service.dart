@@ -25,7 +25,7 @@ class UsersService {
     return UserListItem.fromJson(resp.data as Map<String, dynamic>);
   }
 
-  Future<UserListItem> updateUser(int id, {String? username, String? password, String? displayName}) async {
+  Future<UserListItem> updateUser(String id, {String? username, String? password, String? displayName}) async {
     final data = <String, dynamic>{};
     if (username != null) data['username'] = username;
     if (password != null && password.isNotEmpty) data['password'] = password;
@@ -34,28 +34,28 @@ class UsersService {
     return UserListItem.fromJson(resp.data as Map<String, dynamic>);
   }
 
-  Future<UserListItem> setActive(int id, bool active) async {
+  Future<UserListItem> setActive(String id, bool active) async {
     final resp = await _client.dio.patch('/api/users/$id/active', data: {'active': active});
     return UserListItem.fromJson(resp.data as Map<String, dynamic>);
   }
 
-  Future<void> deleteUser(int id) async {
+  Future<void> deleteUser(String id) async {
     await _client.dio.delete('/api/users/$id');
   }
 
-  Future<Map<String, dynamic>> getUserPermissions(int id) async {
+  Future<Map<String, dynamic>> getUserPermissions(String id) async {
     final resp = await _client.dio.get('/api/users/$id/permissions');
     return resp.data as Map<String, dynamic>;
   }
 
-  Future<void> setPermissions(int id, List<String> permissionIds) async {
+  Future<void> setPermissions(String id, List<String> permissionIds) async {
     await _client.dio.put('/api/users/$id/permissions', data: {
       'permission_ids': permissionIds,
     });
   }
 
   Future<void> setCategoryAccess(
-    int userId,
+    String userId,
     List<CategoryModel> categories,
   ) async {
     await _client.dio.put('/api/users/$userId/categories', data: {

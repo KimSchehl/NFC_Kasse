@@ -41,7 +41,7 @@ class BackupEntry {
     );
   }
 
-  String get sidecarPath => path.replaceFirst(RegExp(r'\.db$'), '.json');
+  String get sidecarPath => path.replaceFirst(RegExp(r'\.dump$'), '.json');
 
   String get kindLabel => switch (kind) {
         'kasse' => 'Automatisch beim Start',
@@ -57,7 +57,7 @@ class BackupEntry {
 
 /// Sicherung, Wiederherstellung, Export und Import der Datenbank. Die
 /// eigentliche Arbeit macht der Befehl NfcKasseBackend.exe, damit die Regeln
-/// (WAL-sicher, Schema-Prüfung, Rückfall bei Fehlern) nur an einer Stelle
+/// (pg_dump/pg_restore, Schema-Prüfung, Rückfall bei Fehlern) nur an einer Stelle
 /// stehen.
 class BackupService {
   BackupService._();
@@ -68,9 +68,9 @@ class BackupService {
 
     final entries = <BackupEntry>[];
     await for (final entity in dir.list()) {
-      if (entity is! File || !entity.path.endsWith('.db')) continue;
+      if (entity is! File || !entity.path.endsWith('.dump')) continue;
       var manifest = <String, dynamic>{};
-      final sidecar = File(entity.path.replaceFirst(RegExp(r'\.db$'), '.json'));
+      final sidecar = File(entity.path.replaceFirst(RegExp(r'\.dump$'), '.json'));
       if (await sidecar.exists()) {
         try {
           manifest = jsonDecode(await sidecar.readAsString()) as Map<String, dynamic>;
@@ -117,7 +117,7 @@ class BackupService {
     await File(entry.path).copy(destinationPath);
     final sidecar = File(entry.sidecarPath);
     if (await sidecar.exists()) {
-      await sidecar.copy(destinationPath.replaceFirst(RegExp(r'\.db$'), '.json'));
+      await sidecar.copy(destinationPath.replaceFirst(RegExp(r'\.dump$'), '.json'));
     }
   }
 

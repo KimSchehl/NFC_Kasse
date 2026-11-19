@@ -50,11 +50,16 @@ Die Installation machen Sie einmal auf dem Server-Laptop. Danach läuft NFC-Kass
 3. Die Frage der Benutzerkontensteuerung mit **Ja** beantworten.
 4. Seite **Installationsmodus**: Bei einer Neuinstallation ist **Installieren** vorgewählt. Auf **Weiter** klicken.
 5. Zielordner `C:\Program Files\NFC-Kasse` so lassen, **Weiter**.
-6. **Desktop-Symbol erstellen** ankreuzen. Das legt „NFC-Kasse öffnen“ und „NFC-Kasse Verwaltung“ auf den Desktop. **Weiter**.
-7. **Installieren** klicken. Das Setup kopiert die Dateien, richtet den Dienst und die Firewall ein und startet den Dienst.
-8. Auf der letzten Seite auf **Fertigstellen** klicken.
-9. **NFC-Kasse Verwaltung** öffnen, Seite **Lizenzen** (Abschnitt 3.5). Den Lizenzschlüssel der Kasse eintragen und **Speichern & Dienst neu starten**. Ohne gültige Hauptlizenz startet der Dienst nicht.
-10. Danach öffnet **NFC-Kasse öffnen** auf dem Desktop die Anmeldeseite der Kasse. Zeigt der Browser zunächst einen Fehler, ein paar Sekunden warten und die Seite neu laden.
+6. Seite **Datenbank**: **PostgreSQL mitinstallieren (empfohlen)** lassen, **Weiter**. Ist auf dem Laptop schon ein PostgreSQL-Server installiert, ist die Variante mit vorhandenem Server vorgewählt, bei der das Setup Benutzer und Datenbank anlegt. Die dritte Variante ist für Fälle, in denen der IT-Administrator kein Administrator-Passwort ins Setup eingeben möchte: Er legt Benutzer und Datenbank selbst an.
+7. Seite **Datenbank-Administrator** (nur beim Mitinstallieren): Benutzername (Vorschlag `postgres`) lassen, ein Passwort mit mindestens 8 Zeichen zweimal eintippen. Mit **Passwörter anzeigen** prüfen Sie die Eingabe. Dieses Passwort sicher aufbewahren, es lässt sich nicht wiederherstellen. **Weiter**.
+   - Vorhandener Server, Setup legt an: Die Seite fragt nach Server, Port, Benutzername und Passwort eines Administrators. Diese Angaben werden nur für die Einrichtung verwendet und nicht gespeichert.
+   - Vorhandener Server, Administrator legt selbst an: Die Seite fragt nur nach Server und Port. Die nächste Seite zeigt die zwei Befehle (`CREATE ROLE …`, `CREATE DATABASE nfc_kasse …`), die der Administrator in einer eigenen Shell ausführt. Danach **Weiter**.
+8. Seite **Kassensystem-Benutzer**: Benutzername (Vorschlag `nfc_kasse`) lassen, ein eigenes Passwort zweimal eintippen, **Weiter**. Mit diesem Benutzer arbeitet die Kasse selbst.
+9. **Desktop-Symbol erstellen** ankreuzen. Das legt „NFC-Kasse öffnen“ und „NFC-Kasse Verwaltung“ auf den Desktop. **Weiter**.
+10. **Installieren** klicken. Das Setup kopiert die Dateien, richtet die Datenbank, den Dienst und die Firewall ein und startet den Dienst. Kann die Datenbank nicht eingerichtet werden, etwa wegen eines falschen Administrator-Passworts, zeigt das Setup den Grund und startet den Dienst nicht. Dann das Setup erneut ausführen.
+11. Auf der letzten Seite auf **Fertigstellen** klicken.
+12. **NFC-Kasse Verwaltung** öffnen, Seite **Lizenzen** (Abschnitt 3.5). Den Lizenzschlüssel der Kasse eintragen und **Speichern & Dienst neu starten**. Ohne gültige Hauptlizenz startet der Dienst nicht.
+13. Danach öffnet **NFC-Kasse öffnen** auf dem Desktop die Anmeldeseite der Kasse. Zeigt der Browser zunächst einen Fehler, ein paar Sekunden warten und die Seite neu laden.
 
 Weiter geht es mit Abschnitt 4, Erster Start.
 

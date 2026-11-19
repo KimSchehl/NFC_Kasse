@@ -27,7 +27,7 @@ def articles(db):
 def _revoke(permission_id: str) -> None:
     with database.get_db() as conn:
         conn.execute(
-            "DELETE FROM user_permission WHERE user_id=1 AND permission_id=?", (permission_id,)
+            "DELETE FROM user_permission WHERE user_id=(SELECT id FROM app_user WHERE username = 'admin' ORDER BY id LIMIT 1) AND permission_id=?", (permission_id,)
         )
 
 
@@ -117,12 +117,12 @@ def test_print_job_status_reports_done_and_error(client, auth_headers, db):
         event_id = conn.execute("SELECT id FROM event LIMIT 1").fetchone()["id"]
         ok = conn.execute(
             "INSERT INTO print_job (event_id, username, event_name, product_name, price, status) "
-            "VALUES (?, 'admin', 'Fest', 'Bier', 2.5, 'done')",
+            "VALUES (?, 'admin', 'Fest', 'Bier', 2.5, 'done') RETURNING id",
             (event_id,),
         ).lastrowid
         bad = conn.execute(
             "INSERT INTO print_job (event_id, username, event_name, product_name, price, status, error_msg) "
-            "VALUES (?, 'admin', 'Fest', 'Bier', 2.5, 'error', 'Port weg')",
+            "VALUES (?, 'admin', 'Fest', 'Bier', 2.5, 'error', 'Port weg') RETURNING id",
             (event_id,),
         ).lastrowid
 

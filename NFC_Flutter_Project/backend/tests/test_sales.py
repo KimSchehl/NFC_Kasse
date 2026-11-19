@@ -52,7 +52,7 @@ def test_book_same_product_twice_counts_as_quantity_two(client, auth_headers, pr
 def test_book_nonexistent_product_returns_404(client, auth_headers, customer_with_balance):
     resp = client.post(
         "/api/sales/",
-        json={"nfc_uid": customer_with_balance, "product_ids": [999999]},
+        json={"nfc_uid": customer_with_balance, "product_ids": ["00000000-0000-0000-0000-000000000000"]},
         headers=auth_headers,
     )
     assert resp.status_code == 404
@@ -113,7 +113,7 @@ def test_cancel_same_sale_twice_returns_400(client, auth_headers, product_id, cu
 
 
 def test_cancel_nonexistent_sale_returns_404(client, auth_headers):
-    resp = client.post("/api/sales/999999/cancel", headers=auth_headers)
+    resp = client.post("/api/sales/00000000-0000-0000-0000-000000000000/cancel", headers=auth_headers)
     assert resp.status_code == 404
 
 

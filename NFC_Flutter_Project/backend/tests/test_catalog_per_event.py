@@ -49,7 +49,7 @@ def test_switching_a_category_on_brings_its_articles(client, auth_headers, catal
 
 def test_switching_a_category_needs_the_deactivate_right(client, auth_headers, catalog):
     with database.get_db() as conn:
-        conn.execute("DELETE FROM user_permission WHERE user_id = 1 AND permission_id = 'categories.deactivate'")
+        conn.execute("DELETE FROM user_permission WHERE user_id = (SELECT id FROM app_user WHERE username = 'admin' ORDER BY id LIMIT 1) AND permission_id = 'categories.deactivate'")
     resp = client.patch(f"/api/products/categories/{catalog['coffee']}/active", json={"active": True}, headers=auth_headers)
     assert resp.status_code == 403
 
@@ -114,8 +114,8 @@ def test_revenue_keeps_a_category_that_was_sold_and_then_switched_off(client, au
 
 def test_other_veranstalter_cannot_touch_the_catalog(client, auth_headers, catalog):
     with database.get_db() as conn:
-        conn.execute("INSERT INTO tenant (id, name) VALUES (2, 'Anderer Veranstalter')")
-        foreign = conn.execute("INSERT INTO category (tenant_id, name) VALUES (2, 'Fremd')").lastrowid
+        other = conn.execute("INSERT INTO tenant (name) VALUES ('Anderer Veranstalter') RETURNING id").lastrowid
+        foreign = conn.execute("INSERT INTO category (tenant_id, name) VALUES (?, 'Fremd') RETURNING id", (other,)).lastrowid
     resp = client.patch(f"/api/products/categories/{foreign}/active", json={"active": True}, headers=auth_headers)
     assert resp.status_code == 404
     resp = client.post("/api/products/", json={"name": "X", "price": 1.0, "category_id": foreign}, headers=auth_headers)

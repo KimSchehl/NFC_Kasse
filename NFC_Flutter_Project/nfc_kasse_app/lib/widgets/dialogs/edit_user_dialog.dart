@@ -47,7 +47,7 @@ class _EditUserDialogState extends ConsumerState<EditUserDialog> {
   late bool _active;
 
   Set<String> _selectedPerms = {};
-  Map<int, CategoryModel> _catAccess = {};
+  Map<String, CategoryModel> _catAccess = {};
   List<Map<String, dynamic>> _permTree = [];
   List<CategoryModel> _allCategories = [];
 
@@ -79,7 +79,7 @@ class _EditUserDialogState extends ConsumerState<EditUserDialog> {
     // categories the running fest doesn't show.
     final cats = await ref.read(productServiceProvider).getCategories(all: true);
 
-    Map<int, CategoryModel> catAccess = {};
+    Map<String, CategoryModel> catAccess = {};
     Set<String> perms = {};
 
     if (!isNew) {
@@ -88,7 +88,7 @@ class _EditUserDialogState extends ConsumerState<EditUserDialog> {
         perms = Set<String>.from((data['permissions'] as List? ?? []).cast<String>());
         for (final c in (data['categories'] as List? ?? [])) {
           final cat = CategoryModel(
-            id: c['category_id'] as int,
+            id: c['category_id'] as String,
             name: c['category_name'] as String,
             sortOrder: 0,
             canBook: c['can_book'] as bool? ?? false,
@@ -144,7 +144,7 @@ class _EditUserDialogState extends ConsumerState<EditUserDialog> {
 
     try {
       final svc = ref.read(usersServiceProvider);
-      int userId;
+      String userId;
       if (isNew) {
         final created = await svc.createUser(
           username: username,
@@ -210,7 +210,7 @@ class _EditUserDialogState extends ConsumerState<EditUserDialog> {
     }
   }
 
-  void _updateCatAccess(int catId, CategoryModel? model) {
+  void _updateCatAccess(String catId, CategoryModel? model) {
     setState(() {
       if (model == null) {
         _catAccess = Map.from(_catAccess)..remove(catId);

@@ -8,7 +8,7 @@ import '../utils/color_hex.dart';
 /// reflect what the logged-in user is allowed to do within this category.
 /// Admins/managers always receive all flags as `true`.
 class CategoryModel {
-  final int id;
+  final String id;
   final String name;
   final int sortOrder;
 
@@ -47,7 +47,7 @@ class CategoryModel {
   });
 
   factory CategoryModel.fromJson(Map<String, dynamic> j) => CategoryModel(
-        id: j['id'] as int,
+        id: j['id'] as String,
         name: j['name'] as String,
         sortOrder: j['sort_order'] as int? ?? 0,
         color: hexToColor(j['color'] as String?),

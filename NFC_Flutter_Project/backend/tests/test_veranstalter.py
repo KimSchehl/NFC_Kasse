@@ -8,11 +8,12 @@ from pathlib import Path
 
 import admin_cli
 import database
+from tests.conftest import TENANT_SQL
 
 
 def _cli(capsys, monkeypatch, data_dir, *argv, stdin=""):
     monkeypatch.setattr("sys.stdin", io.StringIO(stdin))
-    code = admin_cli.main(list(argv), data_dir, db_path=Path(database.DB_PATH))
+    code = admin_cli.main(list(argv), data_dir)
     out = capsys.readouterr().out.strip().splitlines()[-1]
     return code, json.loads(out)
 
@@ -43,7 +44,7 @@ def test_a_new_veranstalter_starts_empty_in_intern(db, tmp_path, capsys, monkeyp
             "SELECT COUNT(*) FROM customer WHERE tenant_id = ? AND nfc_uid = 'BAR'", (tenant["id"],)
         ).fetchone()[0] == 1
         perms = {r[0] for r in conn.execute(
-            "SELECT permission_id FROM user_permission up JOIN user u ON u.id = up.user_id WHERE u.tenant_id = ?",
+            "SELECT permission_id FROM user_permission up JOIN app_user u ON u.id = up.user_id WHERE u.tenant_id = ?",
             (tenant["id"],),
         )}
     assert "users.manage_permissions" in perms and "kiosk.access" not in perms
@@ -99,7 +100,7 @@ def test_switching_logs_every_device_out_and_separates_the_kassen(client, db, tm
 
 def test_chips_have_separate_balances_per_veranstalter(client, db, tmp_path, capsys, monkeypatch):
     with database.get_db() as conn:
-        conn.execute("INSERT INTO customer (tenant_id, nfc_uid, balance, is_available) VALUES (1, 'CHIP1', 12.0, 0)")
+        conn.execute(f"INSERT INTO customer (tenant_id, nfc_uid, balance, is_available) VALUES ({TENANT_SQL}, 'CHIP1', 12.0, 0)")
     tenant = _create_b(capsys, monkeypatch, tmp_path)
     _end_fest(capsys, monkeypatch, tmp_path)
     assert _cli(capsys, monkeypatch, tmp_path, "tenant-activate", str(tenant["id"]))[0] == 0
@@ -118,7 +119,7 @@ def test_fest_commands_act_on_the_active_veranstalter(db, tmp_path, capsys, monk
     with database.get_db() as conn:
         assert conn.execute("SELECT tenant_id FROM event WHERE id = ?", (out["event"]["id"],)).fetchone()[0] == tenant["id"]
         # Veranstalter A still runs its own Intern, untouched.
-        assert conn.execute("SELECT is_intern FROM event WHERE tenant_id = 1 AND active = 1").fetchone()[0] == 1
+        assert conn.execute("SELECT is_intern FROM event WHERE tenant_id = (SELECT id FROM tenant ORDER BY id LIMIT 1) AND active = 1").fetchone()[0] == 1
     overview = _cli(capsys, monkeypatch, tmp_path, "events")[1]
     assert {e["name"] for e in overview["events"]} == {"Intern", "Weinfest B"}
 

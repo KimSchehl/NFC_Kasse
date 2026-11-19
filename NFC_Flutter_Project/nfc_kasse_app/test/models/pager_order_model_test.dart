@@ -5,14 +5,14 @@ void main() {
   group('PagerOrderModel.fromJson', () {
     test('parses all fields', () {
       final o = PagerOrderModel.fromJson({
-        'id': 1,
+        'id': '1',
         'item_summary': '2× Pizza Salami, Steak',
         'pager_number': 7,
         'status': 'open',
         'created_at': '2026-08-30 20:50:03',
         'done_at': null,
       });
-      expect(o.id, 1);
+      expect(o.id, '1');
       expect(o.itemSummary, '2× Pizza Salami, Steak');
       expect(o.pagerNumber, 7);
       expect(o.status, 'open');
@@ -22,7 +22,7 @@ void main() {
 
     test('parses a done order with done_at set', () {
       final o = PagerOrderModel.fromJson({
-        'id': 2,
+        'id': '2',
         'item_summary': 'Pizza Salami',
         'pager_number': 3,
         'status': 'done',
@@ -37,7 +37,7 @@ void main() {
   group('PagerOrderModel.isOpen', () {
     test('true for status open', () {
       final o = PagerOrderModel.fromJson({
-        'id': 1, 'item_summary': 'x', 'pager_number': 1,
+        'id': '1', 'item_summary': 'x', 'pager_number': 1,
         'status': 'open', 'created_at': 'now',
       });
       expect(o.isOpen, true);
@@ -45,7 +45,7 @@ void main() {
 
     test('false for status done', () {
       final o = PagerOrderModel.fromJson({
-        'id': 1, 'item_summary': 'x', 'pager_number': 1,
+        'id': '1', 'item_summary': 'x', 'pager_number': 1,
         'status': 'done', 'created_at': 'now',
       });
       expect(o.isOpen, false);

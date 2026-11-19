@@ -52,7 +52,7 @@ def test_create_option_rejects_nonexistent_group_id(client, auth_headers, option
     cat_id, _, _ = option_product_ids
     resp = client.post(
         "/api/products/",
-        json={"name": "mit Brötchen", "price": 4.5, "category_id": cat_id, "group_id": 999999},
+        json={"name": "mit Brötchen", "price": 4.5, "category_id": cat_id, "group_id": "00000000-0000-0000-0000-000000000000"},
         headers=auth_headers,
     )
     assert resp.status_code == 404

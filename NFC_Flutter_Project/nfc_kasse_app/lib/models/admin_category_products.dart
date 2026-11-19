@@ -23,6 +23,6 @@ class AdminCategoryProducts {
   List<ProductModel> get topLevel => products.where((p) => p.groupId == null).toList();
 
   /// The options belonging to [baseId], in their saved order.
-  List<ProductModel> optionsOf(int baseId) =>
+  List<ProductModel> optionsOf(String baseId) =>
       products.where((p) => p.groupId == baseId).toList();
 }

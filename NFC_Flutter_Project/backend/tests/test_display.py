@@ -49,7 +49,7 @@ def test_old_confirmation_is_dropped(client, auth_headers, product_id, customer_
 def test_failed_booking_pushes_no_confirmation(client, auth_headers, customer_with_balance):
     resp = client.post(
         "/api/sales/",
-        json={"nfc_uid": customer_with_balance, "product_ids": [999999]},
+        json={"nfc_uid": customer_with_balance, "product_ids": ["00000000-0000-0000-0000-000000000000"]},
         headers=auth_headers,
     )
     assert resp.status_code == 404

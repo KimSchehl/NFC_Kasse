@@ -8,11 +8,11 @@ from pathlib import Path
 
 import admin_cli
 import database
-from tests.conftest import add_category, add_product
+from tests.conftest import TENANT_SQL, add_category, add_product
 
 
 def _cli(capsys, data_dir, *argv):
-    code = admin_cli.main(list(argv), data_dir, db_path=Path(database.DB_PATH))
+    code = admin_cli.main(list(argv), data_dir)
     out = capsys.readouterr().out.strip().splitlines()[-1]
     return code, json.loads(out)
 
@@ -37,7 +37,7 @@ def test_cannot_start_a_fest_while_one_is_already_running(db, tmp_path, capsys):
     assert out["ok"] is False
     assert "läuft bereits" in out["error"]
     # Refused before the safety backup — nothing to roll back, nothing written.
-    assert not list((tmp_path / "backups").glob("vor-festwechsel_*.db"))
+    assert not list((tmp_path / "backups").glob("vor-festwechsel_*.dump"))
 
 
 def test_cannot_end_a_fest_while_intern_is_running(db, tmp_path, capsys):
@@ -48,13 +48,13 @@ def test_cannot_end_a_fest_while_intern_is_running(db, tmp_path, capsys):
     assert "kein Fest" in out["error"]
 
 
-def test_refuses_to_run_without_a_database(tmp_path, capsys):
-    missing = tmp_path / "kasse.db"
-    code = admin_cli.main(["events"], tmp_path, db_path=missing)
+def test_refuses_to_run_without_a_schema(db, tmp_path, capsys):
+    with database.get_db() as conn:
+        conn.execute("DROP TABLE alembic_version")
+    code = admin_cli.main(["events"], tmp_path)
     out = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert code == 1
-    assert "nicht gefunden" in out["error"]
-    assert not missing.exists(), "must not create an empty kasse.db"
+    assert "noch nicht eingerichtet" in out["error"]
 
 
 def test_start_switches_active_event_and_takes_a_safety_backup(db, tmp_path, capsys):
@@ -91,7 +91,7 @@ def test_start_copies_the_selection_and_rights_stay(
         bier = add_product(conn, cat_id, "Bier", 2.5, stock=7)
         cola = add_product(conn, cat_id, "Cola", 2.0)
         conn.execute("DELETE FROM event_product WHERE event_id=? AND product_id=?", (source_event, cola))
-        other_id = conn.execute("SELECT id FROM user WHERE username='other_operator'").fetchone()[0]
+        other_id = conn.execute("SELECT id FROM app_user WHERE username='other_operator'").fetchone()[0]
         conn.execute("INSERT INTO user_category_access (user_id, category_id, can_book) VALUES (?, ?, 1)", (other_id, cat_id))
         _switch_to_intern(conn)
 
@@ -108,7 +108,7 @@ def test_start_copies_the_selection_and_rights_stay(
         assert conn.execute("SELECT stock FROM product WHERE id=?", (bier,)).fetchone()[0] == 7
         assert conn.execute("SELECT COUNT(*) FROM product").fetchone()[0] == 2
         conn.execute(
-            "INSERT INTO customer (tenant_id, nfc_uid, balance, is_available) VALUES (1, 'EVTEST01', 10.0, 0)"
+            f"INSERT INTO customer (tenant_id, nfc_uid, balance, is_available) VALUES ({TENANT_SQL}, 'EVTEST01', 10.0, 0)"
         )
 
     # The non-manager other_operator books in the new fest with the right
@@ -132,8 +132,8 @@ def test_start_resets_stock_by_default_and_can_pick_categories(db, tmp_path, cap
         food = add_category(conn, "Essen")
         add_product(conn, food, "Wurst", 4.0)
         # Not switched on anywhere yet: picked explicitly, it comes with all its articles.
-        dessert = conn.execute("INSERT INTO category (tenant_id, name) VALUES (1, 'Nachtisch')").lastrowid
-        eis = conn.execute("INSERT INTO product (category_id, name, price) VALUES (?, 'Eis', 2.0)", (dessert,)).lastrowid
+        dessert = conn.execute("INSERT INTO category (tenant_id, name) VALUES ((SELECT id FROM tenant ORDER BY id LIMIT 1), 'Nachtisch') RETURNING id").lastrowid
+        eis = conn.execute("INSERT INTO product (category_id, name, price) VALUES (?, 'Eis', 2.0) RETURNING id", (dessert,)).lastrowid
         _switch_to_intern(conn)
 
     code, out = _cli(
@@ -167,7 +167,7 @@ def test_end_archives_the_fest_and_switches_back_to_intern(db, tmp_path, capsys)
         intern_id = _intern_id(conn)
         conn.execute(
             "INSERT INTO pager_order (event_id, created_by, item_summary, pager_number, status) "
-            "VALUES (?, 1, 'Pizza', 7, 'open')",
+            "VALUES (?, (SELECT id FROM app_user WHERE username = 'admin' ORDER BY id LIMIT 1), 'Pizza', 7, 'open')",
             (fest_id,),
         )
 
@@ -195,7 +195,7 @@ def test_events_overview_lists_periods_and_end_warnings(db, tmp_path, capsys):
             "VALUES (?, 'admin', 'Fest', 'Bier', 3.0)",
             (fest_id,),
         )
-        conn.execute("INSERT INTO customer (tenant_id, nfc_uid, balance) VALUES (1, 'REST01', 4.5)")
+        conn.execute("INSERT INTO customer (tenant_id, nfc_uid, balance) VALUES ((SELECT id FROM tenant ORDER BY id LIMIT 1), 'REST01', 4.5)")
 
     code, out = _cli(capsys, tmp_path, "events")
     assert code == 0, out
@@ -312,41 +312,6 @@ def test_me_reports_the_active_events_name_and_intern_flag(client, auth_headers,
     assert resp.json()["event_is_intern"] is True
 
 
-def test_migration_removes_retired_permissions_from_existing_installs(db):
-    from migrations import run_migrations
-
-    with database.get_db() as conn:
-        conn.executemany(
-            "INSERT INTO permission_node (id, parent_id, label, node_type, sort_order) VALUES (?, ?, ?, ?, ?)",
-            [
-                ("statistics.export", "statistics", "Daten exportieren", "r", 3),
-                ("event", None, "Veranstaltung", "group", 9),
-                ("event.manage", "event", "Fest starten/beenden", "w", 1),
-            ],
-        )
-        for perm in ("statistics.export", "event.manage"):
-            conn.execute("INSERT INTO user_permission (user_id, permission_id) VALUES (1, ?)", (perm,))
-        template_id = conn.execute("SELECT id FROM role_template LIMIT 1").fetchone()[0]
-        conn.execute("INSERT INTO role_template_permission VALUES (?, 'statistics.export')", (template_id,))
-
-        run_migrations(conn, bar_chip_uid="BAR")
-
-        retired = ("statistics.export", "event", "event.manage")
-        assert conn.execute(
-            "SELECT COUNT(*) FROM permission_node WHERE id IN (?, ?, ?)", retired
-        ).fetchone()[0] == 0
-        assert conn.execute(
-            "SELECT COUNT(*) FROM user_permission WHERE permission_id IN (?, ?, ?)", retired
-        ).fetchone()[0] == 0
-        assert conn.execute(
-            "SELECT COUNT(*) FROM role_template_permission WHERE permission_id IN (?, ?, ?)", retired
-        ).fetchone()[0] == 0
-        # Everything else the admin had is untouched.
-        assert conn.execute(
-            "SELECT 1 FROM user_permission WHERE user_id=1 AND permission_id='statistics.revenue'"
-        ).fetchone()
-
-
 def test_retired_permissions_are_gone(client, auth_headers, db):
     with database.get_db() as conn:
         nodes = {r[0] for r in conn.execute("SELECT id FROM permission_node")}
@@ -362,7 +327,7 @@ def test_start_needs_a_deposit(db, tmp_path, capsys):
     with database.get_db() as conn:
         _switch_to_intern(conn)
     with pytest.raises(SystemExit):
-        admin_cli.main(["event-start", "--name", "Ohne Pfand"], tmp_path, db_path=Path(database.DB_PATH))
+        admin_cli.main(["event-start", "--name", "Ohne Pfand"], tmp_path)
 
 
 def test_update_changes_name_and_deposit_of_the_running_fest_live(
@@ -379,7 +344,7 @@ def test_update_changes_name_and_deposit_of_the_running_fest_live(
 def test_update_keeps_the_deposit_already_paid_for_a_chip(client, auth_headers, db, tmp_path, capsys):
     with database.get_db() as conn:
         conn.execute(
-            "INSERT INTO customer (tenant_id, nfc_uid, balance, is_available, deposit_paid) VALUES (1, 'OLDCHIP', 5, 0, 3.0)"
+            f"INSERT INTO customer (tenant_id, nfc_uid, balance, is_available, deposit_paid) VALUES ({TENANT_SQL}, 'OLDCHIP', 5, 0, 3.0)"
         )
     assert _cli(capsys, tmp_path, "event-update", "--deposit", "1")[0] == 0
     assert client.get("/api/sales/balance/OLDCHIP", headers=auth_headers).json()["chip_deposit"] == 3.0

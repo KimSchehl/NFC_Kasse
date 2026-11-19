@@ -35,7 +35,10 @@ class NotificationService {
         ?.requestNotificationsPermission();
   }
 
-  Future<void> showHelpAlert(int requestId, String requesterName) async {
+  // The plugin wants an int id; the request id is a UUID string.
+  int _notificationId(String requestId) => requestId.hashCode & 0x7fffffff;
+
+  Future<void> showHelpAlert(String requestId, String requesterName) async {
     const details = AndroidNotificationDetails(
       _channelId,
       _channelName,
@@ -47,14 +50,14 @@ class NotificationService {
       fullScreenIntent: true,
     );
     await _plugin.show(
-      requestId,
+      _notificationId(requestId),
       'Hilfe benötigt!',
       '$requesterName braucht Hilfe',
       const NotificationDetails(android: details),
     );
   }
 
-  Future<void> cancelAlert(int requestId) async {
-    await _plugin.cancel(requestId);
+  Future<void> cancelAlert(String requestId) async {
+    await _plugin.cancel(_notificationId(requestId));
   }
 }

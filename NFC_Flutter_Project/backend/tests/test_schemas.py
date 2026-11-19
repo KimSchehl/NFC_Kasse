@@ -10,23 +10,23 @@ def test_booking_rejects_empty_product_ids():
 
 
 def test_booking_accepts_duplicate_ids():
-    req = BookingRequest(nfc_uid="UID", product_ids=[1, 1, 2])
-    assert req.product_ids == [1, 1, 2]
+    req = BookingRequest(nfc_uid="UID", product_ids=["a", "a", "b"])
+    assert req.product_ids == ["a", "a", "b"]
 
 
 def test_booking_accepts_none_pager_number():
-    req = BookingRequest(nfc_uid="UID", product_ids=[1])
+    req = BookingRequest(nfc_uid="UID", product_ids=["a"])
     assert req.pager_number is None
 
 
 def test_booking_rejects_zero_pager_number():
     with pytest.raises(ValidationError):
-        BookingRequest(nfc_uid="UID", product_ids=[1], pager_number=0)
+        BookingRequest(nfc_uid="UID", product_ids=["a"], pager_number=0)
 
 
 def test_booking_rejects_negative_pager_number():
     with pytest.raises(ValidationError):
-        BookingRequest(nfc_uid="UID", product_ids=[1], pager_number=-1)
+        BookingRequest(nfc_uid="UID", product_ids=["a"], pager_number=-1)
 
 
 def test_topup_rejects_zero_amount():

@@ -1,5 +1,5 @@
 class StatsPeriod {
-  final int id;
+  final String id;
   final String label;
   final String startedAt;
   final String? closedAt;
@@ -14,7 +14,7 @@ class StatsPeriod {
   bool get isOpen => closedAt == null;
 
   factory StatsPeriod.fromJson(Map<String, dynamic> j) => StatsPeriod(
-        id: j['id'] as int,
+        id: j['id'] as String,
         label: j['label'] as String,
         startedAt: j['started_at'] as String,
         closedAt: j['closed_at'] as String?,
@@ -89,7 +89,7 @@ class RevenueStats {
 }
 
 class TransactionItem {
-  final int id;
+  final String id;
   final String bookedAt;
   final String nfcUid;
   final String? customerName;
@@ -112,7 +112,7 @@ class TransactionItem {
   });
 
   factory TransactionItem.fromJson(Map<String, dynamic> j) => TransactionItem(
-        id: j['id'] as int,
+        id: j['id'] as String,
         bookedAt: j['booked_at'] as String,
         nfcUid: j['nfc_uid'] as String,
         customerName: j['customer_name'] as String?,

@@ -37,7 +37,7 @@ class QuickEditProductDialog extends ConsumerStatefulWidget {
 class _QuickEditProductDialogState extends ConsumerState<QuickEditProductDialog> {
   late final TextEditingController _stock;
   Color? _color;
-  final Map<int, Color?> _optionColors = {};
+  final Map<String, Color?> _optionColors = {};
   bool _loading = false;
   String? _error;
 

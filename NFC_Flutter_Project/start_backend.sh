@@ -38,18 +38,9 @@ if [ -z "${SECRET_KEY:-}" ]; then
     exit 1
 fi
 
-# ---- Database -----------------------------------------------
+# ---- Database (PostgreSQL, DATABASE_URL from config.env) ----
 cd backend
-if [ ! -f "kasse.db" ]; then
-    echo " [SETUP] kasse.db not found -- creating database ..."
-    python3 init_db.py
-    echo ""
-    echo " [SETUP] Done. Default login: admin / admin"
-    echo " [SETUP] Change the password immediately after first login!"
-    echo ""
-else
-    echo " [OK] kasse.db found."
-fi
+python3 init_db.py
 cd ..
 
 # ---- Network info -------------------------------------------

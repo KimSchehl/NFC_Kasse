@@ -22,7 +22,7 @@ class ProductService {
         .toList();
   }
 
-  Future<List<ProductModel>> getProducts(int categoryId) async {
+  Future<List<ProductModel>> getProducts(String categoryId) async {
     final resp = await _client.dio.get('/api/products/', queryParameters: {'category_id': categoryId});
     return (resp.data as List)
         .map((j) => ProductModel.fromJson(j as Map<String, dynamic>))
@@ -32,14 +32,14 @@ class ProductService {
   Future<ProductModel> createProduct({
     required String name,
     required double price,
-    required int categoryId,
+    required String categoryId,
     bool isPayout = false,
     bool isPfand = false,
     bool excludeFromStats = false,
     int points = 0,
     int? stock,
     bool requiresPager = false,
-    int? groupId,
+    String? groupId,
     String? color,
   }) async {
     final resp = await _client.dio.post('/api/products/', data: {
@@ -59,10 +59,10 @@ class ProductService {
   }
 
   Future<ProductModel> updateProduct(
-    int id, {
+    String id, {
     String? name,
     double? price,
-    int? categoryId,
+    String? categoryId,
     bool? isPayout,
     bool? isPfand,
     bool? excludeFromStats,
@@ -101,7 +101,7 @@ class ProductService {
   /// field (after `stock`) just for this one caller; always sends
   /// `group_id` (even null) for an unambiguous "this is exactly where the
   /// article now belongs" request.
-  Future<ProductModel> moveProduct(int id, {int? categoryId, int? groupId}) async {
+  Future<ProductModel> moveProduct(String id, {String? categoryId, String? groupId}) async {
     final data = <String, dynamic>{'group_id': groupId};
     if (categoryId != null) data['category_id'] = categoryId;
     final resp = await _client.dio.put('/api/products/$id', data: data);
@@ -121,7 +121,7 @@ class ProductService {
   /// Powers cross-device catalog sync: returns only the products in
   /// [categoryId] that changed after [since], plus IDs of any that were
   /// deleted since then.
-  Future<ProductChangesResult> getChangedProducts(int categoryId, DateTime since) async {
+  Future<ProductChangesResult> getChangedProducts(String categoryId, DateTime since) async {
     final resp = await _client.dio.get('/api/products/changed', queryParameters: {
       'category_id': categoryId,
       'since': since.toIso8601String(),
@@ -129,18 +129,18 @@ class ProductService {
     return ProductChangesResult.fromJson(resp.data as Map<String, dynamic>);
   }
 
-  Future<ProductModel> setActive(int id, bool active) async {
+  Future<ProductModel> setActive(String id, bool active) async {
     final resp = await _client.dio.patch('/api/products/$id/active', data: {'active': active});
     return ProductModel.fromJson(resp.data as Map<String, dynamic>);
   }
 
   /// Switches the article (with its options) on/off for the running fest.
-  Future<ProductModel> setInEvent(int id, bool active) async {
+  Future<ProductModel> setInEvent(String id, bool active) async {
     final resp = await _client.dio.patch('/api/products/$id/event-active', data: {'active': active});
     return ProductModel.fromJson(resp.data as Map<String, dynamic>);
   }
 
-  Future<void> deleteProduct(int id) async {
+  Future<void> deleteProduct(String id) async {
     await _client.dio.delete('/api/products/$id');
   }
 
@@ -150,7 +150,7 @@ class ProductService {
   }
 
   /// [color] is '#RRGGBB' or null (= theme default); omit [setColor] to keep it.
-  Future<CategoryModel> updateCategory(int id, String name, {bool setColor = false, String? color}) async {
+  Future<CategoryModel> updateCategory(String id, String name, {bool setColor = false, String? color}) async {
     final resp = await _client.dio.put('/api/products/categories/$id',
         data: {'name': name, if (setColor) 'color': color});
     return CategoryModel.fromJson(resp.data as Map<String, dynamic>);
@@ -158,12 +158,12 @@ class ProductService {
 
   /// Switches the category on/off for the running fest. Switched on for
   /// the first time there, it brings all its articles along.
-  Future<CategoryModel> setCategoryInEvent(int id, bool active) async {
+  Future<CategoryModel> setCategoryInEvent(String id, bool active) async {
     final resp = await _client.dio.patch('/api/products/categories/$id/active', data: {'active': active});
     return CategoryModel.fromJson(resp.data as Map<String, dynamic>);
   }
 
-  Future<void> deleteCategory(int id) async {
+  Future<void> deleteCategory(String id) async {
     await _client.dio.delete('/api/products/categories/$id');
   }
 }

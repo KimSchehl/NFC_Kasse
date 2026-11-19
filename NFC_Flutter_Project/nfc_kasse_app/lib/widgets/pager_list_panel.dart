@@ -184,7 +184,7 @@ class PagerListPanel extends ConsumerWidget {
         ],
       );
 
-  Future<void> _markDone(BuildContext context, WidgetRef ref, int id) async {
+  Future<void> _markDone(BuildContext context, WidgetRef ref, String id) async {
     try {
       await ref.read(pagerServiceProvider).markDone(id);
       await ref.read(pagerListProvider.notifier).refresh();

@@ -9,7 +9,7 @@ import 'category_model.dart';
 /// [categories] lists the categories the user has access to, including the
 /// per-category flags. Managers receive all categories with full flags.
 class UserModel {
-  final int id;
+  final String id;
   final String username;
   final String? displayName;
   final List<String> permissions;
@@ -37,7 +37,7 @@ class UserModel {
   });
 
   factory UserModel.fromJson(Map<String, dynamic> j) => UserModel(
-        id: j['id'] as int,
+        id: j['id'] as String,
         username: j['username'] as String,
         displayName: j['display_name'] as String?,
         permissions: (j['permissions'] as List).cast<String>(),
@@ -110,7 +110,7 @@ class UserModel {
 
 // Lightweight user row returned from the user list endpoint
 class UserListItem {
-  final int id;
+  final String id;
   final String username;
   final String? displayName;
   final bool active;
@@ -123,7 +123,7 @@ class UserListItem {
   });
 
   factory UserListItem.fromJson(Map<String, dynamic> j) => UserListItem(
-        id: j['id'] as int,
+        id: j['id'] as String,
         username: j['username'] as String,
         displayName: j['display_name'] as String?,
         active: j['active'] as bool? ?? true,

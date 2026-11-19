@@ -129,14 +129,15 @@ pytest -v -k "test_book_same_product_twice"
 
 ### How the test fixtures work (`conftest.py`)
 
-Every test that touches the database gets a **fresh, fully isolated SQLite database** in a temporary directory. This is handled by the `db` fixture:
+Every test that touches the database gets a **fresh, fully isolated PostgreSQL database**. The tests need a running PostgreSQL and a role that may create databases; the server is taken from `TEST_PG_URL` (default `postgresql://nfc_kasse_dev:nfc_kasse_dev@localhost:5432/`, create it once with `CREATE ROLE nfc_kasse_dev LOGIN CREATEDB PASSWORD 'nfc_kasse_dev'`).
 
 ```
-db fixture
-│   Creates a temp DB file via pytest's tmp_path
-│   Patches database.DB_PATH → temp file   (affects all get_db() calls)
-│   Patches init_db.DB_PATH  → temp file   (affects schema creation)
-│   Runs init_db() + seed_permissions() + seed_default_data()
+_template_db fixture (once per run)
+│   Creates nfc_kasse_test_template, runs init_db.setup() (Alembic + seeds)
+│
+db fixture (every test)
+│   Recreates nfc_kasse_test as a copy of the template (CREATE DATABASE … TEMPLATE)
+│   Patches database.DATABASE_URL → that database (affects all get_db() calls)
 │
 ├── client fixture (depends on db)
 │       Creates a FastAPI TestClient pointing at the patched app
@@ -153,7 +154,7 @@ db fixture
         Returns the UID string
 ```
 
-Because `tmp_path` is function-scoped in pytest, each test function gets its own database. Tests cannot affect each other.
+Each test function gets its own copy of the database, so tests cannot affect each other.
 
 The `seed_default_data()` function creates:
 - One tenant (`id=1`)
@@ -164,7 +165,7 @@ The admin credentials are used by `auth_headers` to authenticate API requests.
 
 ### Notes on test isolation
 
-The production database (`kasse.db`) is **never touched** during tests. The `monkeypatch.setattr` in the `db` fixture redirects all database access for the duration of the test and is automatically undone after the test completes.
+The production database is **never touched** during tests (they only use the `nfc_kasse_test*` databases). The `monkeypatch.setattr` in the `db` fixture redirects all database access for the duration of the test and is automatically undone after the test completes.
 
 If you run pytest outside the `backend/` directory, pass the path explicitly:
 

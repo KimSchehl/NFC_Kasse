@@ -2,35 +2,36 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nfc_kasse_app/utils/formatters.dart';
 
 void main() {
+  // intl puts a non-breaking space before € (keeps amount and symbol on one line).
   group('formatPrice', () {
     test('formats a positive amount in German locale', () {
-      expect(formatPrice(2.50), '2,50 €');
+      expect(formatPrice(2.50), '2,50 €');
     });
 
     test('formats zero', () {
-      expect(formatPrice(0.0), '0,00 €');
+      expect(formatPrice(0.0), '0,00 €');
     });
 
     test('formats a negative amount with leading dash', () {
-      expect(formatPrice(-2.50), '- 2,50 €');
+      expect(formatPrice(-2.50), '- 2,50 €');
     });
 
     test('formats large amount', () {
-      expect(formatPrice(1000.0), '1.000,00 €');
+      expect(formatPrice(1000.0), '1.000,00 €');
     });
   });
 
   group('formatPriceSigned', () {
     test('positive amounts get a plus prefix', () {
-      expect(formatPriceSigned(2.50), '+ 2,50 €');
+      expect(formatPriceSigned(2.50), '+ 2,50 €');
     });
 
     test('negative amounts get a dash prefix', () {
-      expect(formatPriceSigned(-2.50), '- 2,50 €');
+      expect(formatPriceSigned(-2.50), '- 2,50 €');
     });
 
     test('zero has no sign prefix', () {
-      expect(formatPriceSigned(0.0), '0,00 €');
+      expect(formatPriceSigned(0.0), '0,00 €');
     });
   });
 

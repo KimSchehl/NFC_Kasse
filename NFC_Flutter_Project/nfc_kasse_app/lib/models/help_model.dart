@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class HelpResponse {
-  final int responderId;
+  final String responderId;
   final String responderName;
   final String response; // 'on_way' | '5min' | 'cannot'
 
@@ -12,7 +12,7 @@ class HelpResponse {
   });
 
   factory HelpResponse.fromJson(Map<String, dynamic> j) => HelpResponse(
-        responderId: j['responder_id'] as int,
+        responderId: j['responder_id'] as String,
         responderName: j['responder_name'] as String? ?? '?',
         response: j['response'] as String,
       );
@@ -33,8 +33,8 @@ class HelpResponse {
 }
 
 class HelpRequest {
-  final int id;
-  final int requesterId;
+  final String id;
+  final String requesterId;
   final String requesterName;
   final String? createdAt;
   final List<HelpResponse> responses;
@@ -48,8 +48,8 @@ class HelpRequest {
   });
 
   factory HelpRequest.fromJson(Map<String, dynamic> j) => HelpRequest(
-        id: j['id'] as int,
-        requesterId: j['requester_id'] as int,
+        id: j['id'] as String,
+        requesterId: j['requester_id'] as String,
         requesterName: j['requester_name'] as String? ?? '?',
         createdAt: j['created_at'] as String?,
         responses: (j['responses'] as List? ?? [])

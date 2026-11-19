@@ -25,3 +25,6 @@ packaging/pyinstaller/build/
 packaging/innosetup/dist/
 # Downloaded at build time, verified by SHA256 — not source, don't commit
 packaging/winsw/NfcKasseService.exe
+
+# PostgreSQL server binaries (downloaded by packaging/build_installer.bat)
+packaging/pgsql/
